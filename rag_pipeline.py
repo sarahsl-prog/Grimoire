@@ -2,12 +2,26 @@
 
 import os
 from typing import List
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import PyPDFLoader, TextLoader
+
+import streamlit as st
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain_ollama import Ollama
 from langchain.schema import Document
+
+
+@st.cache_resource
+def get_embeddings():
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+
+@st.cache_resource
+def get_llm():
+    return Ollama(model="llama3")
 
 
 def load_documents(files: List[str]) -> List[Document]:
@@ -33,24 +47,30 @@ def create_vectorstore(docs: List[Document], persist_dir="vectorstore"):
 
     chunks = splitter.split_documents(docs)
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    embeddings = get_embeddings()
 
-    vectorstore = FAISS.from_documents(chunks, embeddings)
+    new_store = FAISS.from_documents(chunks, embeddings)
 
-    vectorstore.save_local(persist_dir)
+    # Merge into existing index if one exists, otherwise save fresh
+    if os.path.exists(os.path.join(persist_dir, "index.faiss")):
+        existing = FAISS.load_local(
+            persist_dir, embeddings, allow_dangerous_deserialization=True
+        )
+        existing.merge_from(new_store)
+        existing.save_local(persist_dir)
+        return existing
 
-    return vectorstore
+    new_store.save_local(persist_dir)
+    return new_store
 
 
 def load_vectorstore(persist_dir="vectorstore"):
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    embeddings = get_embeddings()
 
-    return FAISS.load_local(persist_dir, embeddings)
+    return FAISS.load_local(
+        persist_dir, embeddings, allow_dangerous_deserialization=True
+    )
 
 
 def ask_question(vectorstore, query, k=4):
@@ -59,7 +79,7 @@ def ask_question(vectorstore, query, k=4):
         search_kwargs={"k": k}
     )
 
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
 
     context = "\n\n".join(d.page_content for d in docs)
 
@@ -74,7 +94,7 @@ Question:
 {query}
 """
 
-    llm = Ollama(model="llama3")
+    llm = get_llm()
 
     response = llm.invoke(prompt)
 
