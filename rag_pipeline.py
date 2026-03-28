@@ -8,8 +8,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_ollama import Ollama
-from langchain.schema import Document
+from langchain_ollama import OllamaLLM
+from langchain_core.documents import Document
 
 
 @st.cache_resource
@@ -21,7 +21,7 @@ def get_embeddings():
 
 @st.cache_resource
 def get_llm():
-    return Ollama(model="llama3")
+    return OllamaLLM(model="kimi-k2.5:cloud")
 
 
 def load_documents(files: List[str]) -> List[Document]:
