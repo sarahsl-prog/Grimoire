@@ -13,6 +13,7 @@ Example:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -66,6 +67,18 @@ Instructions:
 - Consider parent and child categories independently
 - Return empty suggestions array if no categories fit"""
 
+SAMPLE_CATEGORIZATION_PROMPT: Final[
+    str
+] = """Categorize this document sample into relevant categories.
+
+Categories:
+{categories}
+
+Document:
+{document_sample}
+
+Return category names and confidence scores (0.0-1.0) in this JSON format:
+{{"suggestions": [{{"category": "Name", "confidence": 0.9, "reasoning": "why"}}]}}"""
 
 # ============================================================================
 # Pydantic Models
@@ -405,6 +418,44 @@ class Tagger:
 
         return suggestions
 
+    async def _call_ollama(self, prompt: str) -> str:
+        """Call Ollama API with prompt.
+
+        Args:
+            prompt: Prompt text to send
+
+        Returns:
+            Raw LLM response text
+
+        Raises:
+            httpx.HTTPError: If API call fails
+            ValueError: If response is invalid
+        """
+        client = await self._get_client()
+
+        url = f"{self.llm_config.url.rstrip('/')}/api/generate"
+        payload = {
+            "model": self.llm_config.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": self.llm_config.temperature,
+                "num_predict": self.llm_config.max_tokens,
+            },
+        }
+
+        logger.debug(f"Calling Ollama API at {url} with model {self.llm_config.model}")
+
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+
+        result = response.json()
+
+        if "response" not in result:
+            raise ValueError(f"Unexpected Ollama response format: {result.keys()}")
+
+        return str(result["response"])
+
     def _match_suggestions_to_categories(
         self,
         suggestions: list[TagSuggestion],
@@ -672,10 +723,18 @@ class Tagger:
         Returns:
             TaggingResult with suggestions and applied tags
         """
-        # If no sample provided, use title or empty string
-        # Note: For production use, fetch chunks via db_session.query() first
+        # Build sample if not provided
         if sample is None:
-            sample = document.title or ""
+            if document.chunks:
+                # Use first few chunks
+                sample_parts: list[str] = []
+                for chunk in document.chunks[:3]:
+                    sample_parts.append(chunk.content)
+                    if sum(len(p) for p in sample_parts) > MAX_SAMPLE_LENGTH:
+                        break
+                sample = "\n\n".join(sample_parts)
+            else:
+                sample = document.title or ""
 
         # Get suggestions
         result = await self.suggest_tags(

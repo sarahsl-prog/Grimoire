@@ -8,10 +8,17 @@ continuity tracking.
 import pytest
 from pydantic import ValidationError
 
-from grimoire.core.chunker.base import Chunk, ChunkConfig, ChunkingStrategy
-from grimoire.core.chunker.markdown import MarkdownChunkConfig, MarkdownHeaderTextSplitter
-from grimoire.core.chunker.recursive import RecursiveChunkConfig, RecursiveCharacterTextSplitter
-from grimoire.core.chunker.semantic import SemanticChunkConfig, SemanticChunker
+from grimoire.core.chunker import (
+    Chunk,
+    ChunkConfig,
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+    SemanticChunker,
+)
+from grimoire.core.chunker.base import ChunkingStrategy
+from grimoire.core.chunker.markdown import MarkdownChunkConfig
+from grimoire.core.chunker.recursive import RecursiveChunkConfig
+from grimoire.core.chunker.semantic import SemanticChunkConfig
 
 
 # =============================================================================
@@ -124,7 +131,10 @@ class TestChunkConfig:
 
     def test_markdown_chunk_config(self) -> None:
         """Test markdown-specific config."""
-        config = MarkdownChunkConfig(headers_to_split_on=["#", "##"], keep_headers=False)
+        config = MarkdownChunkConfig(
+            headers_to_split_on=["#", "##"],
+            keep_headers=False,
+        )
         assert config.strategy == ChunkingStrategy.MARKDOWN
         assert config.headers_to_split_on == ["#", "##"]
         assert config.keep_headers is False
@@ -158,9 +168,7 @@ class TestRecursiveCharacterTextSplitter:
     @pytest.mark.asyncio
     async def test_happy_path_basic_text(self, chunker) -> None:
         """Test basic recursive splitting."""
-        text = (
-            "This is paragraph one.\n\nThis is paragraph two.\n\nThis is paragraph three."
-        )
+        text = "This is paragraph one.\n\nThis is paragraph two.\n\nThis is paragraph three."
         chunks = await chunker.chunk(text, doc_id="test-123")
 
         assert len(chunks) > 0
@@ -313,7 +321,7 @@ Deep content."""
         deep_chunks = [c for c in chunks if c.metadata["header_level"] == 3]
         if deep_chunks:
             deep_chunk = deep_chunks[0]
-            assert "Main Title" in deep_chunk.metadata["header_context"]
+            assert "# Main Title" in deep_chunk.metadata["header_context"]
             assert "Subsection A" in deep_chunk.metadata["header_context"]
 
     @pytest.mark.asyncio
@@ -369,10 +377,7 @@ Shakespeare's plays are considered some of the finest works in English literatur
 
         # Each chunk should have content
         for chunk in chunks:
-            assert (
-                len(chunk.content.strip()) >= chunker.config.min_chunk_size
-                or len(chunks) == 1
-            )
+            assert len(chunk.content.strip()) >= chunker.config.min_chunk_size or len(chunks) == 1
 
     @pytest.mark.asyncio
     async def test_empty_text_returns_empty_list(self, chunker) -> None:

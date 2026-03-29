@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from typing import TYPE_CHECKING, Any
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import httpx
@@ -37,8 +37,7 @@ from grimoire.db.base import Base
 from grimoire.db.models import Category, Document, DocumentTag, FileType, TaggedBy
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
+    from collections.abc import AsyncGenerator, Generator
 
 # =============================================================================
 # Fixtures
@@ -144,7 +143,7 @@ def sample_document_text() -> str:
     systems to learn and improve from experience without being explicitly
     programmed. It focuses on developing computer programs that can access
     data and use it to learn for themselves.
-
+    
     Deep learning is a specialized form of machine learning inspired by the
     structure and function of the human brain. Neural networks are the
     foundation of deep learning algorithms.
@@ -262,6 +261,7 @@ class TestCategoryContext:
         ctx = CategoryContext(path="Research", category=mock_categories[0])
         line = ctx.to_prompt_line()
         assert "Research" in line
+        # Format is "  - Research" when no description
         assert line.strip() == "- Research"
 
 
@@ -769,6 +769,7 @@ class TestTaggerApplyTags:
             size_bytes=1000,
         )
         mock_db_session.add(doc)
+        await mock_db_session.flush()
 
         # Add category to DB
         for cat in flat_categories:
