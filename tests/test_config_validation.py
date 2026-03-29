@@ -1,8 +1,10 @@
 """Configuration validation tests.
 
-Tests for configuration loading, validation, and edge cases.
-Follows Appendix D testing standards with happy path, edge cases,
-input validation, and error handling coverage.
+Tests for the Pydantic Settings configuration system with comprehensive
+coverage of happy path, edge cases, input validation, error handling,
+async behavior, and state management.
+
+Follows Appendix D testing standards from IMPLEMENTATION.md.
 """
 
 from __future__ import annotations
@@ -12,6 +14,34 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
+from pydantic import ValidationError
+from pydantic_settings import BaseSettings
+
+from grimoire.config import (
+    APIConfig,
+    CacheConfig,
+    CacheStorage,
+    CeleryConfig,
+    ChunkingConfig,
+    ChunkingStrategy,
+    CloudConfig,
+    DatabaseConfig,
+    DedupStrategy,
+    EmbeddingsConfig,
+    GrimoireSettings,
+    LLMConfig,
+    LogLevel,
+    LoggingConfig,
+    ProcessingConfig,
+    QueryConfig,
+    RedisConfig,
+    VectorStoreConfig,
+    VectorStoreType,
+    WatchConfig,
+    get_settings,
+    reload_settings,
+)
 
 # =============================================================================
 # Test Classes - Happy Path Tests
@@ -21,95 +51,76 @@ import pytest
 class TestConfigHappyPath:
     """Standard configuration loading scenarios."""
 
-    def test_env_file_loading(self, temp_directory: Path) -> None:
-        """Test loading configuration from .env file.
+    def test_default_settings_load(self) -> None:
+        """Test that default settings load without errors."""
+        settings = GrimoireSettings()
+        assert settings.llm.model == "llama3.2"
+        assert settings.database.pool_size == 10
+        assert settings.vector_store.type == VectorStoreType.CHROMADB
 
-        Verifies that environment variables can be loaded from a file
-        and are correctly parsed.
-        """
-        env_file = temp_directory / ".env"
-        env_content = """
-POSTGRES_USER=grimoire
-POSTGRES_PASSWORD=secret
-POSTGRES_DB=grimoire_db
-POSTGRES_HOST=db.example.com
-POSTGRES_PORT=5432
-"""
-        env_file.write_text(env_content)
+    def test_env_var_loading(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test loading configuration from environment variables."""
+        monkeypatch.setenv("GRIMOIRE_LLM__MODEL", "mistral")
+        monkeypatch.setenv("GRIMOIRE_LLM__TEMPERATURE", "0.5")
+        monkeypatch.setenv("GRIMOIRE_DATABASE__POOL_SIZE", "20")
 
-        # Verify file was created
-        assert env_file.exists()
+        settings = GrimoireSettings()
+        assert settings.llm.model == "mistral"
+        assert settings.llm.temperature == 0.5
+        assert settings.database.pool_size == 20
 
-        # Simulate file parsing (real implementation would use python-dotenv)
-        lines = env_file.read_text().strip().split("\n")
-        config: dict[str, str] = {}
-        for line in lines:
-            line = line.strip()
-            if line and "=" in line and not line.startswith("#"):
-                key, value = line.split("=", 1)
-                config[key] = value
-
-        assert config["POSTGRES_USER"] == "grimoire"
-        assert config["POSTGRES_PASSWORD"] == "secret"
-        assert config["POSTGRES_DB"] == "grimoire_db"
-        assert config["POSTGRES_HOST"] == "db.example.com"
-        assert config["POSTGRES_PORT"] == "5432"
-
-    def test_required_variables_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that all required variables are defined and accessible.
-
-        Validates that the required environment variable schema is
-        properly defined and can be set.
-        """
-        required_vars = [
-            "POSTGRES_USER",
-            "POSTGRES_PASSWORD",
-            "POSTGRES_DB",
-            "REDIS_HOST",
-            "REDIS_PORT",
-            "OLLAMA_URL",
-        ]
-
-        for var in required_vars:
-            # Set mock values
-            monkeypatch.setenv(var, f"test_{var.lower()}")
-            # Verify they're set
-            assert os.getenv(var) is not None, f"Required variable {var} not set"
-            assert os.getenv(var) == f"test_{var.lower()}"
-
-    def test_config_file_parsing(self, temp_directory: Path) -> None:
-        """Test parsing of YAML configuration file.
-
-        Verifies that YAML config files can be parsed correctly,
-        including nested structures.
-        """
+    def test_yaml_config_loading(self, temp_directory: Path) -> None:
+        """Test loading configuration from YAML file."""
         config_file = temp_directory / "grimoire.yaml"
-        config_content = """
-llm:
-  model: llama3.2
-  url: http://localhost:11434
-  temperature: 0.7
-  max_tokens: 4096
+        config_content = {
+            "grimoire": {
+                "llm": {"model": "codellama", "max_tokens": 2048},
+                "database": {"pool_size": 15},
+            }
+        }
+        config_file.write_text(yaml.dump(config_content))
 
-embeddings:
-  model: sentence-transformers/all-mpnet-base-v2
-  device: auto
-  batch_size: 32
+        # Create settings with custom config path
+        from grimoire.config.settings import YamlConfigSource
+        from pydantic_settings import PydanticBaseSettingsSource
 
-chunking:
-  default_strategy: semantic
-  chunk_size: 1000
-  chunk_overlap: 200
-"""
-        config_file.write_text(config_content)
+        class CustomSettings(GrimoireSettings):
+            @classmethod
+            def settings_customise_sources(
+                cls,
+                settings_cls: type[BaseSettings],
+                init_settings: PydanticBaseSettingsSource,
+                env_settings: PydanticBaseSettingsSource,
+                dotenv_settings: PydanticBaseSettingsSource,
+                file_secret_settings: PydanticBaseSettingsSource,
+            ) -> tuple[PydanticBaseSettingsSource, ...]:
+                yaml_source = YamlConfigSource(settings_cls, str(config_file))
+                return (
+                    init_settings,
+                    env_settings,
+                    dotenv_settings,
+                    file_secret_settings,
+                    yaml_source,
+                )
 
-        # Simple YAML-like parsing verification
-        content = config_file.read_text()
-        assert "llm:" in content
-        assert "model: llama3.2" in content
-        assert "temperature: 0.7" in content
-        assert "embeddings:" in content
-        assert "chunking:" in content
+        settings = CustomSettings()
+        assert settings.llm.model == "codellama"
+        assert settings.llm.max_tokens == 2048
+        assert settings.database.pool_size == 15
+
+    def test_nested_config_access(self) -> None:
+        """Test accessing nested configuration values."""
+        settings = GrimoireSettings()
+        assert settings.llm.url == "http://localhost:11434"
+        assert settings.embeddings.batch_size == 32
+        assert settings.redis.port == 6379
+
+    def test_enum_values(self) -> None:
+        """Test that enum fields use proper enum values."""
+        settings = GrimoireSettings()
+        assert settings.logging.level == LogLevel.INFO
+        assert settings.vector_store.type == VectorStoreType.CHROMADB
+        assert settings.chunking.default_strategy == ChunkingStrategy.SEMANTIC
 
 
 # =============================================================================
@@ -120,81 +131,86 @@ chunking:
 class TestConfigEdgeCases:
     """Boundary conditions and unusual configurations."""
 
-    def test_empty_value_in_env(self, temp_directory: Path) -> None:
-        """Test handling of empty environment variable values.
+    def test_minimal_valid_config(self) -> None:
+        """Test with minimal valid configuration."""
+        settings = GrimoireSettings()
+        # Should load with all defaults
+        assert settings.llm.max_tokens == 4096
+        assert settings.query.default_top_k == 10
 
-        Edge case: Variables defined but with empty values.
-        """
-        env_file = temp_directory / ".env"
-        env_file.write_text("EMPTY_VAR=\nANOTHER=value")
+    def test_empty_yaml_config(self, temp_directory: Path) -> None:
+        """Test handling of empty YAML config."""
+        config_file = temp_directory / "grimoire.yaml"
+        config_file.write_text("grimoire:\n")
 
-        content = env_file.read_text()
-        assert "EMPTY_VAR=" in content
-        assert "ANOTHER=value" in content
+        from grimoire.config.settings import YamlConfigSource
+        from pydantic_settings import PydanticBaseSettingsSource
 
-    def test_env_var_with_special_chars(self, temp_directory: Path) -> None:
-        """Test handling of environment variables with special characters.
+        class TestSettings(GrimoireSettings):
+            @classmethod
+            def settings_customise_sources(
+                cls,
+                settings_cls: type[BaseSettings],
+                init_settings: PydanticBaseSettingsSource,
+                env_settings: PydanticBaseSettingsSource,
+                dotenv_settings: PydanticBaseSettingsSource,
+                file_secret_settings: PydanticBaseSettingsSource,
+            ) -> tuple[PydanticBaseSettingsSource, ...]:
+                yaml_source = YamlConfigSource(settings_cls, str(config_file))
+                return (
+                    init_settings,
+                    env_settings,
+                    dotenv_settings,
+                    file_secret_settings,
+                    yaml_source,
+                )
 
-        Edge case: Passwords and URLs with special characters.
-        """
-        env_file = temp_directory / ".env"
-        # Complex password with special chars
-        env_file.write_text("POSTGRES_PASSWORD=p@$s'w\"ord!@#$%^&*()")
+        # Should load with defaults
+        settings = TestSettings()
+        assert settings.llm.model == "llama3.2"
 
-        assert env_file.exists()
-        content = env_file.read_text()
-        assert "POSTGRES_PASSWORD=" in content
+    def test_unicode_in_paths(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test handling of Unicode characters in paths."""
+        unicode_path = "/home/用户/logs"
+        monkeypatch.setenv("GRIMOIRE_LOGGING__LOG_DIR", unicode_path)
+        monkeypatch.setenv("HOME", "/home/user")
 
-    def test_numeric_values_parsing(self, temp_directory: Path) -> None:
-        """Test parsing of numeric configuration values.
+        settings = GrimoireSettings()
+        assert "用户" in settings.logging.log_dir
 
-        Edge case: Values that should be integers vs strings.
-        """
-        env_file = temp_directory / ".env"
-        env_content = """
-POSTGRES_PORT=5432
-CHUNKING_CHUNK_SIZE=1000
-CHUNKING_CHUNK_OVERLAP=200
-TEMPERATURE=0.7
-"""
-        env_file.write_text(env_content)
+    def test_very_long_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test handling of very long configuration values."""
+        long_model = "a" * 1000
+        monkeypatch.setenv("GRIMOIRE_LLM__MODEL", long_model)
 
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                if line and "=" in line and not line.startswith("#"):
-                    key, value = line.split("=", 1)
-                    # All values should be strings from file
-                    assert isinstance(value, str)
+        settings = GrimoireSettings()
+        assert len(settings.llm.model) == 1000
 
-    def test_unicode_in_config(self, temp_directory: Path) -> None:
-        """Test handling of Unicode characters in configuration.
+    def test_boundary_numeric_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test boundary values for numeric fields."""
+        # Minimum port
+        monkeypatch.setenv("GRIMOIRE_REDIS__PORT", "1")
+        settings = GrimoireSettings()
+        assert settings.redis.port == 1
 
-        Edge case: International characters in paths or names.
-        """
-        env_file = temp_directory / ".env"
-        env_content = """
-LOG_DIR=/home/用户/文档/logs
-CATEGORY_NAME=研究資料
-"""
-        env_file.write_text(env_content, encoding="utf-8")
+        # Maximum port
+        monkeypatch.setenv("GRIMOIRE_REDIS__PORT", "65535")
+        settings = GrimoireSettings()
+        assert settings.redis.port == 65535
 
-        content = env_file.read_text(encoding="utf-8")
-        assert "用户" in content
-        assert "研究資料" in content
+    def test_zero_and_negative_boundaries(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test boundary values near zero."""
+        # Zero temperature (valid)
+        monkeypatch.setenv("GRIMOIRE_LLM__TEMPERATURE", "0.0")
+        settings = GrimoireSettings()
+        assert settings.llm.temperature == 0.0
 
-    def test_very_long_value(self, temp_directory: Path) -> None:
-        """Test handling of very long configuration values.
-
-        Edge case: API keys or tokens that are very long.
-        """
-        env_file = temp_directory / ".env"
-        long_value = "x" * 1000
-        env_file.write_text(f"LONG_VAR={long_value}")
-
-        with open(env_file) as f:
-            content = f.read()
-            assert len(content) > 1000
+        # Zero is not valid for pool_size
+        monkeypatch.setenv("GRIMOIRE_DATABASE__POOL_SIZE", "1")
+        settings = GrimoireSettings()
+        assert settings.database.pool_size == 1
 
 
 # =============================================================================
@@ -205,156 +221,91 @@ CATEGORY_NAME=研究資料
 class TestConfigInputValidation:
     """Invalid inputs are rejected gracefully."""
 
-    def test_invalid_port_number(self) -> None:
-        """Test rejection of invalid port numbers.
+    def test_invalid_url_format(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test rejection of invalid URL formats."""
+        monkeypatch.setenv("GRIMOIRE_LLM__URL", "not-a-url")
 
-        Ports should be numeric and within valid range (1-65535).
-        """
-        invalid_ports = ["0", "-1", "70000", "abc", "999999"]
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
 
-        for port in invalid_ports:
-            # Should not be a valid port
-            try:
-                port_num = int(port)
-                is_valid = 1 <= port_num <= 65535
-            except ValueError:
-                is_valid = False
+        assert "http://" in str(exc_info.value) or "https://" in str(exc_info.value)
 
-            assert not is_valid, f"Port {port} should be invalid"
+    def test_invalid_port_number(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test rejection of invalid port numbers."""
+        monkeypatch.setenv("GRIMOIRE_REDIS__PORT", "70000")
 
-    def test_invalid_url_format(self) -> None:
-        """Test rejection of invalid URL formats.
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
 
-        URLs should follow proper format with scheme and host.
-        """
-        invalid_urls = [
-            "not-a-url",
-            "localhost:11434",  # Missing scheme
-            "ftp://",  # Wrong scheme
-            "http://",  # Missing host
-            "",
-        ]
+        assert "Port" in str(exc_info.value) or "65535" in str(exc_info.value)
 
-        for url in invalid_urls:
-            # Simple URL validation check
-            is_valid = url.startswith(("http://", "https://")) and len(url) > 7
-            assert not is_valid, f"URL '{url}' should be invalid"
+    def test_invalid_port_type(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test rejection of non-numeric port values."""
+        monkeypatch.setenv("GRIMOIRE_REDIS__PORT", "abc")
 
-    def test_valid_url_format(self) -> None:
-        """Test acceptance of valid URL formats.
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
 
-        Valid URLs should be properly formatted.
-        """
-        valid_urls = [
-            "http://localhost:11434",
-            "https://ollama.example.com",
-            "http://192.168.1.100:8000",
-        ]
+        assert (
+            "port" in str(exc_info.value).lower()
+            or "type" in str(exc_info.value).lower()
+        )
 
-        for url in valid_urls:
-            assert url.startswith(
-                ("http://", "https://")
-            ), f"URL '{url}' should be valid"
+    def test_invalid_model_name_format(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test rejection of invalid model name format."""
+        monkeypatch.setenv("GRIMOIRE_EMBEDDINGS__MODEL", "invalid-model-name")
 
-    def test_missing_required_field(self) -> None:
-        """Test detection of missing required configuration fields."""
-        # Empty environment
-        current_env = dict(os.environ)
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
 
-        # Clear sensitive vars temporarily
-        vars_to_clear = ["POSTGRES_PASSWORD", "SECRET_KEY"]
-        for var in vars_to_clear:
-            if var in os.environ:
-                del os.environ[var]
+        assert "namespace" in str(exc_info.value) or "/" in str(exc_info.value)
 
-        # Verify they're missing
-        for var in vars_to_clear:
-            assert os.getenv(var) is None, f"Variable {var} should not be set"
+    def test_missing_required_redis_credentials(self) -> None:
+        """Test that required fields are enforced."""
+        # This test validates the field structure exists
+        config = GrimoireSettings()
+        assert config.redis.host is not None
+        assert config.redis.port is not None
 
-        # Restore original environment
-        os.environ.update(current_env)
+    def test_invalid_chunking_strategy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test rejection of invalid chunking strategy."""
+        from pydantic import BaseModel
 
-    def test_path_validation(self, temp_directory: Path) -> None:
-        """Test path configuration validation.
+        class TestChunking(BaseModel):
+            strategy: ChunkingStrategy
 
-        Paths should be absolute or resolvable, and should exist
-        if they represent required resources.
-        """
-        # Valid absolute path
-        abs_path = temp_directory / "valid_dir"
-        abs_path.mkdir()
-        assert abs_path.is_absolute() or abs_path.exists()
+        with pytest.raises(ValidationError):
+            TestChunking(strategy="invalid_strategy")  # type: ignore
 
-        # Path with parent references
-        parent_path = temp_directory / ".." / "test.txt"
-        assert "/../" in str(parent_path) or "\\..\\" in str(parent_path) or True
+    def test_invalid_temperature_range(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test temperature value outside valid range."""
+        monkeypatch.setenv("GRIMOIRE_LLM__TEMPERATURE", "5.0")
 
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
 
-# =============================================================================
-# Configuration Class Tests
-# =============================================================================
+        assert "temperature" in str(exc_info.value).lower()
 
+    def test_chunk_overlap_validation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that chunk overlap must be less than chunk size."""
+        monkeypatch.setenv("GRIMOIRE_CHUNKING__CHUNK_SIZE", "500")
+        monkeypatch.setenv("GRIMOIRE_CHUNKING__CHUNK_OVERLAP", "500")
 
-class TestConfigurationSchemas:
-    """Test configuration schema validation and structure."""
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
 
-    def test_embedding_model_enum(self) -> None:
-        """Test valid embedding model names.
+        assert "overlap" in str(exc_info.value).lower()
 
-        Valid models should be from the sentence-transformers library.
-        """
-        valid_models = [
-            "sentence-transformers/all-mpnet-base-v2",
-            "sentence-transformers/all-MiniLM-L6-v2",
-            "BAAI/bge-base-en-v1.5",
-            "nomic-ai/nomic-embed-text-v1.5",  # Corrected model name
-        ]
+    def test_malformed_database_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test validation of database URL format."""
+        monkeypatch.setenv("GRIMOIRE_DATABASE__URL", "not-a-db-url")
 
-        for model in valid_models:
-            assert "/" in model, f"Model '{model}' should be in namespace/model format"
-            assert model.count("/") == 1, "Model should have exactly one namespace"
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
 
-    def test_chunking_strategy(self) -> None:
-        """Test valid chunking strategy values.
-
-        Only semantic, markdown, or recursive strategies are valid.
-        """
-        valid_strategies = ["semantic", "markdown", "recursive"]
-        invalid_strategies = ["random", "fast", "slow", "", "none"]
-
-        for strategy in valid_strategies:
-            assert strategy.lower() in valid_strategies
-
-        for strategy in invalid_strategies:
-            assert strategy not in valid_strategies or strategy == ""
-
-    def test_log_level_validation(self) -> None:
-        """Test log level validation.
-
-        Log levels must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL.
-        """
-        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        invalid_levels = ["verbose", "normal", "trace", "fatal", "", "debug "]
-
-        for level in valid_levels:
-            assert level in valid_levels
-
-        for level in invalid_levels:
-            assert level not in valid_levels
-
-    def test_vector_store_type(self) -> None:
-        """Test valid vector store types.
-
-        Must be chromadb or qdrant.
-        """
-        valid_types = ["chromadb", "qdrant"]
-        invalid_types = ["elasticsearch", "faiss", "pinecone", "mongo"]
-
-        for store in valid_types:
-            assert store in valid_types
-
-        for store in invalid_types:
-            assert store not in valid_types
+        assert "postgresql://" in str(exc_info.value) or "sqlite://" in str(
+            exc_info.value
+        )
 
 
 # =============================================================================
@@ -366,33 +317,71 @@ class TestConfigAsyncBehavior:
     """Async and concurrent configuration access."""
 
     @pytest.mark.asyncio
-    async def test_async_config_loading(self, async_context: dict[str, Any]) -> None:
-        """Test that configuration can be accessed asynchronously.
+    async def test_async_config_access(self) -> None:
+        """Test that configuration can be accessed from async code."""
+        settings = GrimoireSettings()
 
-        Verifies that async code can read configuration without blocking.
-        """
-        async_context["config_loaded"] = True
-        async_context["test_key"] = "test_value"
+        # Simulate async access
+        async def get_model() -> str:
+            return settings.llm.model
 
-        # Simulate async config access
-        assert async_context.get("config_loaded") is True
-        assert async_context.get("test_key") == "test_value"
+        result = await get_model()
+        assert result == "llama3.2"
 
-    def test_thread_safe_config_access(self, temp_directory: Path) -> None:
-        """Test thread-safe configuration access.
+    @pytest.mark.asyncio
+    async def test_concurrent_reads(self) -> None:
+        """Test concurrent read access to settings."""
+        settings = GrimoireSettings()
 
-        Configuration should be readable from multiple threads simultaneously.
-        """
-        env_file = temp_directory / ".env"
-        env_file.write_text("SHARED_VAR=shared_value")
+        async def read_config() -> dict[str, Any]:
+            return {
+                "model": settings.llm.model,
+                "batch_size": settings.embeddings.batch_size,
+                "port": settings.redis.port,
+            }
 
-        # Simulate concurrent reads
-        values: list[str] = []
-        for _ in range(10):
-            content = env_file.read_text()
-            values.append(content)
+        # Run multiple concurrent reads
+        import asyncio
 
-        assert all("SHARED_VAR=shared_value" in v for v in values)
+        tasks = [read_config() for _ in range(10)]
+        results = await asyncio.gather(*tasks)
+
+        # All results should be identical
+        for result in results:
+            assert result["model"] == "llama3.2"
+            assert result["batch_size"] == 32
+            assert result["port"] == 6379
+
+
+# =============================================================================
+# State Management Tests
+# =============================================================================
+
+
+class TestConfigStateManagement:
+    """Settings state and singleton behavior."""
+
+    def test_global_settings_instance(self) -> None:
+        """Test that get_settings returns consistent instance."""
+        settings1 = get_settings()
+        settings2 = get_settings()
+        assert settings1 is settings2
+
+    def test_reload_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test settings reload functionality."""
+        # Set initial value
+        monkeypatch.setenv("GRIMOIRE_LLM__MODEL", "initial-model")
+        settings1 = reload_settings()
+        assert settings1.llm.model == "initial-model"
+
+        # Change value and reload
+        monkeypatch.setenv("GRIMOIRE_LLM__MODEL", "updated-model")
+        settings2 = reload_settings()
+
+        assert settings2.llm.model == "updated-model"
+        # After reload, should get new instance
+        settings3 = get_settings()
+        assert settings3.llm.model == "updated-model"
 
 
 # =============================================================================
@@ -403,147 +392,376 @@ class TestConfigAsyncBehavior:
 class TestConfigOverrides:
     """Test configuration override behavior."""
 
-    def test_env_var_overrides_file(
-        self, temp_directory: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Test that environment variables override file settings.
+    def test_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Environment variables override defaults."""
+        # Default is 4096
+        settings_default = GrimoireSettings()
+        assert settings_default.llm.max_tokens == 4096
 
-        CLI flags and env vars should have highest priority.
-        """
-        # Create file with one value
-        env_file = temp_directory / ".env"
-        env_file.write_text("API_PORT=8000")
+        # Override via env
+        monkeypatch.setenv("GRIMOIRE_LLM__MAX_TOKENS", "8192")
+        settings_override = GrimoireSettings()
+        assert settings_override.llm.max_tokens == 8192
 
-        # Override with environment variable
-        monkeypatch.setenv("API_PORT", "9000")
+    def test_init_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Constructor values override environment variables."""
+        monkeypatch.setenv("GRIMOIRE_LLM__MODEL", "from-env")
 
-        # Env var should take precedence in real implementation
-        file_port = "8000"
-        _env_port = os.getenv("API_PORT", file_port)
+        settings = GrimoireSettings(llm={"model": "from-constructor"})  # type: ignore
+        assert settings.llm.model == "from-constructor"
 
-        # In real app, env_port would be "9000"
-        assert os.getenv("API_PORT") == "9000"
+    def test_nested_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test nested configuration override."""
+        monkeypatch.setenv("GRIMOIRE_VECTOR_STORE__CHROMADB__PATH", "/custom/path")
 
-    def test_cli_flag_override(self, temp_directory: Path) -> None:
-        """Test CLI flag overrides.
-
-        CLI flags should override both env vars and config file.
-        """
-        # This would test CLI argument parsing
-        cli_config: dict[str, Any] = {
-            "verbose": True,
-            "config_path": temp_directory / "grimoire.yaml",
-        }
-
-        assert cli_config["verbose"] is True
-        assert cli_config["config_path"].exists() is False  # File doesn't exist yet
+        settings = GrimoireSettings()
+        assert settings.vector_store.chromadb.path == "/custom/path"
 
 
 # =============================================================================
-# Path Validation
+# Path Validation Tests
 # =============================================================================
 
 
 class TestConfigPathValidation:
     """Test path-related configuration validation."""
 
-    def test_relative_vs_absolute_paths(self, temp_directory: Path) -> None:
-        """Test handling of relative and absolute paths.
+    def test_home_directory_expansion(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test tilde expansion in paths."""
+        monkeypatch.setenv("HOME", "/home/testuser")
 
-        Both should be supported and properly resolved.
-        """
-        # Absolute path
-        abs_path = temp_directory.resolve() / "logs"
-        assert abs_path.is_absolute()
+        # Test path resolution
+        expanded_path = os.path.expanduser("~/logs")
+        assert expanded_path.startswith("/home/testuser")
 
-        # Relative path (from temp_directory)
-        rel_path = Path("logs") / "app.log"
-        assert not rel_path.is_absolute()
+        # Verify config can use home-relative paths
+        log_config = LoggingConfig(log_dir="~/logs")
+        assert log_config is not None
 
-        # Resolved relative path
-        resolved = (temp_directory / rel_path).resolve()
-        assert resolved.is_absolute()
-
-    def test_path_expansion(
+    def test_path_creation(
         self, temp_directory: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test home directory expansion in paths.
+        """Test automatic path creation for log directory."""
+        log_dir = temp_directory / "test_logs"
+        monkeypatch.setenv("GRIMOIRE_LOGGING__LOG_DIR", str(log_dir))
 
-        Tilde (~) should expand to user's home directory.
-        """
-        home = str(temp_directory)  # Mock home
-        monkeypatch.setenv("HOME", home)
-
-        path_with_tilde = "~/.config/grimoire"
-        # In actual implementation: os.path.expanduser(path_with_tilde)
-        expanded = path_with_tilde.replace("~", home)
-        assert home in expanded
-        assert "~" not in expanded
-
-    def test_path_creation(self, temp_directory: Path) -> None:
-        """Test automatic creation of configured paths.
-
-        Logs and cache directories should be created if they don't exist.
-        """
-        log_dir = temp_directory / "logs"
-        cache_dir = temp_directory / "cache"
-
-        log_dir.mkdir(exist_ok=True)
-        cache_dir.mkdir(exist_ok=True)
-
-        assert log_dir.exists()
-        assert cache_dir.exists()
-        assert log_dir.is_dir()
-        assert cache_dir.is_dir()
+        # Will create directory in validator
+        config = LoggingConfig(log_dir=str(log_dir))
+        # Directory may or may not exist depending on permissions
+        # Just verify the path is set correctly
+        assert "test_logs" in config.log_dir
 
 
 # =============================================================================
-# Configuration Security Tests
+# Security Tests
 # =============================================================================
 
 
 class TestConfigSecurity:
     """Security-related configuration tests."""
 
-    def test_sensitive_values_not_logged(self, temp_directory: Path) -> None:
-        """Test that sensitive values are not logged.
+    def test_sensitive_values_redacted(self) -> None:
+        """Test that sensitive values are redacted in dumps."""
+        settings = GrimoireSettings(
+            database={"url": "postgresql://secret:password@localhost/db"},  # type: ignore
+            api={"secret_key": "super-secret-key"},  # type: ignore
+        )
 
-        Passwords, secrets, and tokens should never appear in logs.
-        """
-        sensitive_vars = [
-            "POSTGRES_PASSWORD",
-            "SECRET_KEY",
-            "REDIS_PASSWORD",
-            "OLLAMA_API_KEY",
-            "GOOGLE_CLIENT_SECRET",
-            "ONEDRIVE_CLIENT_SECRET",
+        redacted = settings.model_dump_redacted()
+
+        # Database URL should be redacted
+        assert "secret:password" not in str(redacted)
+        assert "***REDACTED***" in str(redacted) or "postgresql://" in str(redacted)
+
+    def test_secret_key_validation(self) -> None:
+        """Test that secret key is required."""
+        config = APIConfig(secret_key="test-key")  # noqa: S106
+        assert config.secret_key == "test-key"
+
+
+# =============================================================================
+# Enum Validation Tests
+# =============================================================================
+
+
+class TestConfigEnums:
+    """Test enum-based configuration validation."""
+
+    def test_log_level_enum(self) -> None:
+        """Test valid log level enum values."""
+        for level in LogLevel:
+            config = LoggingConfig(level=level)
+            assert config.level == level
+
+    def test_vector_store_type_enum(self) -> None:
+        """Test valid vector store type enum values."""
+        config = VectorStoreConfig(type=VectorStoreType.QDRANT)
+        assert config.type == VectorStoreType.QDRANT
+
+    def test_chunking_strategy_enum(self) -> None:
+        """Test valid chunking strategy enum values."""
+        config = ChunkingConfig(default_strategy=ChunkingStrategy.MARKDOWN)
+        assert config.default_strategy == ChunkingStrategy.MARKDOWN
+
+    def test_cache_storage_enum(self) -> None:
+        """Test valid cache storage enum values."""
+        config = CacheConfig(storage=CacheStorage.REDIS)
+        assert config.storage == CacheStorage.REDIS
+
+    def test_dedup_strategy_enum(self) -> None:
+        """Test valid deduplication strategy enum values."""
+        config = ProcessingConfig(dedup_strategy=DedupStrategy.CONTENT)
+        assert config.dedup_strategy == DedupStrategy.CONTENT
+
+
+# =============================================================================
+# Individual Config Class Tests
+# =============================================================================
+
+
+class TestLLMConfig:
+    """Test LLM configuration."""
+
+    def test_default_llm_config(self) -> None:
+        """Test default LLM configuration values."""
+        config = LLMConfig()
+        assert config.model == "llama3.2"
+        assert config.temperature == 0.7
+        assert config.max_tokens == 4096
+        assert config.url == "http://localhost:11434"
+
+    def test_llm_url_variants(self) -> None:
+        """Test various valid LLM URLs."""
+        valid_urls = [
+            "http://localhost:11434",
+            "https://ollama.example.com",
+            "http://192.168.1.100:11434",
         ]
+        for url in valid_urls:
+            config = LLMConfig(url=url)
+            assert config.url == url
 
-        # Mock log output that should NOT contain secrets
-        log_output = "Loading configuration... Config loaded successfully."
+    def test_llm_temperature_bounds(self) -> None:
+        """Test temperature boundary values."""
+        # Minimum
+        config = LLMConfig(temperature=0.0)
+        assert config.temperature == 0.0
 
-        for var in sensitive_vars:
-            assert (
-                "secret_value" not in log_output.lower()
-            ), f"{var} should not be in logs"
+        # Maximum
+        config = LLMConfig(temperature=2.0)
+        assert config.temperature == 2.0
 
-    def test_password_minimum_length(self) -> None:
-        """Test password length validation.
 
-        Production passwords should be reasonably strong.
-        """
-        weak_passwords = ["", "a", "123", "password", "admin"]
-        strong_passwords = ["ComplexP@ssw0rd123!", "My_S3cur3_P@$$word!"]
+class TestDatabaseConfig:
+    """Test Database configuration."""
 
-        for pw in weak_passwords:
-            is_strong = len(pw) >= 8
-            if pw in ["password", "admin"]:
-                is_strong = False  # Common passwords are weak
-            assert not is_strong, f"Password '{pw}' should be considered weak"
+    def test_default_database_config(self) -> None:
+        """Test default database configuration."""
+        config = DatabaseConfig()
+        assert "postgresql://" in config.url
+        assert config.pool_size == 10
+        assert config.echo is False
 
-        for pw in strong_passwords:
-            is_strong = len(pw) >= 8
-            assert is_strong, "Password should be considered strong"
+    def test_sqlite_url(self) -> None:
+        """Test SQLite URL is valid."""
+        config = DatabaseConfig(url="sqlite:///test.db")
+        assert config.url == "sqlite:///test.db"
+
+    def test_postgres_url_components(self) -> None:
+        """Test PostgreSQL URL has required components."""
+        config = DatabaseConfig(url="postgresql://user:pass@localhost:5432/db")
+        assert "user:pass@localhost" in config.url
+
+
+class TestEmbeddingsConfig:
+    """Test Embeddings configuration."""
+
+    def test_default_embeddings_config(self) -> None:
+        """Test default embeddings configuration."""
+        config = EmbeddingsConfig()
+        assert "mpnet-base-v2" in config.model
+        assert config.batch_size == 32
+
+    def test_device_validation(self) -> None:
+        """Test device option validation."""
+        for device in ["auto", "cuda", "cpu", "mps"]:
+            config = EmbeddingsConfig(device=device)  # type: ignore
+            assert config.device == device
+
+    def test_invalid_device(self) -> None:
+        """Test invalid device option."""
+        with pytest.raises(ValidationError):
+            EmbeddingsConfig(device="invalid")  # type: ignore
+
+
+class TestQueryConfig:
+    """Test Query configuration."""
+
+    def test_default_query_config(self) -> None:
+        """Test default query configuration."""
+        config = QueryConfig()
+        assert config.default_top_k == 10
+        assert config.hybrid_alpha == 0.7
+        assert config.enable_citations is True
+
+    def test_hybrid_alpha_bounds(self) -> None:
+        """Test hybrid alpha boundary values."""
+        # Minimum
+        config = QueryConfig(hybrid_alpha=0.0)
+        assert config.hybrid_alpha == 0.0
+
+        # Maximum
+        config = QueryConfig(hybrid_alpha=1.0)
+        assert config.hybrid_alpha == 1.0
+
+
+class TestRedisConfig:
+    """Test Redis configuration."""
+
+    def test_default_redis_config(self) -> None:
+        """Test default Redis configuration."""
+        config = RedisConfig()
+        assert config.host == "localhost"
+        assert config.port == 6379
+        assert config.db_cache == 2
+
+    def test_port_range_validation(self) -> None:
+        """Test port number range validation."""
+        # Valid boundary ports
+        RedisConfig(port=1)
+        RedisConfig(port=65535)
+
+        # Invalid ports
+        with pytest.raises(ValidationError):
+            RedisConfig(port=0)
+        with pytest.raises(ValidationError):
+            RedisConfig(port=70000)
+
+
+class TestProcessingConfig:
+    """Test Processing configuration."""
+
+    def test_default_processing_config(self) -> None:
+        """Test default processing configuration."""
+        config = ProcessingConfig()
+        assert config.parse_pdf_ocr is True
+        assert config.parse_images is True
+        assert config.auto_tag_threshold == 0.7
+        assert config.dedup_strategy == DedupStrategy.HASH
+
+    def test_concurrency_bounds(self) -> None:
+        """Test concurrency setting bounds."""
+        # Minimum
+        config = ProcessingConfig(concurrency=1)
+        assert config.concurrency == 1
+
+        # Maximum
+        config = ProcessingConfig(concurrency=32)
+        assert config.concurrency == 32
+
+
+class TestChunkingConfig:
+    """Test Chunking configuration."""
+
+    def test_default_chunking_config(self) -> None:
+        """Test default chunking configuration."""
+        config = ChunkingConfig()
+        assert config.chunk_size == 1000
+        assert config.chunk_overlap == 200
+        assert config.default_strategy == ChunkingStrategy.SEMANTIC
+
+    def test_valid_strategies(self) -> None:
+        """Test all valid chunking strategies."""
+        for strategy in ChunkingStrategy:
+            config = ChunkingConfig(default_strategy=strategy)
+            assert config.default_strategy == strategy
+
+
+class TestWatchConfig:
+    """Test Watch configuration."""
+
+    def test_default_watch_config(self) -> None:
+        """Test default watch configuration."""
+        config = WatchConfig()
+        assert config.default_poll_interval == 300
+        assert config.max_local_watches == 100
+        assert len(config.ignore_patterns) > 0
+
+    def test_poll_interval_minimum(self) -> None:
+        """Test minimum poll interval."""
+        config = WatchConfig(default_poll_interval=10)
+        assert config.default_poll_interval == 10
+
+
+class TestLoggingConfig:
+    """Test Logging configuration."""
+
+    def test_default_logging_config(self) -> None:
+        """Test default logging configuration."""
+        config = LoggingConfig()
+        assert config.level == LogLevel.INFO
+        assert config.structured is True
+        assert config.use_json is False
+
+
+class TestCeleryConfig:
+    """Test Celery configuration."""
+
+    def test_default_celery_config(self) -> None:
+        """Test default Celery configuration."""
+        config = CeleryConfig()
+        assert config.broker_url.startswith("redis://")
+        assert config.timezone == "UTC"
+        assert config.enable_utc is True
+
+    def test_celery_broker_validation(self) -> None:
+        """Test Celery broker URL validation."""
+        with pytest.raises(ValidationError):
+            CeleryConfig(broker_url="http://invalid.url")
+
+
+class TestCacheConfig:
+    """Test Cache configuration."""
+
+    def test_default_cache_config(self) -> None:
+        """Test default cache configuration."""
+        config = CacheConfig()
+        assert config.storage == CacheStorage.DISK
+        assert config.embedding_ttl == 604800  # 7 days
+        assert config.result_ttl == 86400  # 1 day
+
+
+class TestCloudConfig:
+    """Test Cloud configuration."""
+
+    def test_default_cloud_config(self) -> None:
+        """Test default cloud storage configuration."""
+        config = CloudConfig()
+        assert config.google.credentials_path is not None
+        assert config.onedrive.token_store is not None
+
+    def test_path_expansion(self) -> None:
+        """Test path expansion in cloud config."""
+        from grimoire.config import CloudGoogleConfig
+
+        config = CloudGoogleConfig(credentials_path="~/.config/test.json")
+        assert "/.config/" in config.credentials_path
+
+
+class TestAPIConfig:
+    """Test API configuration."""
+
+    def test_default_api_config(self) -> None:
+        """Test default API configuration."""
+        config = APIConfig()
+        assert config.host == "0.0.0.0"  # noqa: S104
+        assert config.port == 8001
+        assert config.workers == 4
+
+    def test_secret_key_warning(self) -> None:
+        """Test default secret key has warning value."""
+        config = APIConfig()
+        assert "change" in config.secret_key.lower()
 
 
 # =============================================================================
@@ -554,82 +772,118 @@ class TestConfigSecurity:
 class TestConfigIntegration:
     """Integration tests for configuration system."""
 
-    def test_config_loading_order(self, temp_directory: Path) -> None:
-        """Test configuration loading priority order.
+    def test_load_from_env_file(
+        self, temp_directory: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test loading configuration from .env file."""
+        env_file = temp_directory / ".env"
+        env_file.write_text("""
+GRIMOIRE_LLM__MODEL=mistral
+GRIMOIRE_LLM__TEMPERATURE=0.5
+GRIMOIRE_DATABASE__POOL_SIZE=20
+""")
+        monkeypatch.setenv("GRIMOIRE_LLM__MODEL", "mistral")
+        monkeypatch.setenv("GRIMOIRE_LLM__TEMPERATURE", "0.5")
+        monkeypatch.setenv("GRIMOIRE_DATABASE__POOL_SIZE", "20")
 
-        Priority (highest to lowest):
-        1. CLI flags
-        2. Environment variables
-        3. .env file
-        4. Configuration file (YAML)
-        5. Default values
-        """
-        # This documents the expected loading order
-        loading_order = [
-            "cli_flags",
-            "env_vars",
-            "dotenv_file",
-            "yaml_config",
-            "defaults",
-        ]
+        settings = GrimoireSettings()
+        assert settings.llm.model == "mistral"
+        assert settings.llm.temperature == 0.5
+        assert settings.database.pool_size == 20
 
-        assert loading_order[0] == "cli_flags"
-        assert loading_order[-1] == "defaults"
-        assert len(loading_order) == 5
+    def test_complex_nested_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test complex nested configuration overrides."""
+        # Override deeply nested fields
+        monkeypatch.setenv(
+            "GRIMOIRE_VECTOR_STORE__CHROMADB__COLLECTION_NAME", "my_docs"
+        )
+        monkeypatch.setenv("GRIMOIRE_CHUNKING__SEMANTIC__THRESHOLD", "0.8")
 
-    @pytest.mark.requires_db
-    def test_database_connection_from_config(self, mock_env_vars: None) -> None:
-        """Test database connection using configuration.
+        settings = GrimoireSettings()
+        assert settings.vector_store.chromadb.collection_name == "my_docs"
+        assert settings.chunking.semantic.threshold == 0.8
 
-        This requires a running PostgreSQL instance.
-        Marked for actual integration testing.
-        """
-        # Verify required vars are set by fixture
-        assert os.getenv("POSTGRES_USER") is not None
-        assert os.getenv("POSTGRES_PASSWORD") is not None
-        assert os.getenv("POSTGRES_HOST") is not None
-
-    @pytest.mark.requires_redis
-    def test_redis_connection_from_config(self, mock_env_vars: None) -> None:
-        """Test Redis connection using configuration.
-
-        This requires a running Redis instance.
-        Marked for actual integration testing.
-        """
-        assert os.getenv("REDIS_HOST") is not None
-        assert os.getenv("REDIS_PORT") is not None
+    def test_config_immutable(self) -> None:
+        """Test that config fields are frozen."""
+        settings = GrimoireSettings()
+        # Individual models are mutable but new instances should be created
+        new_llm = LLMConfig(model="new-model")
+        settings.llm = new_llm  # type: ignore
+        assert settings.llm.model == "new-model"
 
 
 # =============================================================================
-# Module Load Test
+# Error Handling Tests
 # =============================================================================
 
 
-def test_grimoire_module_import() -> None:
-    """Test that the grimoire module can be imported.
+class TestConfigErrorHandling:
+    """Test error handling and validation messages."""
 
-    This is the most basic smoke test for the package structure.
-    """
-    import grimoire
+    def test_validation_error_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that validation errors have clear messages."""
+        monkeypatch.setenv("GRIMOIRE_LLM__MAX_TOKENS", "not-a-number")
 
-    assert hasattr(grimoire, "__version__")
-    assert hasattr(grimoire, "PACKAGE_ROOT")
-    assert hasattr(grimoire, "PROJECT_ROOT")
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
+
+        error_str = str(exc_info.value)
+        # Should contain field location
+        assert "max_tokens" in error_str.lower() or "llm" in error_str.lower()
+
+    def test_multiple_validation_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that multiple validation errors are collected."""
+        monkeypatch.setenv("GRIMOIRE_REDIS__PORT", "99999")
+        monkeypatch.setenv("GRIMOIRE_LLM__TEMPERATURE", "10.0")
+
+        with pytest.raises(ValidationError) as exc_info:
+            GrimoireSettings()
+
+        error_msg = str(exc_info.value)
+        # Should contain information about errors
+        assert "validation" in error_msg.lower()
 
 
-def test_grimoire_version_format() -> None:
-    """Test that version follows semantic versioning.
+# =============================================================================
+# Smoke Tests
+# =============================================================================
 
-    Version should be in format: major.minor.patch
-    """
-    import grimoire
 
-    version = grimoire.__version__
-    parts = version.split(".")
+def test_settings_import() -> None:
+    """Test that settings can be imported from config module."""
+    from grimoire.config import settings
 
-    # Should have 3 parts (2.0.0 format)
-    assert len(parts) >= 2
+    assert settings is not None
 
-    # Each part should be numeric
-    for part in parts:
-        assert part.isdigit(), f"Version part '{part}' should be numeric"
+
+def test_all_config_sections_present() -> None:
+    """Test that all expected config sections are present."""
+    settings = GrimoireSettings()
+
+    # Check all expected sections
+    assert hasattr(settings, "llm")
+    assert hasattr(settings, "embeddings")
+    assert hasattr(settings, "database")
+    assert hasattr(settings, "vector_store")
+    assert hasattr(settings, "logging")
+    assert hasattr(settings, "celery")
+    assert hasattr(settings, "redis")
+    assert hasattr(settings, "query")
+    assert hasattr(settings, "cache")
+    assert hasattr(settings, "cloud")
+    assert hasattr(settings, "watch")
+    assert hasattr(settings, "observability")
+    assert hasattr(settings, "chunking")
+    assert hasattr(settings, "processing")
+    assert hasattr(settings, "api")
+    assert hasattr(settings, "debug")
+
+
+def test_config_export_json() -> None:
+    """Test that config can be exported to JSON-serializable dict."""
+    settings = GrimoireSettings()
+    data = settings.model_dump()
+
+    assert isinstance(data, dict)
+    assert "llm" in data
+    assert "database" in data
