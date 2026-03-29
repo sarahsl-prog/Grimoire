@@ -47,6 +47,7 @@ docker-compose.yml      # postgres:16, redis:7, chromadb
 - [ ] `uv sync` succeeds
 - [ ] `docker-compose up -d` starts all services
 - [ ] `uv run python -c "import grimoire"` works
+- [ ] **Documentation:** Update README.md with setup instructions
 
 ---
 
@@ -66,7 +67,11 @@ grimoire/config/settings.py   # Pydantic Settings
 
 **Validation:**
 - [ ] Unit tests: load settings from file, env, override
+- [ ] Unit tests: invalid URLs rejected, invalid paths caught
+- [ ] Unit tests: missing required fields raise clear errors
 - [ ] Invalid config raises Pydantic ValidationError
+- [ ] **Documentation:** Update DESIGN.md Section 10 if new config options added
+- [ ] **Documentation:** Update .env.example with all required variables
 
 ---
 
@@ -97,6 +102,9 @@ alembic/versions/           # Initial migration
 - [ ] `alembic upgrade head` creates all tables
 - [ ] `alembic downgrade` removes them
 - [ ] Unit tests: CRUD on each model
+- [ ] Unit tests: foreign key constraints enforced
+- [ ] Unit tests: unique constraints (file_hash) work
+- [ ] **Documentation:** Update DESIGN.md Section 3 if model changes
 
 ---
 
@@ -616,13 +624,15 @@ CONVENTIONS (REQUIRED):
 - Black 88 chars: uv run black app tests
 - Async first for I/O
 - loguru for logging
-- Tests: pytest with >80% coverage
+- **Tests: pytest with >80% coverage, including edge cases and input validation**
+- **Documentation: Update relevant docs/*.md files when changing architecture**
 
 VALIDATION:
 - [ ] uv run pytest [relevant tests] passes
 - [ ] uv run ruff check . has no errors
 - [ ] uv run black app tests formats cleanly
 - [ ] mypy --strict passes
+- [ ] **Documentation updated (if architecture changed)**
 
 COMMIT MESSAGE TEMPLATE:
 feat(component): [what changed]
@@ -658,3 +668,146 @@ Before starting phase N+1:
 ---
 
 **End of Implementation Plan**
+
+---
+
+## Appendix D: Testing Standards & Requirements
+
+### Required Test Categories
+
+Every module MUST include tests for:
+
+#### 1. Happy Path Tests
+- Basic functionality works with valid inputs
+- Standard use cases produce expected results
+
+#### 2. Edge Cases & Boundary Conditions
+- Empty inputs: `[]`, `""`, `{}`, `None`
+- Single element inputs (minimum valid case)
+- Maximum capacity tests (large files, many chunks)
+- Unicode/special characters in text
+- Long paths, weird filenames
+- Missing optional fields in config
+
+#### 3. Input Validation & Error Handling
+- Invalid types (pass int where str expected)
+- Out-of-range values (negative IDs, too-high top_k)
+- Malformed data (corrupt file, invalid JSON)
+- Schema violations (wrong Pydantic model shapes)
+- SQL injection attempts (should fail parameterized queries)
+
+#### 4. Async Behavior
+- Concurrent access (multiple threads/processes)
+- Race conditions
+- Timeout handling
+- Connection failures (Redis, DB, Ollama)
+
+#### 5. State Management
+- Re-entrant operations (idempotency)
+- Partial failures (rollback behavior)
+- Cache invalidation
+- Duplicate handling
+
+### Required Test File Pattern
+
+```python
+# test_component.py structure
+
+class TestComponentHappyPath:
+    """Standard use cases."""
+    def test_basic_functionality(self):
+        pass
+
+class TestComponentEdgeCases:
+    """Boundary conditions and unusual inputs."""
+    def test_empty_input(self):
+        pass
+    
+    def test_single_element(self):
+        pass
+    
+    def test_maximum_capacity(self):
+        pass
+
+class TestComponentInputValidation:
+    """Invalid inputs are rejected gracefully."""
+    def test_invalid_type_raises_error(self):
+        pass
+    
+    def test_out_of_range_value(self):
+        pass
+    
+    def test_missing_required_field(self):
+        pass
+
+class TestComponentErrorHandling:
+    """Errors are caught and handled appropriately."""
+    def test_network_failure_recovery(self):
+        pass
+    
+    def test_corrupt_file_handling(self):
+        pass
+
+class TestComponentConcurrency:
+    """Async and concurrent behavior."""
+    @pytest.mark.asyncio
+    async def test_concurrent_access(self):
+        pass
+```
+
+### Test Fixtures Requirements
+
+- **Database**: Use `pytest-asyncio` with temp PostgreSQL via testcontainers or SQLite in-memory
+- **Files**: Create temp directories with sample docs in `tests/fixtures/`
+- **Config**: Override settings for tests (use `TestSettings`)
+- **Mocks**: Use `unittest.mock` or `pytest-mock` for external APIs (Ollama, GDrive)
+
+### Coverage Requirements
+
+- Minimum **80%** line coverage
+- **100%** coverage for:
+  - Input validation functions
+  - Error handling branches
+  - Security-critical code (auth, SQL, file paths)
+
+### Prohibited Test Practices
+
+❌ **Do NOT:**
+- Only test "happy path" - every function needs error cases
+- Skip tests because "it's just a wrapper" - wrappers have failure modes
+- Use sleeps/waits instead of proper async synchronization
+- Test implementation details instead of behavior
+- Skip edge cases "because that won't happen" - it will
+
+---
+
+## Appendix E: Documentation Requirements
+
+### When to Update Documentation
+
+**ALWAYS update docs when:**
+- Adding new configuration options (update DESIGN.md Section 10)
+- Changing ABC interfaces (update DESIGN.md Section 6, 7)
+- Adding new CLI commands (update DESIGN.md Section 12)
+- Modifying data models (update DESIGN.md Section 3)
+- Breaking changes to existing functionality
+
+**Code-level documentation:**
+- All public functions have docstrings (Google style)
+- Type hints on all public APIs
+- README.md updated if setup changes
+- .env.example updated if new env vars added
+
+### Documentation Files
+
+| File | Purpose | Update When |
+|------|---------|-------------|
+| `DESIGN.md` | Architecture, data models, conventions | Architecture changes |
+| `IMPLEMENTATION.md` | This file - roadmap and tasks | Planning changes |
+| `README.md` | Quick start, setup | Setup process changes |
+| `.env.example` | Environment variables | New config options |
+| `CHANGELOG.md` | Version history | Each release |
+
+---
+
+---
