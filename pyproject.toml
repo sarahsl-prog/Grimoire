@@ -1,0 +1,236 @@
+[project]
+name = "grimoire"
+version = "2.0.0"
+description = "Agent-based knowledge management system"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    {name = "Sarah (slgryph)", email = "slgryph@gmail.com"}
+]
+license = {text = "MIT"}
+keywords = ["knowledge-management", "rag", "llm", "agents", "ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "click>=8.1",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.28",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "chromadb>=0.4",
+    "langchain-community>=0.2",
+    "langchain-ollama>=0.0.1",
+    "docling>=2.0",
+    "watchdog>=4.0",
+    "sentence-transformers>=2.5",
+    "loguru>=0.7",
+    "redis>=5.0",
+    "diskcache>=5.6",
+    "celery>=5.3",
+    "httpx>=0.27",
+    "aiofiles>=23.2",
+    "python-magic>=0.4",
+    "aiohttp>=3.9",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "tiktoken>=0.6",
+    "numpy>=1.26",
+    "colorama>=0.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "mypy>=1.9",
+    "ruff>=0.3",
+    "black>=24.2",
+    "pre-commit>=3.6",
+    "types-redis>=4.6",
+    "types-pyyaml>=6.0",
+    "types-requests>=2.31",
+    "types-aiofiles>=23.2",
+    "types-colorama>=0.4",
+]
+
+[project.scripts]
+grimoire = "grimoire.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/sarahsl-prog/Grimoire"
+Documentation = "https://github.com/sarahsl-prog/Grimoire/blob/main/docs/DESIGN.md"
+Repository = "https://github.com/sarahsl-prog/Grimoire"
+Issues = "https://github.com/sarahsl-prog/Grimoire/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["grimoire"]
+
+# Black configuration
+[tool.black]
+line-length = 88
+target-version = ['py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | migrations
+  | alembic
+)/
+'''
+
+# Ruff configuration
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+extend-exclude = [
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "migrations",
+    "alembic",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "S",   # flake8-bandit (security)
+    "C90", # mccabe complexity
+]
+ignore = [
+    "E501",  # line length (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+show_error_codes = true
+show_column_numbers = true
+warn_unreachable = true
+warn_redundant_casts = true
+warn_unused_configs = true
+exclude = [
+    "alembic",
+    "migrations",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "chromadb.*",
+    "docling.*",
+    "langchain.*",
+    "langchain_community.*",
+    "sentence_transformers.*",
+    "magic",
+]
+ignore_missing_imports = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--tb=short",
+    "-ra",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow running tests",
+    "requires_db: Tests requiring database",
+    "requires_redis: Tests requiring Redis",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["grimoire"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/migrations/*",
+    "*/alembic/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 80
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"
