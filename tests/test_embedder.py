@@ -12,8 +12,8 @@ Tests cover:
 import hashlib
 import tempfile
 from pathlib import Path
-from typing import Any, List, Optional
-from unittest.mock import MagicMock, Mock, patch
+from typing import Any, Generator, List, Optional
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -111,7 +111,20 @@ class MockCache(Cache):
 
 
 @pytest.fixture
-def mock_cache():
+def temp_cache_dir() -> Generator[Path, None, None]:
+    """Provide a temporary directory for cache testing."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        yield Path(tmp_dir)
+
+
+@pytest.fixture
+def disk_cache(temp_cache_dir: Path) -> DiskCache:
+    """Provide a DiskCache instance for testing."""
+    return DiskCache(path=temp_cache_dir)
+
+
+@pytest.fixture
+def mock_cache() -> MockCache:
     """Provide a mock cache for testing."""
     return MockCache()
 
@@ -215,18 +228,20 @@ class TestEmbedderEdgeCases:
             await embedder.embed_single("")
 
     @pytest.mark.asyncio
-    async def test_whitespace_only_text_raises_error(self, mock_sentence_transformer):
-        """Whitespace-only text should raise ValueError."""
+    async def test_whitespace_text_raises_error(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
+        """Whitespace text raises error."""
         embedder = Embedder()
-
         with pytest.raises(ValueError, match="non-empty string"):
             await embedder.embed_single("   ")
 
     @pytest.mark.asyncio
-    async def test_empty_list_raises_error(self, mock_sentence_transformer):
-        """Empty list should raise ValueError."""
+    async def test_empty_list_raises_error(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
+        """Empty list raises error."""
         embedder = Embedder()
-
         with pytest.raises(ValueError, match="non-empty list"):
             await embedder.embed([])
 

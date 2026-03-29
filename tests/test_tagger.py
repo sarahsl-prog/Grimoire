@@ -394,6 +394,22 @@ class TestTaggerResponseParsing:
         """Test parsing empty response."""
         assert tagger._parse_llm_response("") == []
         assert tagger._parse_llm_response("   ") == []
+        assert tagger._parse_llm_response(None) == []  # type: ignore[arg-type]
+
+    def test_parse_llm_response_with_json_pattern(self, tagger: Tagger) -> None:
+        """Test parsing response with embedded JSON pattern."""
+        response = 'Some text before {"suggestions": []} some text after'
+        suggestions = tagger._parse_llm_response(response)
+        assert suggestions == []
+
+    def test_parse_single_dict_suggestion(self, tagger: Tagger) -> None:
+        """Test parsing when response is a single dict (no suggestions key)."""
+        response = json.dumps(
+            {"category": "AI", "confidence": 0.9, "reasoning": "About AI"}
+        )
+        suggestions = tagger._parse_llm_response(response)
+        assert len(suggestions) == 1
+        assert suggestions[0].category == "AI"
 
     def test_parse_invalid_json(self, tagger: Tagger) -> None:
         """Test handling invalid JSON."""
@@ -591,8 +607,149 @@ class TestTaggerSuggestTags:
 
 
 @pytest.mark.asyncio
+class TestTaggerTagDocument:
+    """Test the tag_document convenience method."""
+
+    async def test_tag_document_with_title(
+        self,
+        tagger: Tagger,
+        mock_db_session: AsyncSession,
+        flat_categories: list[Category],
+    ) -> None:
+        """Test tagging using document title."""
+        doc = Document(
+            id=str(uuid4()),
+            source_path="/test/doc.pdf",
+            storage_backend="local",
+            file_type=FileType.PDF,
+            file_hash="abc123",
+            title="Technology Research Paper",
+            size_bytes=1000,
+        )
+        mock_db_session.add(doc)
+
+        for cat in flat_categories:
+            mock_db_session.add(cat)
+        await mock_db_session.flush()
+
+        mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.8}]}
+
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
+            result = await tagger.tag_document(
+                mock_db_session, doc, flat_categories, auto_apply=True
+            )
+
+        assert len(result.suggestions) == 1
+
+    async def test_tag_document_no_auto_apply(
+        self,
+        tagger: Tagger,
+        mock_db_session: AsyncSession,
+        flat_categories: list[Category],
+    ) -> None:
+        """Test tagging without auto-applying results."""
+        doc = Document(
+            id=str(uuid4()),
+            source_path="/test/doc.pdf",
+            storage_backend="local",
+            file_type=FileType.PDF,
+            file_hash="abc123",
+            title="Test",
+            size_bytes=1000,
+        )
+        mock_db_session.add(doc)
+
+        for cat in flat_categories:
+            mock_db_session.add(cat)
+        await mock_db_session.flush()
+
+        # Use low confidence so it won't be in applied_tags
+        mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.5}]}
+
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
+            result = await tagger.tag_document(
+                mock_db_session, doc, flat_categories, auto_apply=False
+            )
+
+        # Tags suggested but not applied to DB
+        assert len(result.suggestions) == 1
+        assert len(result.applied_tags) == 0  # Doesn't pass threshold
+
+    async def test_tag_document_with_custom_sample(
+        self,
+        tagger: Tagger,
+        mock_db_session: AsyncSession,
+        flat_categories: list[Category],
+    ) -> None:
+        """Test tagging with custom sample provided."""
+        doc = Document(
+            id=str(uuid4()),
+            source_path="/test/doc.pdf",
+            storage_backend="local",
+            file_type=FileType.PDF,
+            file_hash="abc123",
+            title="Some boring title",
+            size_bytes=1000,
+        )
+        mock_db_session.add(doc)
+
+        for cat in flat_categories:
+            mock_db_session.add(cat)
+        await mock_db_session.flush()
+
+        mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.9}]}
+
+        custom_sample = "Machine learning and AI research content"
+
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
+            result = await tagger.tag_document(
+                mock_db_session,
+                doc,
+                flat_categories,
+                sample=custom_sample,
+                auto_apply=True,
+            )
+
+        assert len(result.suggestions) == 1
+        assert result.suggestions[0].category == "Technology"
+
+
+@pytest.mark.asyncio
 class TestTaggerApplyTags:
     """Test the apply_tags database method."""
+
+    async def test_apply_tags_invalid_session_type(
+        self,
+        tagger: Tagger,
+        flat_categories: list[Category],
+    ) -> None:
+        """Test applying tags with invalid session type raises TypeError."""
+        doc = Document(
+            id=str(uuid4()),
+            source_path="/test/doc.pdf",
+            storage_backend="local",
+            file_type=FileType.PDF,
+            file_hash="abc123",
+            title="Test",
+            size_bytes=1000,
+        )
+
+        suggestions = [
+            TagSuggestion(
+                category="Technology",
+                confidence=0.9,
+                category_id=flat_categories[0].id,
+            ),
+        ]
+
+        with pytest.raises(TypeError, match="AsyncSession"):
+            await tagger.apply_tags("not_a_session", doc, suggestions)
 
     async def test_apply_tags_creates_new(
         self,

@@ -134,7 +134,8 @@ class SemanticChunker(Chunker):
         if model is None or not sentences:
             return None
         try:
-            return model.encode(sentences, show_progress_bar=False)
+            result: Any = model.encode(sentences, show_progress_bar=False)
+            return result if isinstance(result, np.ndarray) else None
         except Exception:
             return None
 

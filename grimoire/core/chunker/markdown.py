@@ -6,7 +6,7 @@ This preserves the semantic organization of markdown documents.
 """
 
 import re
-from typing import List, Optional, Tuple, Pattern
+from typing import List, Optional, Pattern, Tuple
 
 from pydantic import Field
 
@@ -93,7 +93,10 @@ class MarkdownHeaderTextSplitter(Chunker):
             Compiled regex pattern for headers.
         """
         # Build pattern from headers_to_split_on
-        escaped = [re.escape(h) for h in sorted(self.config.headers_to_split_on, key=len, reverse=True)]
+        escaped = [
+            re.escape(h)
+            for h in sorted(self.config.headers_to_split_on, key=len, reverse=True)
+        ]
         pattern = r"^(" + "|".join(escaped) + r")\s+(.+)$"
         return re.compile(pattern, re.MULTILINE)
 
@@ -108,9 +111,7 @@ class MarkdownHeaderTextSplitter(Chunker):
         """
         return len(header_marker)
 
-    def _build_header_context(
-        self, header_stack: List[Tuple[int, str]]
-    ) -> str:
+    def _build_header_context(self, header_stack: List[Tuple[int, str]]) -> str:
         """Build full header path from header stack.
 
         Args:
@@ -294,9 +295,7 @@ class MarkdownHeaderTextSplitter(Chunker):
 
         return final_chunks
 
-    def _split_large_chunk(
-        self, chunk: Chunk, current_index: int
-    ) -> List[Chunk]:
+    def _split_large_chunk(self, chunk: Chunk, current_index: int) -> List[Chunk]:
         """Split a chunk that's too large while preserving header context.
 
         Args:
@@ -319,7 +318,6 @@ class MarkdownHeaderTextSplitter(Chunker):
         # Estimate characters per token (roughly 4 for English)
         chars_per_token = 4
         target_chars = self.config.chunk_size * chars_per_token
-        overlap_chars = self.config.chunk_overlap * chars_per_token
 
         # Split by paragraphs first
         paragraphs = content.split("\n\n")
@@ -345,8 +343,16 @@ class MarkdownHeaderTextSplitter(Chunker):
                 chunk_index += 1
 
                 # Keep overlap for continuity
-                overlap_text = "\n\n".join(current_content[-2:]) if len(current_content) >= 2 else current_content[-1] if current_content else ""
-                current_content = [overlap_text, paragraph] if overlap_text else [paragraph]
+                overlap_text = (
+                    "\n\n".join(current_content[-2:])
+                    if len(current_content) >= 2
+                    else current_content[-1]
+                    if current_content
+                    else ""
+                )
+                current_content = (
+                    [overlap_text, paragraph] if overlap_text else [paragraph]
+                )
                 current_chars = len(overlap_text) + para_len
             else:
                 current_content.append(paragraph)

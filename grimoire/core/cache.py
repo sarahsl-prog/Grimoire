@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from loguru import logger
+"""Abstract base class for cache implementations."""
+
+from abc import ABC, abstractmethod
+from typing import Any, Optional
 
 
 class Cache(ABC):
@@ -263,9 +267,7 @@ class RedisCache(Cache):
                 pattern = f"{self.namespace}:*"
                 cursor = 0
                 while True:
-                    cursor, keys = await client.scan(
-                        cursor, match=pattern, count=100
-                    )
+                    cursor, keys = await client.scan(cursor, match=pattern, count=100)
                     if keys:
                         await client.delete(*keys)
                     if cursor == 0:

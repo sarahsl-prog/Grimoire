@@ -40,10 +40,10 @@ class RecursiveChunkConfig(ChunkConfig):
     separators: List[str] = Field(
         default_factory=lambda: [
             "\n\n",  # Paragraphs
-            "\n",     # Lines
-            ". ",      # Sentences
-            " ",       # Words
-            "",        # Characters (last resort)
+            "\n",  # Lines
+            ". ",  # Sentences
+            " ",  # Words
+            "",  # Characters (last resort)
         ],
         description="Separators to try, in order from largest to smallest",
     )
@@ -206,9 +206,7 @@ class RecursiveCharacterTextSplitter(Chunker):
 
         return [c.strip() for c in chunks if c.strip()]
 
-    def _recursive_split(
-        self, text: str, separators: List[str]
-    ) -> List[str]:
+    def _recursive_split(self, text: str, separators: List[str]) -> List[str]:
         """Recursively split text using hierarchical separators.
 
         Args:
@@ -256,9 +254,7 @@ class RecursiveCharacterTextSplitter(Chunker):
                 )
             else:
                 # No more separators - just truncate
-                merged.extend(
-                    self._merge_splits_with_overlap([large], separator="")
-                )
+                merged.extend(self._merge_splits_with_overlap([large], separator=""))
 
         return merged
 

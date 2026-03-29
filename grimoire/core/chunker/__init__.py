@@ -13,7 +13,7 @@ Example:
     ```
 """
 
-from grimoire.core.chunker.base import Chunk, Chunker, ChunkConfig
+from grimoire.core.chunker.base import Chunk, ChunkConfig, Chunker, ChunkingStrategy
 from grimoire.core.chunker.markdown import MarkdownHeaderTextSplitter
 from grimoire.core.chunker.recursive import RecursiveCharacterTextSplitter
 from grimoire.core.chunker.semantic import SemanticChunker
@@ -22,6 +22,7 @@ __all__ = [
     "Chunk",
     "ChunkConfig",
     "Chunker",
+    "ChunkingStrategy",
     "MarkdownHeaderTextSplitter",
     "RecursiveCharacterTextSplitter",
     "SemanticChunker",
