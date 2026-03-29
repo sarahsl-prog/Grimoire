@@ -13,7 +13,7 @@ import hashlib
 import tempfile
 from pathlib import Path
 from typing import Any, Generator, List, Optional
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
@@ -31,27 +31,27 @@ from grimoire.core.embedder import (
 
 
 @pytest.fixture
-def temp_cache_dir():
+def temp_cache_dir() -> Generator[Path, None, None]:
     """Provide a temporary directory for cache testing."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         yield Path(tmp_dir)
 
 
 @pytest.fixture
-def disk_cache(temp_cache_dir):
+def disk_cache(temp_cache_dir: Path) -> DiskCache:
     """Provide a DiskCache instance for testing."""
     return DiskCache(path=temp_cache_dir)
 
 
 @pytest.fixture
-def mock_sentence_transformer():
+def mock_sentence_transformer() -> Generator[Mock, None, None]:
     """Provide a mock SentenceTransformer for testing."""
     with patch("sentence_transformers.SentenceTransformer") as mock:
         model = Mock()
         model.get_sentence_embedding_dimension.return_value = 768
 
         # Mock encode to return numpy arrays
-        def mock_encode(texts, **kwargs):
+        def mock_encode(texts: Any, **kwargs: Any) -> np.ndarray:
             if isinstance(texts, str):
                 # Single text
                 return np.random.rand(768).astype(np.float32)
@@ -65,7 +65,7 @@ def mock_sentence_transformer():
 
 
 @pytest.fixture
-def embedder_config():
+def embedder_config() -> EmbeddingConfig:
     """Provide a default embedding configuration."""
     return EmbeddingConfig(
         model="sentence-transformers/all-MiniLM-L6-v2",
@@ -111,19 +111,6 @@ class MockCache(Cache):
 
 
 @pytest.fixture
-def temp_cache_dir() -> Generator[Path, None, None]:
-    """Provide a temporary directory for cache testing."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        yield Path(tmp_dir)
-
-
-@pytest.fixture
-def disk_cache(temp_cache_dir: Path) -> DiskCache:
-    """Provide a DiskCache instance for testing."""
-    return DiskCache(path=temp_cache_dir)
-
-
-@pytest.fixture
 def mock_cache() -> MockCache:
     """Provide a mock cache for testing."""
     return MockCache()
@@ -138,7 +125,9 @@ class TestEmbedderHappyPath:
     """Standard use cases - basic functionality works."""
 
     @pytest.mark.asyncio
-    async def test_embed_single_text(self, mock_sentence_transformer, mock_cache):
+    async def test_embed_single_text(
+        self, mock_sentence_transformer: Mock, mock_cache: MockCache
+    ) -> None:
         """Embed a single text string."""
         config = EmbeddingConfig(model="test-model", device="cpu")
         embedder = Embedder(config=config, cache=mock_cache)
@@ -148,10 +137,12 @@ class TestEmbedderHappyPath:
         assert isinstance(result, list)
         assert len(result) == 768
         assert all(isinstance(x, float) for x in result)
-        mock_cache.set_calls == 1  # Cached after generation
+        assert mock_cache.set_calls >= 1  # Cached after generation
 
     @pytest.mark.asyncio
-    async def test_embed_multiple_texts(self, mock_sentence_transformer, mock_cache):
+    async def test_embed_multiple_texts(
+        self, mock_sentence_transformer: Mock, mock_cache: MockCache
+    ) -> None:
         """Embed multiple texts in batch."""
         config = EmbeddingConfig(model="test-model", device="cpu", batch_size=4)
         embedder = Embedder(config=config, cache=mock_cache)
@@ -164,7 +155,9 @@ class TestEmbedderHappyPath:
             assert len(result) == 768
 
     @pytest.mark.asyncio
-    async def test_embed_returns_list_of_lists(self, mock_sentence_transformer, mock_cache):
+    async def test_embed_returns_list_of_lists(
+        self, mock_sentence_transformer: Mock, mock_cache: MockCache
+    ) -> None:
         """Verify embed() returns List[List[float]]."""
         embedder = Embedder(cache=mock_cache)
 
@@ -176,7 +169,9 @@ class TestEmbedderHappyPath:
             assert all(isinstance(x, (int, float)) for x in emb)
 
     @pytest.mark.asyncio
-    async def test_embedding_dim_property(self, mock_sentence_transformer):
+    async def test_embedding_dim_property(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Verify embedding_dim property returns correct value."""
         embedder = Embedder()
 
@@ -186,7 +181,9 @@ class TestEmbedderHappyPath:
         assert embedder._embedding_dim == 768
 
     @pytest.mark.asyncio
-    async def test_similarity_computation(self, mock_sentence_transformer):
+    async def test_similarity_computation(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Compute similarity between two embeddings."""
         embedder = Embedder()
 
@@ -210,7 +207,9 @@ class TestEmbedderEdgeCases:
     """Boundary conditions and unusual inputs."""
 
     @pytest.mark.asyncio
-    async def test_single_text_list(self, mock_sentence_transformer, mock_cache):
+    async def test_single_text_list(
+        self, mock_sentence_transformer: Mock, mock_cache: MockCache
+    ) -> None:
         """Embed a list with single element."""
         embedder = Embedder(cache=mock_cache)
 
@@ -220,7 +219,9 @@ class TestEmbedderEdgeCases:
         assert len(results[0]) == 768
 
     @pytest.mark.asyncio
-    async def test_empty_text_raises_error(self, mock_sentence_transformer):
+    async def test_empty_text_raises_error(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Empty text should raise ValueError."""
         embedder = Embedder()
 
@@ -228,11 +229,12 @@ class TestEmbedderEdgeCases:
             await embedder.embed_single("")
 
     @pytest.mark.asyncio
-    async def test_whitespace_text_raises_error(
+    async def test_whitespace_only_text_raises_error(
         self, mock_sentence_transformer: Mock
     ) -> None:
-        """Whitespace text raises error."""
+        """Whitespace-only text should raise ValueError."""
         embedder = Embedder()
+
         with pytest.raises(ValueError, match="non-empty string"):
             await embedder.embed_single("   ")
 
@@ -240,13 +242,16 @@ class TestEmbedderEdgeCases:
     async def test_empty_list_raises_error(
         self, mock_sentence_transformer: Mock
     ) -> None:
-        """Empty list raises error."""
+        """Empty list should raise ValueError."""
         embedder = Embedder()
+
         with pytest.raises(ValueError, match="non-empty list"):
             await embedder.embed([])
 
     @pytest.mark.asyncio
-    async def test_unicode_and_special_chars(self, mock_sentence_transformer, mock_cache):
+    async def test_unicode_and_special_chars(
+        self, mock_sentence_transformer: Mock, mock_cache: MockCache
+    ) -> None:
         """Handle Unicode and special characters."""
         embedder = Embedder(cache=mock_cache)
 
@@ -264,7 +269,9 @@ class TestEmbedderEdgeCases:
             assert len(result) == 768
 
     @pytest.mark.asyncio
-    async def test_very_long_text(self, mock_sentence_transformer, mock_cache):
+    async def test_very_long_text(
+        self, mock_sentence_transformer: Mock, mock_cache: MockCache
+    ) -> None:
         """Handle very long input text."""
         embedder = Embedder(cache=mock_cache)
 
@@ -283,7 +290,9 @@ class TestEmbedderInputValidation:
     """Invalid inputs are rejected gracefully."""
 
     @pytest.mark.asyncio
-    async def test_none_text_raises_error(self, mock_sentence_transformer):
+    async def test_none_text_raises_error(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """None as text should raise ValueError."""
         embedder = Embedder()
 
@@ -291,7 +300,9 @@ class TestEmbedderInputValidation:
             await embedder.embed_single(None)  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
-    async def test_non_string_single_raises_error(self, mock_sentence_transformer):
+    async def test_non_string_single_raises_error(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Non-string input to embed_single should raise ValueError."""
         embedder = Embedder()
 
@@ -299,7 +310,9 @@ class TestEmbedderInputValidation:
             await embedder.embed_single(123)  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
-    async def test_list_with_empty_strings_raises_error(self, mock_sentence_transformer):
+    async def test_list_with_empty_strings_raises_error(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """List containing empty strings should raise ValueError."""
         embedder = Embedder()
 
@@ -307,7 +320,9 @@ class TestEmbedderInputValidation:
             await embedder.embed(["Valid text", ""])
 
     @pytest.mark.asyncio
-    async def test_list_with_whitespace_strings_raises_error(self, mock_sentence_transformer):
+    async def test_list_with_whitespace_strings_raises_error(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """List containing whitespace-only strings should raise ValueError."""
         embedder = Embedder()
 
@@ -315,7 +330,9 @@ class TestEmbedderInputValidation:
             await embedder.embed(["Valid text", "   ", "Another valid"])
 
     @pytest.mark.asyncio
-    async def test_list_with_non_strings_raises_error(self, mock_sentence_transformer):
+    async def test_list_with_non_strings_raises_error(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """List containing non-strings should raise ValueError."""
         embedder = Embedder()
 
@@ -332,19 +349,22 @@ class TestEmbedderErrorHandling:
     """Errors are caught and handled appropriately."""
 
     @pytest.mark.asyncio
-    async def test_missing_sentence_transformers_raises_error(self):
+    async def test_missing_sentence_transformers_raises_error(self) -> None:
         """Missing sentence-transformers should raise RuntimeError on use."""
         # Mock the import to fail within the embedder module
         with patch.object(
-            Embedder, "_load_model",
-            side_effect=RuntimeError("Model loading failed: sentence_transformers not installed")
+            Embedder,
+            "_load_model",
+            side_effect=RuntimeError(
+                "Model loading failed: sentence_transformers not installed"
+            ),
         ):
             embedder = Embedder()
             with pytest.raises(RuntimeError, match="Model loading failed"):
                 await embedder.embed_single("test")
 
     @pytest.mark.asyncio
-    async def test_model_loading_failure_raises_runtime_error(self):
+    async def test_model_loading_failure_raises_runtime_error(self) -> None:
         """Model loading failure should raise RuntimeError."""
         with patch("sentence_transformers.SentenceTransformer") as mock:
             mock.side_effect = Exception("Model download failed")
@@ -355,7 +375,7 @@ class TestEmbedderErrorHandling:
                 await embedder.embed_single("test")
 
     @pytest.mark.asyncio
-    async def test_embedding_dim_mismatch_raises_error(self):
+    async def test_embedding_dim_mismatch_raises_error(self) -> None:
         """Similarity with mismatched dimensions should raise ValueError."""
         embedder = Embedder()
 
@@ -372,7 +392,9 @@ class TestEmbedderCaching:
     """Cache hit/miss behavior and edge cases."""
 
     @pytest.mark.asyncio
-    async def test_cache_hit_returns_cached_value(self, mock_sentence_transformer):
+    async def test_cache_hit_returns_cached_value(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Cache hit returns cached embedding without recomputing."""
         cache = MockCache()
         embedder = Embedder(cache=cache)
@@ -390,7 +412,9 @@ class TestEmbedderCaching:
         assert cache.get_calls >= 1
 
     @pytest.mark.asyncio
-    async def test_cache_miss_computes_and_stores(self, mock_sentence_transformer, mock_cache):
+    async def test_cache_miss_computes_and_stores(
+        self, mock_sentence_transformer: Mock, mock_cache: MockCache
+    ) -> None:
         """Cache miss computes embedding and stores in cache."""
         embedder = Embedder(cache=mock_cache)
 
@@ -400,7 +424,9 @@ class TestEmbedderCaching:
         assert mock_cache.set_calls >= 1
 
     @pytest.mark.asyncio
-    async def test_batch_partial_cache_hit(self, mock_sentence_transformer):
+    async def test_batch_partial_cache_hit(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Batch with some cached, some new."""
         cache = MockCache()
         embedder = Embedder(cache=cache)
@@ -417,7 +443,9 @@ class TestEmbedderCaching:
         assert results[0] == cached_emb
 
     @pytest.mark.asyncio
-    async def test_cache_ttl_respected(self, mock_sentence_transformer, temp_cache_dir):
+    async def test_cache_ttl_respected(
+        self, mock_sentence_transformer: Mock, temp_cache_dir: Path
+    ) -> None:
         """Cache TTL configuration is respected."""
         cache = DiskCache(path=temp_cache_dir)
         config = EmbeddingConfig(cache_ttl=7200)
@@ -434,14 +462,14 @@ class TestEmbedderCaching:
 class TestEmbedderDeviceDetection:
     """GPU auto-detection and fallback behavior."""
 
-    def test_auto_device_detection(self):
+    def test_auto_device_detection(self) -> None:
         """Auto device detection returns appropriate device."""
         embedder = Embedder()
         device = embedder._get_device()
 
         assert device in ["cuda", "mps", "cpu"]
 
-    def test_explicit_cpu_device(self):
+    def test_explicit_cpu_device(self) -> None:
         """Explicit CPU device selection works."""
         config = EmbeddingConfig(device="cpu")
         embedder = Embedder(config=config)
@@ -453,7 +481,7 @@ class TestEmbedderDeviceDetection:
         not __import__("torch").cuda.is_available(),
         reason="CUDA not available",
     )
-    def test_explicit_cuda_device(self):
+    def test_explicit_cuda_device(self) -> None:
         """Explicit CUDA device selection works when available."""
         config = EmbeddingConfig(device="cuda")
         embedder = Embedder(config=config)
@@ -461,7 +489,7 @@ class TestEmbedderDeviceDetection:
         device = embedder._get_device()
         assert device == "cuda"
 
-    def test_unavailable_cuda_falls_back_to_cpu(self):
+    def test_unavailable_cuda_falls_back_to_cpu(self) -> None:
         """CUDA request falls back to CPU when unavailable."""
         config = EmbeddingConfig(device="cuda")
         embedder = Embedder(config=config)
@@ -480,7 +508,9 @@ class TestEmbedderBatchProcessing:
     """Batch processing with different sizes and configurations."""
 
     @pytest.mark.asyncio
-    async def test_large_batch_processes_correctly(self, mock_sentence_transformer):
+    async def test_large_batch_processes_correctly(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Large batches are processed in chunks."""
         config = EmbeddingConfig(batch_size=4, device="cpu")
         embedder = Embedder(config=config)
@@ -494,7 +524,9 @@ class TestEmbedderBatchProcessing:
             assert len(result) == 768
 
     @pytest.mark.asyncio
-    async def test_exact_batch_size(self, mock_sentence_transformer):
+    async def test_exact_batch_size(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Batch exactly matching batch_size."""
         config = EmbeddingConfig(batch_size=5, device="cpu")
         embedder = Embedder(config=config)
@@ -505,7 +537,9 @@ class TestEmbedderBatchProcessing:
         assert len(results) == 5
 
     @pytest.mark.asyncio
-    async def test_batch_size_one(self, mock_sentence_transformer):
+    async def test_batch_size_one(
+        self, mock_sentence_transformer: Mock
+    ) -> None:
         """Batch size of 1 processes correctly."""
         config = EmbeddingConfig(batch_size=1, device="cpu")
         embedder = Embedder(config=config)
@@ -524,7 +558,7 @@ class TestEmbedderBatchProcessing:
 class TestEmbedderStateManagement:
     """State management and lifecycle."""
 
-    def test_embedder_initialization_defaults(self):
+    def test_embedder_initialization_defaults(self) -> None:
         """Embedder initializes with sensible defaults."""
         embedder = Embedder()
 
@@ -533,7 +567,7 @@ class TestEmbedderStateManagement:
         assert embedder.config.batch_size == 32
         assert embedder._model is None  # Lazy loading
 
-    def test_embedder_with_custom_config(self):
+    def test_embedder_with_custom_config(self) -> None:
         """Embedder accepts custom configuration."""
         config = EmbeddingConfig(
             model="custom-model",
@@ -545,7 +579,7 @@ class TestEmbedderStateManagement:
         assert embedder.config.model == "custom-model"
         assert embedder.config.batch_size == 64
 
-    def test_set_cache_updates_instance(self):
+    def test_set_cache_updates_instance(self) -> None:
         """set_cache updates the cache instance."""
         cache1 = MockCache()
         cache2 = MockCache()
@@ -565,7 +599,7 @@ class TestEmbedderStateManagement:
 class TestEmbedderFactory:
     """Factory methods for creating embedders."""
 
-    def test_factory_create_default(self):
+    def test_factory_create_default(self) -> None:
         """Factory creates embedder with defaults."""
         with patch("sentence_transformers.SentenceTransformer"):
             embedder = EmbedderFactory.create()
@@ -573,35 +607,35 @@ class TestEmbedderFactory:
             assert isinstance(embedder, Embedder)
             assert embedder.config.model == EmbedderFactory.MODELS["general"]
 
-    def test_factory_create_preset(self):
+    def test_factory_create_preset(self) -> None:
         """Factory creates embedder with preset model."""
         with patch("sentence_transformers.SentenceTransformer"):
             embedder = EmbedderFactory.create(model="fast")
 
             assert embedder.config.model == EmbedderFactory.MODELS["fast"]
 
-    def test_factory_create_custom_model(self):
+    def test_factory_create_custom_model(self) -> None:
         """Factory creates embedder with custom model name."""
         with patch("sentence_transformers.SentenceTransformer"):
             embedder = EmbedderFactory.create(model="custom/model-name")
 
             assert embedder.config.model == "custom/model-name"
 
-    def test_factory_create_technical(self):
+    def test_factory_create_technical(self) -> None:
         """Factory creates technical content embedder."""
         with patch("sentence_transformers.SentenceTransformer"):
             embedder = EmbedderFactory.create_technical()
 
             assert embedder.config.model == EmbedderFactory.MODELS["technical"]
 
-    def test_factory_create_fast(self):
+    def test_factory_create_fast(self) -> None:
         """Factory creates fast embedder."""
         with patch("sentence_transformers.SentenceTransformer"):
             embedder = EmbedderFactory.create_fast()
 
             assert embedder.config.model == EmbedderFactory.MODELS["fast"]
 
-    def test_factory_with_cache_path(self, temp_cache_dir):
+    def test_factory_with_cache_path(self, temp_cache_dir: Path) -> None:
         """Factory creates embedder with disk cache path."""
         with patch("sentence_transformers.SentenceTransformer"):
             embedder = EmbedderFactory.create(cache_path=temp_cache_dir)
@@ -618,7 +652,7 @@ class TestEmbedderFactory:
 class TestEmbedderSimilarity:
     """Cosine similarity computation."""
 
-    def test_identical_embeddings_have_similarity_one(self):
+    def test_identical_embeddings_have_similarity_one(self) -> None:
         """Identical embeddings have similarity of 1.0."""
         embedder = Embedder()
 
@@ -627,7 +661,7 @@ class TestEmbedderSimilarity:
 
         assert pytest.approx(similarity) == 1.0
 
-    def test_orthogonal_embeddings_can_be_computed(self):
+    def test_orthogonal_embeddings_can_be_computed(self) -> None:
         """Similarity between distinct embeddings is valid."""
         embedder = Embedder()
 
@@ -639,7 +673,7 @@ class TestEmbedderSimilarity:
         # Orthogonal vectors should have similarity 0
         assert pytest.approx(similarity, abs=1e-10) == 0.0
 
-    def test_zero_embedding_returns_zero_similarity(self):
+    def test_zero_embedding_returns_zero_similarity(self) -> None:
         """Zero vectors return zero similarity."""
         embedder = Embedder()
 
@@ -660,7 +694,7 @@ class TestDiskCache:
     """DiskCache implementation specific tests."""
 
     @pytest.mark.asyncio
-    async def test_disk_cache_set_get(self, temp_cache_dir):
+    async def test_disk_cache_set_get(self, temp_cache_dir: Path) -> None:
         """Basic set and get operations."""
         cache = DiskCache(path=temp_cache_dir)
 
@@ -670,7 +704,7 @@ class TestDiskCache:
         assert result == "value1"
 
     @pytest.mark.asyncio
-    async def test_disk_cache_ttl_expires(self, temp_cache_dir):
+    async def test_disk_cache_ttl_expires(self, temp_cache_dir: Path) -> None:
         """Values with TTL expire."""
         import asyncio
 
@@ -683,7 +717,7 @@ class TestDiskCache:
         assert await cache.get("key") is None
 
     @pytest.mark.asyncio
-    async def test_disk_cache_delete(self, temp_cache_dir):
+    async def test_disk_cache_delete(self, temp_cache_dir: Path) -> None:
         """Delete removes value."""
         cache = DiskCache(path=temp_cache_dir)
 
@@ -693,7 +727,7 @@ class TestDiskCache:
         assert await cache.get("key") is None
 
     @pytest.mark.asyncio
-    async def test_disk_cache_clear(self, temp_cache_dir):
+    async def test_disk_cache_clear(self, temp_cache_dir: Path) -> None:
         """Clear removes all values."""
         cache = DiskCache(path=temp_cache_dir)
 
@@ -705,7 +739,7 @@ class TestDiskCache:
         assert await cache.get("key2") is None
 
     @pytest.mark.asyncio
-    async def test_disk_cache_json_serialization(self, temp_cache_dir):
+    async def test_disk_cache_json_serialization(self, temp_cache_dir: Path) -> None:
         """Complex values are JSON serialized."""
         cache = DiskCache(path=temp_cache_dir)
 
@@ -726,23 +760,25 @@ class TestEmbedderIntegration:
     """Integration tests with real sentence-transformers (slow)."""
 
     @pytest.mark.asyncio
-    async def test_real_embedding_generation(self):
+    async def test_real_embedding_generation(self) -> None:
         """Test with actual sentence-transformers model."""
         pytest.importorskip("sentence_transformers")
 
         config = EmbeddingConfig(model="sentence-transformers/all-MiniLM-L6-v2")
         embedder = Embedder(config=config)
 
-        results = await embedder.embed([
-            "Hello world",
-            "Machine learning is fascinating",
-        ])
+        results = await embedder.embed(
+            [
+                "Hello world",
+                "Machine learning is fascinating",
+            ]
+        )
 
         assert len(results) == 2
         assert len(results[0]) == 384  # MiniLM-L6 has 384 dimensions
 
     @pytest.mark.asyncio
-    async def test_real_caching_behavior(self, temp_cache_dir):
+    async def test_real_caching_behavior(self, temp_cache_dir: Path) -> None:
         """Test actual caching with real models."""
         pytest.importorskip("sentence_transformers")
 

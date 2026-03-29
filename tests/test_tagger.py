@@ -628,6 +628,16 @@ class TestTaggerTagDocument:
         )
         mock_db_session.add(doc)
 
+        # Create chunks for the document
+        chunk = Chunk(
+            id=str(uuid4()),
+            document_id=doc.id,
+            chunk_index=0,
+            content="Machine learning and AI research document content.",
+            token_count=100,
+        )
+        mock_db_session.add(chunk)
+
         for cat in flat_categories:
             mock_db_session.add(cat)
         await mock_db_session.flush()
@@ -642,6 +652,9 @@ class TestTaggerTagDocument:
             )
 
         assert len(result.suggestions) == 1
+        assert len(result.applied_tags) == 1
+
+    async def test_tag_document_with_title(
 
     async def test_tag_document_no_auto_apply(
         self,
@@ -649,6 +662,7 @@ class TestTaggerTagDocument:
         mock_db_session: AsyncSession,
         flat_categories: list[Category],
     ) -> None:
+        """Test tagging when no chunks but has title."""
         """Test tagging without auto-applying results."""
         doc = Document(
             id=str(uuid4()),
@@ -656,6 +670,7 @@ class TestTaggerTagDocument:
             storage_backend="local",
             file_type=FileType.PDF,
             file_hash="abc123",
+            title="Technology Research Paper",
             title="Test",
             size_bytes=1000,
         )
@@ -685,6 +700,7 @@ class TestTaggerTagDocument:
         mock_db_session: AsyncSession,
         flat_categories: list[Category],
     ) -> None:
+        """Test tagging without auto-applying results."""
         """Test tagging with custom sample provided."""
         doc = Document(
             id=str(uuid4()),
@@ -692,6 +708,7 @@ class TestTaggerTagDocument:
             storage_backend="local",
             file_type=FileType.PDF,
             file_hash="abc123",
+            title="Test",
             title="Some boring title",
             size_bytes=1000,
         )

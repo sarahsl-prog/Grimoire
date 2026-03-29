@@ -723,6 +723,8 @@ class Tagger:
         Returns:
             TaggingResult with suggestions and applied tags
         """
+        from grimoire.db.models import Chunk
+
         # Build sample if not provided
         if sample is None:
             if document.chunks:
