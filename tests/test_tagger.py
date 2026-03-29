@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from typing import TYPE_CHECKING, Any
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import httpx
@@ -37,8 +37,7 @@ from grimoire.db.base import Base
 from grimoire.db.models import Category, Document, DocumentTag, FileType, TaggedBy
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
+    from collections.abc import AsyncGenerator, Generator
 
 # =============================================================================
 # Fixtures
@@ -144,7 +143,7 @@ def sample_document_text() -> str:
     systems to learn and improve from experience without being explicitly
     programmed. It focuses on developing computer programs that can access
     data and use it to learn for themselves.
-
+    
     Deep learning is a specialized form of machine learning inspired by the
     structure and function of the human brain. Neural networks are the
     foundation of deep learning algorithms.
@@ -262,6 +261,7 @@ class TestCategoryContext:
         ctx = CategoryContext(path="Research", category=mock_categories[0])
         line = ctx.to_prompt_line()
         assert "Research" in line
+        # Format is "  - Research" when no description
         assert line.strip() == "- Research"
 
 
@@ -330,7 +330,9 @@ class TestTaggerCategoryFormatting:
         for ctx in contexts:
             assert "/" not in ctx.path  # No hierarchy
 
-    def test_format_sorted(self, tagger: Tagger, flat_categories: list[Category]) -> None:
+    def test_format_sorted(
+        self, tagger: Tagger, flat_categories: list[Category]
+    ) -> None:
         """Test categories are sorted by path."""
         contexts = tagger._format_categories(flat_categories)
         paths = [ctx.path for ctx in contexts]
@@ -380,7 +382,10 @@ class TestTaggerResponseParsing:
     def test_parse_list_response(self, tagger: Tagger) -> None:
         """Test parsing list response."""
         response = json.dumps(
-            [{"category": "AI", "confidence": 0.9}, {"category": "ML", "confidence": 0.8}]
+            [
+                {"category": "AI", "confidence": 0.9},
+                {"category": "ML", "confidence": 0.8},
+            ]
         )
         suggestions = tagger._parse_llm_response(response)
         assert len(suggestions) == 2
@@ -393,7 +398,7 @@ class TestTaggerResponseParsing:
 
     def test_parse_llm_response_with_json_pattern(self, tagger: Tagger) -> None:
         """Test parsing response with embedded JSON pattern."""
-        response = "Some text before {\"suggestions\": []} some text after"
+        response = 'Some text before {"suggestions": []} some text after'
         suggestions = tagger._parse_llm_response(response)
         assert suggestions == []
 
@@ -413,15 +418,11 @@ class TestTaggerResponseParsing:
 
     def test_confidence_clamping(self, tagger: Tagger) -> None:
         """Test confidence values are clamped to 0-1."""
-        response = json.dumps(
-            {"suggestions": [{"category": "AI", "confidence": 1.5}]}
-        )
+        response = json.dumps({"suggestions": [{"category": "AI", "confidence": 1.5}]})
         suggestions = tagger._parse_llm_response(response)
         assert suggestions[0].confidence == 1.0
 
-        response = json.dumps(
-            {"suggestions": [{"category": "AI", "confidence": -0.5}]}
-        )
+        response = json.dumps({"suggestions": [{"category": "AI", "confidence": -0.5}]})
         suggestions = tagger._parse_llm_response(response)
         assert suggestions[0].confidence == 0.0
 
@@ -429,7 +430,9 @@ class TestTaggerResponseParsing:
 class TestTaggerCategoryMatching:
     """Test suggestion to category matching."""
 
-    def test_exact_path_match(self, tagger: Tagger, mock_categories: list[Category]) -> None:
+    def test_exact_path_match(
+        self, tagger: Tagger, mock_categories: list[Category]
+    ) -> None:
         """Test matching by exact path."""
         contexts = tagger._format_categories(mock_categories)
         suggestion = TagSuggestion(category="Research/AI", confidence=0.9)
@@ -438,7 +441,9 @@ class TestTaggerCategoryMatching:
         assert len(matched) == 1
         assert matched[0].category_id == mock_categories[1].id
 
-    def test_name_fallback_match(self, tagger: Tagger, flat_categories: list[Category]) -> None:
+    def test_name_fallback_match(
+        self, tagger: Tagger, flat_categories: list[Category]
+    ) -> None:
         """Test matching by name when path fails."""
         contexts = tagger._format_categories(flat_categories)
         suggestion = TagSuggestion(category="Technology", confidence=0.9)
@@ -447,7 +452,9 @@ class TestTaggerCategoryMatching:
         assert len(matched) == 1
         assert matched[0].category_id == flat_categories[0].id
 
-    def test_partial_path_match(self, tagger: Tagger, mock_categories: list[Category]) -> None:
+    def test_partial_path_match(
+        self, tagger: Tagger, mock_categories: list[Category]
+    ) -> None:
         """Test matching when LLM returns partial path."""
         contexts = tagger._format_categories(mock_categories)
         suggestion = TagSuggestion(category="AI/Machine Learning", confidence=0.9)
@@ -483,7 +490,9 @@ class TestTaggerSuggestTags:
             ]
         }
 
-        with patch.object(tagger, "_call_ollama", return_value=json.dumps(mock_response)):
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
             result = await tagger.suggest_tags(
                 document_sample=sample_document_text,
                 categories=flat_categories,
@@ -508,7 +517,9 @@ class TestTaggerSuggestTags:
             ]
         }
 
-        with patch.object(tagger, "_call_ollama", return_value=json.dumps(mock_response)):
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
             # With threshold 0.5, only Technology passes
             result = await tagger.suggest_tags(
                 document_sample=sample_document_text,
@@ -564,11 +575,13 @@ class TestTaggerSuggestTags:
     ) -> None:
         """Test HTTP error handling."""
         with patch.object(
-            tagger, "_call_ollama", side_effect=httpx.HTTPStatusError(
+            tagger,
+            "_call_ollama",
+            side_effect=httpx.HTTPStatusError(
                 "500 Server Error",
                 request=MagicMock(),
                 response=MagicMock(status_code=500),
-            )
+            ),
         ):
             with pytest.raises(httpx.HTTPStatusError):
                 await tagger.suggest_tags(
@@ -597,22 +610,20 @@ class TestTaggerSuggestTags:
 class TestTaggerTagDocument:
     """Test the tag_document convenience method."""
 
-    async def test_tag_document_with_chunks(
+    async def test_tag_document_with_title(
         self,
         tagger: Tagger,
         mock_db_session: AsyncSession,
         flat_categories: list[Category],
     ) -> None:
-        """Test full document tagging with chunks."""
-        from grimoire.db.models import Chunk
-
+        """Test tagging using document title."""
         doc = Document(
             id=str(uuid4()),
             source_path="/test/doc.pdf",
             storage_backend="local",
             file_type=FileType.PDF,
             file_hash="abc123",
-            title="Test Document",
+            title="Technology Research Paper",
             size_bytes=1000,
         )
         mock_db_session.add(doc)
@@ -631,9 +642,7 @@ class TestTaggerTagDocument:
             mock_db_session.add(cat)
         await mock_db_session.flush()
 
-        mock_response = {
-            "suggestions": [{"category": "Technology", "confidence": 0.9}]
-        }
+        mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.8}]}
 
         with patch.object(
             tagger, "_call_ollama", return_value=json.dumps(mock_response)
@@ -646,39 +655,6 @@ class TestTaggerTagDocument:
         assert len(result.applied_tags) == 1
 
     async def test_tag_document_with_title(
-        self,
-        tagger: Tagger,
-        mock_db_session: AsyncSession,
-        flat_categories: list[Category],
-    ) -> None:
-        """Test tagging when no chunks but has title."""
-        doc = Document(
-            id=str(uuid4()),
-            source_path="/test/doc.pdf",
-            storage_backend="local",
-            file_type=FileType.PDF,
-            file_hash="abc123",
-            title="Technology Research Paper",
-            size_bytes=1000,
-        )
-        mock_db_session.add(doc)
-
-        for cat in flat_categories:
-            mock_db_session.add(cat)
-        await mock_db_session.flush()
-
-        mock_response = {
-            "suggestions": [{"category": "Technology", "confidence": 0.8}]
-        }
-
-        with patch.object(
-            tagger, "_call_ollama", return_value=json.dumps(mock_response)
-        ):
-            result = await tagger.tag_document(
-                mock_db_session, doc, flat_categories, auto_apply=True
-            )
-
-        assert len(result.suggestions) == 1
 
     async def test_tag_document_no_auto_apply(
         self,
@@ -686,6 +662,7 @@ class TestTaggerTagDocument:
         mock_db_session: AsyncSession,
         flat_categories: list[Category],
     ) -> None:
+        """Test tagging when no chunks but has title."""
         """Test tagging without auto-applying results."""
         doc = Document(
             id=str(uuid4()),
@@ -693,6 +670,7 @@ class TestTaggerTagDocument:
             storage_backend="local",
             file_type=FileType.PDF,
             file_hash="abc123",
+            title="Technology Research Paper",
             title="Test",
             size_bytes=1000,
         )
@@ -702,9 +680,8 @@ class TestTaggerTagDocument:
             mock_db_session.add(cat)
         await mock_db_session.flush()
 
-        mock_response = {
-            "suggestions": [{"category": "Technology", "confidence": 0.9}]
-        }
+        # Use low confidence so it won't be in applied_tags
+        mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.5}]}
 
         with patch.object(
             tagger, "_call_ollama", return_value=json.dumps(mock_response)
@@ -713,9 +690,51 @@ class TestTaggerTagDocument:
                 mock_db_session, doc, flat_categories, auto_apply=False
             )
 
-        # Tags suggested but not applied
+        # Tags suggested but not applied to DB
         assert len(result.suggestions) == 1
-        assert len(result.applied_tags) == 0  # Not applied
+        assert len(result.applied_tags) == 0  # Doesn't pass threshold
+
+    async def test_tag_document_with_custom_sample(
+        self,
+        tagger: Tagger,
+        mock_db_session: AsyncSession,
+        flat_categories: list[Category],
+    ) -> None:
+        """Test tagging without auto-applying results."""
+        """Test tagging with custom sample provided."""
+        doc = Document(
+            id=str(uuid4()),
+            source_path="/test/doc.pdf",
+            storage_backend="local",
+            file_type=FileType.PDF,
+            file_hash="abc123",
+            title="Test",
+            title="Some boring title",
+            size_bytes=1000,
+        )
+        mock_db_session.add(doc)
+
+        for cat in flat_categories:
+            mock_db_session.add(cat)
+        await mock_db_session.flush()
+
+        mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.9}]}
+
+        custom_sample = "Machine learning and AI research content"
+
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
+            result = await tagger.tag_document(
+                mock_db_session,
+                doc,
+                flat_categories,
+                sample=custom_sample,
+                auto_apply=True,
+            )
+
+        assert len(result.suggestions) == 1
+        assert result.suggestions[0].category == "Technology"
 
 
 @pytest.mark.asyncio
@@ -767,6 +786,7 @@ class TestTaggerApplyTags:
             size_bytes=1000,
         )
         mock_db_session.add(doc)
+        await mock_db_session.flush()
 
         # Add category to DB
         for cat in flat_categories:
@@ -886,7 +906,9 @@ class TestTaggerEndToEnd:
             ]
         }
 
-        with patch.object(tagger, "_call_ollama", return_value=json.dumps(mock_response)):
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
             result = await tagger.suggest_tags(
                 document_sample=sample_document_text,
                 categories=flat_categories,
@@ -915,7 +937,9 @@ class TestTaggerEndToEnd:
             ]
         }
 
-        with patch.object(tagger, "_call_ollama", return_value=json.dumps(mock_response)):
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
             result = await tagger.suggest_tags(
                 document_sample=sample_document_text,
                 categories=mock_categories,
@@ -949,7 +973,9 @@ class TestTaggerEdgeCases:
 
         mock_response = {"suggestions": [{"category": "Category50", "confidence": 0.9}]}
 
-        with patch.object(tagger, "_call_ollama", return_value=json.dumps(mock_response)):
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
             result = await tagger.suggest_tags(
                 document_sample=sample_document_text,
                 categories=categories,
@@ -1019,8 +1045,12 @@ class TestConcurrencyAndAsync:
 
         mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.9}]}
 
-        with patch.object(tagger1, "_call_ollama", return_value=json.dumps(mock_response)):
-            with patch.object(tagger2, "_call_ollama", return_value=json.dumps(mock_response)):
+        with patch.object(
+            tagger1, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
+            with patch.object(
+                tagger2, "_call_ollama", return_value=json.dumps(mock_response)
+            ):
                 results = await asyncio.gather(
                     tagger1.suggest_tags("Sample text 1", flat_categories),
                     tagger2.suggest_tags("Sample text 2", flat_categories),
@@ -1079,7 +1109,9 @@ class TestPerformance:
 
         mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.9}]}
 
-        with patch.object(tagger, "_call_ollama", return_value=json.dumps(mock_response)):
+        with patch.object(
+            tagger, "_call_ollama", return_value=json.dumps(mock_response)
+        ):
             result = await tagger.suggest_tags(
                 document_sample=large_sample,
                 categories=flat_categories,

@@ -54,7 +54,9 @@ class Chunk(BaseModel):
     token_count: int = Field(
         ..., ge=0, description="Approximate token count for context planning"
     )
-    index: int = Field(..., ge=0, description="Position in document sequence (0-based)")
+    index: int = Field(
+        ..., ge=0, description="Position in document sequence (0-based)"
+    )
     prev_chunk_id: Optional[str] = Field(
         default=None, description="ID of previous chunk for continuity"
     )
@@ -113,9 +115,7 @@ class ChunkConfig(BaseModel):
 
     @field_validator("chunk_overlap")
     @classmethod
-    def overlap_less_than_chunk_size(
-        cls, v: int, info: ValidationInfo
-    ) -> int:
+    def overlap_less_than_chunk_size(cls, v: int, info: ValidationInfo) -> int:
         """Validate that overlap is less than chunk size."""
         data = info.data
         if "chunk_size" in data and v >= data["chunk_size"]:
@@ -156,9 +156,7 @@ class Chunker(ABC):
         self.config = config or ChunkConfig()
 
     @abstractmethod
-    async def chunk(
-        self, text: str, doc_id: Optional[str] = None
-    ) -> List[Chunk]:
+    async def chunk(self, text: str, doc_id: Optional[str] = None) -> List[Chunk]:
         """Split text into chunks with continuity tracking.
 
         Args:

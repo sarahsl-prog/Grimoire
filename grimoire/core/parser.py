@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO, Protocol, Union
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,7 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field
 # Docling imports
 try:
     from docling.datamodel.base_models import ConversionStatus
+    from docling.datamodel.document import ConversionResult
     from docling.document_converter import DocumentConverter
+    from docling.datamodel.document import InputDocument
     DOCLEY_AVAILABLE = True
 except ImportError:
     DOCLEY_AVAILABLE = False
@@ -27,7 +30,7 @@ except ImportError:
 
 class DocumentMetadata(BaseModel):
     """Metadata extracted from a document.
-
+    
     Attributes:
         title: Document title (if available)
         author: Document author (if available)
@@ -40,9 +43,8 @@ class DocumentMetadata(BaseModel):
         file_hash: SHA-256 hash of file content
         additional: Additional metadata from the document
     """
-
     model_config = ConfigDict(extra="allow")
-
+    
     title: str | None = Field(default=None, description="Document title")
     author: str | None = Field(default=None, description="Document author")
     pages: int | None = Field(default=None, description="Number of pages")
@@ -57,7 +59,7 @@ class DocumentMetadata(BaseModel):
 
 class ParsedDocument(BaseModel):
     """Result of parsing a document.
-
+    
     Attributes:
         text: Extracted text content
         metadata: Document metadata
@@ -65,9 +67,8 @@ class ParsedDocument(BaseModel):
         status: Parsing status (success, partial, failed)
         error_message: Error message if parsing failed
     """
-
     model_config = ConfigDict(extra="allow")
-
+    
     text: str = Field(default="", description="Extracted text content")
     metadata: DocumentMetadata = Field(default_factory=DocumentMetadata, description="Document metadata")
     images: list[dict[str, Any]] = Field(default_factory=list, description="Extracted images")
@@ -77,7 +78,7 @@ class ParsedDocument(BaseModel):
 
 class ParserConfig(BaseModel):
     """Configuration for the document parser.
-
+    
     Attributes:
         ocr_enabled: Whether to enable OCR for images and scanned documents
         parse_images: Whether to extract images from documents
@@ -86,9 +87,8 @@ class ParserConfig(BaseModel):
         max_file_size: Maximum file size in bytes to process
         timeout: Timeout in seconds for parsing operations
     """
-
     model_config = ConfigDict(extra="allow")
-
+    
     ocr_enabled: bool = Field(default=True, description="Enable OCR for images/scanned documents")
     parse_images: bool = Field(default=False, description="Extract images from documents")
     enable_tables: bool = Field(default=True, description="Extract tables as markdown")
@@ -99,62 +99,62 @@ class ParserConfig(BaseModel):
 
 class DocumentParser:
     """Document parser wrapper around Docling.
-
+    
     This class provides a unified interface for parsing documents of various
     formats including PDF, DOCX, PPTX, XLSX, HTML, and images.
-
+    
     The parser supports OCR (configurable) and can extract images and tables.
     All parsing operations are run asynchronously to avoid blocking.
-
+    
     Example:
         ```python
         config = ParserConfig(ocr_enabled=True, parse_images=False)
         parser = DocumentParser(config)
-
+        
         result = await parser.parse("/path/to/document.pdf")
         print(result.text)
         print(result.metadata.pages)
         ```
     """
-
+    
     # Supported file extensions
     SUPPORTED_EXTENSIONS: set[str] = {
         ".pdf", ".docx", ".doc", ".pptx", ".ppt",
         ".xlsx", ".xls", ".html", ".htm",
         ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".gif", ".bmp", ".webp"
     }
-
+    
     # Image extensions that require OCR
     IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".gif", ".bmp", ".webp"}
-
+    
     def __init__(self, config: ParserConfig | None = None) -> None:
         """Initialize the document parser.
-
+        
         Args:
             config: Parser configuration. Uses defaults if not provided.
         """
         self.config = config or ParserConfig()
         self._converter: DocumentConverter | None = None
-
+        
         if not DOCLEY_AVAILABLE:
             logger.error("Docling is not installed. Parser will not function.")
-
+    
     def _get_converter(self) -> DocumentConverter:
         """Get or create the Docling converter.
-
+        
         Returns:
             DocumentConverter instance
         """
         if self._converter is None:
             self._converter = DocumentConverter()
         return self._converter
-
+    
     def _compute_file_hash(self, file_path: Path) -> str:
         """Compute SHA-256 hash of file contents.
-
+        
         Args:
             file_path: Path to the file
-
+            
         Returns:
             Hex digest of SHA-256 hash
         """
@@ -163,67 +163,67 @@ class DocumentParser:
             for chunk in iter(lambda: f.read(8192), b""):
                 hash_obj.update(chunk)
         return hash_obj.hexdigest()
-
+    
     def _detect_file_type(self, file_path: Path) -> str:
         """Detect file type from extension.
-
+        
         Args:
             file_path: Path to the file
-
+            
         Returns:
             File extension in lowercase
         """
         return file_path.suffix.lower()
-
+    
     def _is_supported(self, file_path: Path) -> bool:
         """Check if file type is supported.
-
+        
         Args:
             file_path: Path to the file
-
+            
         Returns:
             True if supported, False otherwise
         """
         ext = self._detect_file_type(file_path)
         return ext in self.SUPPORTED_EXTENSIONS
-
+    
     def _is_image(self, file_path: Path) -> bool:
         """Check if file is an image.
-
+        
         Args:
             file_path: Path to the file
-
+            
         Returns:
             True if image file, False otherwise
         """
         ext = self._detect_file_type(file_path)
         return ext in self.IMAGE_EXTENSIONS
-
+    
     def _count_words(self, text: str) -> int:
         """Count words in text.
-
+        
         Args:
             text: Text to count words in
-
+            
         Returns:
             Approximate word count
         """
         # Simple word count by splitting on whitespace
         return len(text.split())
-
+    
     def _process_docling_result(
-        self,
-        result: Any,
+        self, 
+        result: Any, 
         file_path: Path,
         file_hash: str
     ) -> ParsedDocument:
         """Process Docling conversion result into ParsedDocument.
-
+        
         Args:
             result: Docling ConversionResult
             file_path: Original file path
             file_hash: SHA-256 hash of file
-
+            
         Returns:
             ParsedDocument with extracted text and metadata
         """
@@ -256,7 +256,7 @@ class DocumentParser:
                         text = text_str
                 else:
                     text = ""
-
+            
             # Extract metadata from Docling result
             metadata = DocumentMetadata(
                 file_type=self._detect_file_type(file_path),
@@ -264,15 +264,15 @@ class DocumentParser:
                 file_hash=file_hash,
                 word_count=self._count_words(text)
             )
-
+            
             # Try to extract additional metadata
             if hasattr(result, 'document') and result.document:
                 doc = result.document
-
+                
                 # Try to get page count
                 if hasattr(doc, 'num_pages'):
                     metadata.pages = doc.num_pages()
-
+                
                 # Try to get other metadata from document properties
                 if hasattr(doc, 'metadata') and doc.metadata:
                     doc_meta = doc.metadata
@@ -284,16 +284,16 @@ class DocumentParser:
                         metadata.created_at = str(doc_meta.creation_date)
                     if hasattr(doc_meta, 'modification_date') and doc_meta.modification_date:
                         metadata.modified_at = str(doc_meta.modification_date)
-
+            
             # Extract images if configured
             images: list[dict[str, Any]] = []
             if self.config.parse_images and hasattr(result, 'document'):
                 images = self._extract_images(result)
-
+            
             # Determine status based on conversion result
             status = "success"
             error_message = None
-
+            
             if hasattr(result, 'status'):
                 if result.status == ConversionStatus.PARTIAL_SUCCESS:
                     status = "partial"
@@ -301,7 +301,7 @@ class DocumentParser:
                 elif result.status == ConversionStatus.FAILURE:
                     status = "failed"
                     error_message = "Document conversion failed"
-
+            
             return ParsedDocument(
                 text=text,
                 metadata=metadata,
@@ -309,7 +309,7 @@ class DocumentParser:
                 status=status,
                 error_message=error_message
             )
-
+            
         except Exception as e:
             logger.error(f"Error processing Docling result for {file_path}: {e}")
             return ParsedDocument(
@@ -321,22 +321,22 @@ class DocumentParser:
                 status="failed",
                 error_message=f"Error processing result: {str(e)}"
             )
-
+    
     def _extract_images(self, result: Any) -> list[dict[str, Any]]:
         """Extract images from Docling result.
-
+        
         Args:
             result: Docling ConversionResult
-
+            
         Returns:
             List of extracted image data
         """
         images: list[dict[str, Any]] = []
-
+        
         try:
             if hasattr(result, 'document') and result.document:
                 doc = result.document
-
+                
                 # Try to get pictures from the document
                 if hasattr(doc, 'pictures'):
                     for i, pic in enumerate(doc.pictures):
@@ -344,45 +344,45 @@ class DocumentParser:
                             "index": i,
                             "type": "image",
                         }
-
+                        
                         # Try to get image data
                         if hasattr(pic, 'image') and pic.image:
                             if hasattr(pic.image, 'to_pil'):
                                 img_data["pil_image"] = pic.image.to_pil()
-
+                        
                         # Try to get caption
                         if hasattr(pic, 'caption') and pic.caption:
                             img_data["caption"] = pic.caption
-
+                        
                         images.append(img_data)
         except Exception as e:
             logger.warning(f"Error extracting images: {e}")
-
+        
         return images
-
+    
     async def parse(
-        self,
+        self, 
         file_path: str | Path,
         custom_config: ParserConfig | None = None
     ) -> ParsedDocument:
         """Parse a document and extract text, metadata, and optionally images.
-
+        
         This method is async and runs the parsing in a thread pool to avoid
         blocking the event loop.
-
+        
         Args:
             file_path: Path to the file to parse
             custom_config: Optional custom configuration for this specific parse.
                           Overrides instance config temporarily.
-
+                          
         Returns:
             ParsedDocument containing extracted text, metadata, and images
-
+            
         Raises:
             FileNotFoundError: If file does not exist
             ValueError: If file type is not supported
             RuntimeError: If Docling is not available
-
+            
         Example:
             ```python
             parser = DocumentParser(ParserConfig(ocr_enabled=True))
@@ -393,7 +393,7 @@ class DocumentParser:
         """
         config = custom_config or self.config
         file_path_obj = Path(file_path)
-
+        
         # Check if Docling is available
         if not DOCLEY_AVAILABLE:
             logger.error("Cannot parse document: Docling is not installed")
@@ -402,7 +402,7 @@ class DocumentParser:
                 error_message="Docling library not available",
                 metadata=DocumentMetadata()
             )
-
+        
         # Check if file exists
         if not file_path_obj.exists():
             logger.error(f"File not found: {file_path_obj}")
@@ -411,7 +411,7 @@ class DocumentParser:
                 error_message=f"File not found: {file_path_obj}",
                 metadata=DocumentMetadata()
             )
-
+        
         # Check if file type is supported
         if not self._is_supported(file_path_obj):
             ext = self._detect_file_type(file_path_obj)
@@ -421,7 +421,7 @@ class DocumentParser:
                 error_message=f"Unsupported file type: {ext}",
                 metadata=DocumentMetadata(file_type=ext)
             )
-
+        
         # Check file size
         file_size = file_path_obj.stat().st_size
         if file_size > config.max_file_size:
@@ -437,14 +437,14 @@ class DocumentParser:
                     file_size=file_size
                 )
             )
-
+        
         # Compute file hash
         try:
             file_hash = self._compute_file_hash(file_path_obj)
         except Exception as e:
             logger.error(f"Failed to compute file hash: {e}")
             file_hash = ""
-
+        
         # Run parsing in thread pool
         try:
             result = await asyncio.wait_for(
@@ -456,20 +456,20 @@ class DocumentParser:
                 ),
                 timeout=config.timeout
             )
-
+            
             # Update file hash in result metadata if not set
-            if result.metadata.file_hash is None or result.metadata.file_hash == "":
+            if result.metadata.file_hash is None:
                 result.metadata.file_hash = file_hash
-
+            
             if result.status == "success":
                 logger.info(f"Successfully parsed {file_path_obj}")
             elif result.status == "partial":
                 logger.warning(f"Partially parsed {file_path_obj}: {result.error_message}")
             else:
                 logger.error(f"Failed to parse {file_path_obj}: {result.error_message}")
-
+            
             return result
-
+            
         except asyncio.TimeoutError:
             logger.error(f"Timeout parsing {file_path_obj} after {config.timeout}s")
             return ParsedDocument(
@@ -492,34 +492,34 @@ class DocumentParser:
                     file_hash=file_hash
                 )
             )
-
+    
     def _parse_sync(
         self,
         file_path: Path,
         config: ParserConfig
     ) -> ParsedDocument:
         """Synchronous parsing method (runs in thread pool).
-
+        
         Args:
             file_path: Path to the file
             config: Parser configuration
-
+            
         Returns:
             ParsedDocument with extracted content
         """
         file_path_str = str(file_path)
         file_hash = self._compute_file_hash(file_path)
-
+        
         try:
             converter = self._get_converter()
-
+            
             # Convert document using Docling
             logger.debug(f"Converting {file_path_str} with Docling")
             result = converter.convert(file_path_str)
-
+            
             # Process the result
             return self._process_docling_result(result, file_path, file_hash)
-
+            
         except Exception as e:
             logger.error(f"Error parsing {file_path_str}: {e}")
             return ParsedDocument(
@@ -531,21 +531,21 @@ class DocumentParser:
                 status="failed",
                 error_message=str(e)
             )
-
+    
     def get_supported_formats(self) -> list[str]:
         """Get list of supported file extensions.
-
+        
         Returns:
             List of supported file extensions (with dots, e.g., ['.pdf', '.docx'])
         """
         return sorted(self.SUPPORTED_EXTENSIONS)
-
+    
     def is_supported(self, file_path: str | Path) -> bool:
         """Check if a file type is supported.
-
+        
         Args:
             file_path: Path to check
-
+            
         Returns:
             True if file type is supported
         """
@@ -559,18 +559,18 @@ async def parse_document(
     parse_images: bool = False
 ) -> ParsedDocument:
     """Parse a document with default configuration.
-
+    
     This is a convenience function for simple parsing use cases.
     For more control, use the DocumentParser class directly.
-
+    
     Args:
         file_path: Path to the file to parse
         ocr_enabled: Whether to enable OCR
         parse_images: Whether to extract images
-
+        
     Returns:
         ParsedDocument with extracted content
-
+        
     Example:
         ```python
         result = await parse_document("document.pdf", ocr_enabled=True)

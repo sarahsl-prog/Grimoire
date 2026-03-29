@@ -13,6 +13,7 @@ Example:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -38,7 +39,9 @@ DEFAULT_CONFIDENCE_THRESHOLD: Final[float] = 0.7
 MAX_SAMPLE_LENGTH: Final[int] = 4000
 
 # Default prompt template for categorization
-DEFAULT_CATEGORIZATION_PROMPT: Final[str] = """Categorize this document into one or more categories from the provided list.
+DEFAULT_CATEGORIZATION_PROMPT: Final[
+    str
+] = """Categorize this document into one or more categories from the provided list.
 
 Return your response in JSON format with the following structure:
 {{
@@ -64,6 +67,18 @@ Instructions:
 - Consider parent and child categories independently
 - Return empty suggestions array if no categories fit"""
 
+SAMPLE_CATEGORIZATION_PROMPT: Final[
+    str
+] = """Categorize this document sample into relevant categories.
+
+Categories:
+{categories}
+
+Document:
+{document_sample}
+
+Return category names and confidence scores (0.0-1.0) in this JSON format:
+{{"suggestions": [{{"category": "Name", "confidence": 0.9, "reasoning": "why"}}]}}"""
 
 # ============================================================================
 # Pydantic Models
@@ -119,18 +134,14 @@ class TaggingResult(BaseModel):
         model_used: LLM model used for tagging
     """
 
-    document_id: str | None = Field(
-        default=None, description="UUID of the document"
-    )
+    document_id: str | None = Field(default=None, description="UUID of the document")
     suggestions: list[TagSuggestion] = Field(
         default_factory=list, description="All suggestions from LLM"
     )
     applied_tags: list[TagSuggestion] = Field(
         default_factory=list, description="Tags that passed threshold"
     )
-    threshold: float = Field(
-        default=DEFAULT_CONFIDENCE_THRESHOLD, ge=0.0, le=1.0
-    )
+    threshold: float = Field(default=DEFAULT_CONFIDENCE_THRESHOLD, ge=0.0, le=1.0)
     model_used: str = Field(default="", description="LLM model used")
     cached: bool = Field(default=False, description="Whether result was cached")
 
@@ -255,9 +266,7 @@ class Tagger:
         for cat in categories:
             path = build_path(cat)
             contexts.append(
-                CategoryContext(
-                    path=path, category=cat, description=cat.description
-                )
+                CategoryContext(path=path, category=cat, description=cat.description)
             )
 
         # Sort by path for consistent prompt format
@@ -408,6 +417,44 @@ class Tagger:
                 continue
 
         return suggestions
+
+    async def _call_ollama(self, prompt: str) -> str:
+        """Call Ollama API with prompt.
+
+        Args:
+            prompt: Prompt text to send
+
+        Returns:
+            Raw LLM response text
+
+        Raises:
+            httpx.HTTPError: If API call fails
+            ValueError: If response is invalid
+        """
+        client = await self._get_client()
+
+        url = f"{self.llm_config.url.rstrip('/')}/api/generate"
+        payload = {
+            "model": self.llm_config.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": self.llm_config.temperature,
+                "num_predict": self.llm_config.max_tokens,
+            },
+        }
+
+        logger.debug(f"Calling Ollama API at {url} with model {self.llm_config.model}")
+
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+
+        result = response.json()
+
+        if "response" not in result:
+            raise ValueError(f"Unexpected Ollama response format: {result.keys()}")
+
+        return str(result["response"])
 
     def _match_suggestions_to_categories(
         self,
@@ -626,9 +673,7 @@ class Tagger:
 
         for suggestion in suggestions:
             if not suggestion.category_id:
-                logger.warning(
-                    f"Skipping tag '{suggestion.category}' - no category_id"
-                )
+                logger.warning(f"Skipping tag '{suggestion.category}' - no category_id")
                 continue
 
             existing = existing_tags_by_category.get(suggestion.category_id)
