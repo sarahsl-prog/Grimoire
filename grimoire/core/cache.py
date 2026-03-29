@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from loguru import logger
+"""Abstract base class for cache implementations."""
+
+from abc import ABC, abstractmethod
+from typing import Any, Optional
 
 
 class Cache(ABC):
