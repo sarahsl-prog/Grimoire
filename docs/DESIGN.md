@@ -70,12 +70,14 @@ This document outlines the complete redesign of Grimoire from a minimal 2-file R
 | **LLM** | Ollama (any model) | Local-first, model-agnostic |
 | **Embeddings** | sentence-transformers (configurable, default: all-mpnet-base-v2) | Higher quality than all-MiniLM, still efficient |
 | **Vector Store** | ChromaDB (primary) / Qdrant-ready interface | ChromaDB: embedded, no server, native metadata filtering. **Abstract interface allows Qdrant swap for scale.** |
-| **Metadata DB** | SQLite (dev) / PostgreSQL (prod) | SQLAlchemy ORM abstracts both |
+| **Metadata DB** | **PostgreSQL 16+** (primary) / SQLite (dev testing) | SQLAlchemy ORM; PostgreSQL for production FTS and scale |
 | **Document Parser** | Docling | MIT license, 97.9% accuracy on complex tables, PDF/DOCX/PPTX/XLSX/images/audio/HTML, local execution |
 | **File Watching** | watchdog (local) + polling (cloud) | **Hybrid approach**: events for local FS, polling for cloud APIs |
-| **Full-Text Search** | SQLite FTS (dev) / PostgreSQL FTS (prod) | Complements vector search for exact matching |
-| **Caching** | DiskCache / Redis | Query embedding cache, result cache |
-| **Task Queue** | asyncio + background threads (MVP) / Celery (scale) | Start simple, upgrade path clear |
+| **Full-Text Search** | **PostgreSQL FTS** (primary) / SQLite FTS (dev) | PG FTS with weighted fields, ranks, and pgvector hybrid support |
+| **Caching** | **Redis** / DiskCache | Query embedding cache, result cache, task state |
+| **Task Queue** | asyncio + background threads (MVP) / **Celery** (scale) | Celery with Redis broker for distributed processing |
+| **Package Manager** | **uv** | Fast, modern Python package management; preferred over pip |
+| **Logging** | **loguru** | Structured logging with rotation; output to `/log` or `/var/log/grimoire` |
 
 ### Vector Store: ChromaDB with Qdrant Migration Path
 
@@ -94,6 +96,47 @@ This document outlines the complete redesign of Grimoire from a minimal 2-file R
 - >500K vectors (chunked: ~100K documents)
 - Need multi-tenancy
 - Complex multi-field filtering requirements
+
+### Project Conventions for Agents / Developers
+
+All contributors and coding agents must follow these conventions:
+
+**Package Management (Required):**
+- Use `uv` for all dependency management
+- Install: `uv add <package>`
+- Remove: `uv remove <package>`
+- Sync: `uv sync`
+- Run tools: `uv run pytest`, `uv run ruff check .`, `uv run ruff format .`
+
+**Code Style (Required):**
+- Python 3.12+ with type hints everywhere; code must pass `mypy --strict`
+- Format with `black` (88 char line length)
+- Use f-strings, no wildcard imports
+- Pydantic models for all external I/O, FastAPI `Depends` for DI
+- Prefer async endpoints and non-blocking libraries
+- Well-commented, modular code with docstrings
+
+**Logging (Required):**
+- Use `loguru` for all logging
+- Log directory: `/log` during dev, `/var/log/grimoire` on Linux
+- Never log secrets, tokens, or PII
+
+**Security (Required):**
+- Parameterized DB queries only (SQLAlchemy ORM)
+- Validate all external inputs with Pydantic
+- No secrets in code; use environment variables
+
+**Testing (Required):**
+- Use `pytest` for all tests
+- Run `uv run pytest -q` for quick checks
+- Run `uv run ruff check .` and `black` before committing
+- High test coverage for public functions
+- Test with `curl` or HTTP client for API changes
+
+**Database Access:**
+- PostgreSQL 16+ for production, SQLite only for dev testing
+- Use async SQLAlchemy (`async_sessionmaker`)
+- Alembic migrations for schema changes
 
 ---
 
@@ -757,9 +800,34 @@ grimoire:
   
   # Database
   database:
-    url: "sqlite:///grimoire.db"        # or postgresql://user:pass@localhost/grimoire
-    echo: false                         # SQL logging
-    pool_size: 10                       # PostgreSQL only
+    url: "postgresql://user:pass@localhost/grimoire"  # Production: PostgreSQL 16+
+    dev_url: "sqlite:///grimoire.db"                   # Dev/testing only
+    echo: false                                        # SQL logging
+    pool_size: 10                                      # PostgreSQL only
+    
+  # Logging (loguru)
+  logging:
+    level: "INFO"                                      # DEBUG, INFO, WARNING, ERROR
+    format: "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}"
+    rotation: "1 week"                                 # Rotate logs weekly
+    retention: "1 month"                               # Keep 1 month of logs
+    log_dir: "./log"                                   # Dev: ./log, Prod: /var/log/grimoire
+    
+  # Celery (Distributed Task Queue)  
+  celery:
+    broker_url: "redis://localhost:6379/0"
+    result_backend: "redis://localhost:6379/1"
+    task_serializer: "json"
+    accept_content: ["json"]
+    result_serializer: "json"
+    timezone: "UTC"
+    enable_utc: true
+    
+  # Redis (Cache & Celery)
+  redis:
+    host: "localhost"
+    port: 6379
+    db_cache: 2                                        # DB for cache
   
   # Vector Store
   vector_store:
@@ -959,6 +1027,92 @@ grimoire/
 ├── .env.example                   # Environment template
 ├── .gitignore
 └── README.md                      # Updated project README
+```
+
+### pyproject.toml (uv-based)
+
+```toml
+[project]
+name = "grimoire"
+version = "2.0.0"
+description = "Agent-based knowledge management system"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.1",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.28",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "chromadb>=0.4",
+    "langchain-community>=0.2",
+    "langchain-ollama>=0.0.1",
+    "docling>=2.0",
+    "watchdog>=4.0",
+    "sentence-transformers>=2.5",
+    "loguru>=0.7",
+    "redis>=5.0",
+    "diskcache>=5.6",
+    "celery>=5.3",
+    "httpx>=0.27",
+    "aiofiles>=23.2",
+    "python-magic>=0.4",
+    "aiohttp>=3.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "mypy>=1.9",
+    "ruff>=0.3",
+    "black>=24.2",
+    "pre-commit>=3.6",
+]
+
+[project.scripts]
+grimoire = "grimoire.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["grimoire"]
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # Pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "W",  # pycodestyle
+    "UP", # pyupgrade
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 ```
 
 ---
