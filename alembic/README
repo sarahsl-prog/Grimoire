@@ -1,0 +1,35 @@
+Grimoire Database Migrations
+============================
+
+This directory contains Alembic database migrations for the Grimoire project.
+
+Usage
+-----
+
+Create a new migration:
+    uv run alembic revision --autogenerate -m "Description of changes"
+
+Run migrations:
+    uv run alembic upgrade head
+
+Downgrade one migration:
+    uv run alembic downgrade -1
+
+Downgrade to base:
+    uv run alembic downgrade base
+
+Show current revision:
+    uv run alembic current
+
+Show migration history:
+    uv run alembic history
+
+Configuration
+-------------
+
+The database URL is read from:
+1. DATABASE_URL environment variable
+2. alembic.ini sqlalchemy.url setting
+
+For async PostgreSQL, use:
+    postgresql+asyncpg://user:password@host:port/database
