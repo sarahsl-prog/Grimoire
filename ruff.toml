@@ -1,0 +1,9 @@
+# Ruff configuration file
+# Extends pyproject.toml settings
+
+[lint]
+# Ignore S101 (bandit assert) in tests - pytest uses assert
+extend-select = ["S"]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105"]

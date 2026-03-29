@@ -1,0 +1,139 @@
+version: "3.9"
+
+services:
+  # PostgreSQL 16 - Primary metadata database
+  postgres:
+    image: postgres:16-alpine
+    container_name: grimoire-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-grimoire}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grimoire}
+      POSTGRES_DB: ${POSTGRES_DB:-grimoire}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./logs/postgres:/var/log/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-grimoire} -d ${POSTGRES_DB:-grimoire}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - grimoire-network
+    command: >
+      postgres
+        -c max_connections=200
+        -c shared_buffers=256MB
+        -c effective_cache_size=1GB
+        -c maintenance_work_mem=64MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c default_statistics_target=100
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+        -c work_mem=1310kB
+        -c min_wal_size=1GB
+        -c max_wal_size=4GB
+
+  # Redis 7 - Cache and message broker
+  redis:
+    image: redis:7-alpine
+    container_name: grimoire-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - grimoire-network
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # ChromaDB - Vector database
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: grimoire-chromadb
+    restart: unless-stopped
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    ports:
+      - "${CHROMADB_PORT:-8000}:8000"
+    volumes:
+      - chromadb_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - grimoire-network
+    # Note: ChromaDB defaults to in-memory if not configured for persistence
+    # The IS_PERSISTENT flag enables disk-based storage
+
+  # Optional: PGAdmin for PostgreSQL management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: grimoire-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@grimoire.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - grimoire-network
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+  # Optional: Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: grimoire-redis-commander
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:${REDIS_PORT:-6379}
+    ports:
+      - "${REDIS_COMMANDER_PORT:-8081}:8081"
+    networks:
+      - grimoire-network
+    depends_on:
+      - redis
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  chromadb_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  grimoire-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

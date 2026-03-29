@@ -1,5 +1,259 @@
-.venv/
-.mypy_cache/
+# =============================================================================
+# Python
+# =============================================================================
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.env.local
+.env.*.local
+!.env.example
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pyright
+pyrightconfig.json
+
+# =============================================================================
+# uv (Python Package Manager)
+# =============================================================================
+.venv/
+uv.lock
+
+# =============================================================================
+# IDEs and Editors
+# =============================================================================
+# JetBrains (PyCharm, IntelliJ, etc.)
+.idea/
+*.iml
+*.iws
+.idea_modules/
+out/
+
+# VSCode
+.vscode/
+*.code-workspace
+.history/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+
+# =============================================================================
+# Operating Systems
+# =============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.nfs*
+
+# =============================================================================
+# Grimoire Application Specific
+# =============================================================================
+# Data directories
+/data/
+/chroma_db/
+/cache/
+/vector_store/
+/vectorstore/
+
+# Log files
+/logs/
+*.log
+log/
+
+# Model download cache
+/models/
+/.cache/
+
+# Token stores (contain sensitive OAuth tokens)
+*.tokens.json
+*_tokens.json
+.gdrive_tokens.json
+.onedrive_tokens.json
+
+# OAuth credentials
+google-credentials.json
+gdrive-credentials.json
+*_credentials.json
+
+# Upload directories
+/uploads/
+
+# Temporary processing files
+/tmp/
+/temp/
+
+# Session files
+.session/
+
+# =============================================================================
+# Docker
+# =============================================================================
+docker-compose.override.yml
+docker-compose.*.yml
+!.docker/
+
+# =============================================================================
+# Database
+# =============================================================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# PostgreSQL
+data/postgres/
+postgres_data/
+
+# =============================================================================
+# Cloud Storage Cache
+# =============================================================================
+.cloud/
+.gdrive/
+.onedrive/
+.rclone/
+
+# =============================================================================
+# Documentation Build
+# =============================================================================
+/docs/_build/
+/docs/build/
+
+# =============================================================================
+# Test Fixtures (keep structure, ignore large files)
+# =============================================================================
+tests/fixtures/sample_docs/*.pdf
+tests/fixtures/sample_docs/*.docx
+tests/fixtures/sample_docs/*.pptx
+tests/fixtures/sample_docs/*.xlsx
+tests/fixtures/sample_docs/large_*
+
+# =============================================================================
+# Misc
+# =============================================================================
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
