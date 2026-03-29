@@ -1,0 +1,81 @@
+grimoire:
+  llm:
+    model: "llama3.2"
+    url: "http://localhost:11434"
+    temperature: 0.8
+    max_tokens: 4096
+
+  embeddings:
+    model: "sentence-transformers/all-mpnet-base-v2"
+    device: "auto"
+    batch_size: 32
+
+  database:
+    url: "postgresql://grimoire:password@localhost:5432/grimoire"
+    pool_size: 10
+    echo: false
+
+  vector_store:
+    type: "chromadb"
+    chromadb:
+      path: "./chroma_db"
+      collection_name: "documents"
+
+  logging:
+    level: "INFO"
+    log_dir: "./logs"
+    structured: true
+    use_json: false
+
+  celery:
+    broker_url: "redis://localhost:6379/0"
+    result_backend: "redis://localhost:6379/1"
+    timezone: "UTC"
+    enable_utc: true
+
+  redis:
+    host: "localhost"
+    port: 6379
+    db_cache: 2
+
+  query:
+    default_top_k: 10
+    rerank_top_k: 50
+    hybrid_alpha: 0.7
+    enable_citations: true
+
+  cache:
+    storage: "disk"
+    path: "./cache"
+    embedding_ttl: 604800
+    result_ttl: 86400
+
+  watch:
+    default_poll_interval: 300
+    max_local_watches: 100
+    ignore_patterns:
+      - "*.tmp"
+      - ".git/"
+      - "__pycache__/"
+
+  chunking:
+    default_strategy: "semantic"
+    chunk_size: 1000
+    chunk_overlap: 200
+    semantic:
+      threshold: 0.5
+      min_chunk_size: 100
+
+  processing:
+    parse_pdf_ocr: true
+    parse_images: true
+    auto_tag_threshold: 0.7
+    concurrency: 4
+    rate_limit_cloud: true
+
+  api:
+    host: "0.0.0.0"
+    port: 8001
+    workers: 4
+
+  debug: false
