@@ -34,4 +34,25 @@ __all__ = [
     "AuthenticationError",
     "RateLimitError",
     "TokenRefreshError",
+from grimoire.storage.watch_manager import (
+    ActiveWatch,
+    CloudStoragePoller,
+    WatchConfig,
+    WatchManager,
+    WatchType,
+)
+
+__all__ = [
+    "StorageAdapter",
+    "StorageBackend",
+    "FileInfo",
+    "FileMetadata",
+    "FileChange",
+    "FileChangeType",
+    "WatchHandle",
+    "WatchManager",
+    "WatchConfig",
+    "WatchType",
+    "ActiveWatch",
+    "CloudStoragePoller",
 ]
