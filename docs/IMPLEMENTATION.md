@@ -400,12 +400,13 @@ grimoire/storage/onedrive.py
 
 ## Phase 4: Agents (Week 4-5)
 **Goal:** Agent logic with Deep Agents
+**Status:** Complete (2026-04-01)
 
 ### Deliverables
-- [ ] Ingestion Agent
-- [ ] Watcher Agent
-- [ ] Query Agent
-- [ ] Content Generation Agent
+- [x] Ingestion Agent
+- [x] Watcher Agent
+- [x] Query Agent
+- [x] Content Generation Agent
 
 ### Agent Tasks
 
@@ -425,8 +426,8 @@ grimoire/agents/ingestion.py
 - Error handling: Log failures, continue with next file
 
 **Validation:**
-- [ ] Integration test: ingest sample directory
-- [ ] Test error recovery
+- [x] Integration test: ingest sample directory
+- [x] Test error recovery
 
 ---
 
@@ -442,7 +443,7 @@ grimoire/agents/watcher.py
 - Handle multiple watches concurrently
 
 **Validation:**
-- [ ] Unit test: file created triggers ingestion
+- [x] Unit test: file created triggers ingestion
 
 ---
 
@@ -464,8 +465,8 @@ grimoire/search/hybrid.py    # Combines vector + FTS
 - Cache results
 
 **Validation:**
-- [ ] Integration test: query returns relevant chunks
-- [ ] Test citations include source doc IDs
+- [x] Integration test: query returns relevant chunks
+- [x] Test citations include source doc IDs
 
 ---
 
@@ -481,15 +482,15 @@ grimoire/agents/content_gen.py
 - Store in `generated_content` table
 
 **Validation:**
-- [ ] Unit tests: each generation type
-- [ ] Test caching
+- [x] Unit tests: each generation type
+- [x] Test caching
 
 ---
 
 ### Phase 4 Exit Criteria
-- [ ] Can ingest documents via agent
-- [ ] Can query and get answers
-- [ ] Can generate summaries
+- [x] Can ingest documents via agent
+- [x] Can query and get answers
+- [x] Can generate summaries
 
 ---
 
