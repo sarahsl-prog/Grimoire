@@ -302,6 +302,7 @@ class TestDedupInputValidation:
         with pytest.raises(FileNotFoundError):
             compute_file_hash(non_existent)
 
+    @pytest.mark.skipif(os.getuid() == 0, reason="Cannot test permissions as root")
     def test_permission_error(self, temp_file: Path) -> None:
         """File without read permission raises PermissionError."""
         # Remove read permissions

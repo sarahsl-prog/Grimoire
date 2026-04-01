@@ -25,6 +25,8 @@ try:
     DOCLEY_AVAILABLE = True
 except ImportError:
     DOCLEY_AVAILABLE = False
+    ConversionStatus = None  # type: ignore[assignment, misc]
+    DocumentConverter = None  # type: ignore[assignment, misc]
     logger.warning("Docling not available. Parser will be non-functional.")
 
 
@@ -294,7 +296,7 @@ class DocumentParser:
             status = "success"
             error_message = None
             
-            if hasattr(result, 'status'):
+            if ConversionStatus is not None and hasattr(result, 'status'):
                 if result.status == ConversionStatus.PARTIAL_SUCCESS:
                     status = "partial"
                     error_message = "Partial success - some content may be missing"
@@ -393,16 +395,7 @@ class DocumentParser:
         """
         config = custom_config or self.config
         file_path_obj = Path(file_path)
-        
-        # Check if Docling is available
-        if not DOCLEY_AVAILABLE:
-            logger.error("Cannot parse document: Docling is not installed")
-            return ParsedDocument(
-                status="failed",
-                error_message="Docling library not available",
-                metadata=DocumentMetadata()
-            )
-        
+
         # Check if file exists
         if not file_path_obj.exists():
             logger.error(f"File not found: {file_path_obj}")
@@ -411,7 +404,7 @@ class DocumentParser:
                 error_message=f"File not found: {file_path_obj}",
                 metadata=DocumentMetadata()
             )
-        
+
         # Check if file type is supported
         if not self._is_supported(file_path_obj):
             ext = self._detect_file_type(file_path_obj)
@@ -421,7 +414,7 @@ class DocumentParser:
                 error_message=f"Unsupported file type: {ext}",
                 metadata=DocumentMetadata(file_type=ext)
             )
-        
+
         # Check file size
         file_size = file_path_obj.stat().st_size
         if file_size > config.max_file_size:
@@ -438,6 +431,15 @@ class DocumentParser:
                 )
             )
         
+        # Check if Docling is available
+        if not DOCLEY_AVAILABLE:
+            logger.error("Cannot parse document: Docling is not installed")
+            return ParsedDocument(
+                status="failed",
+                error_message="Docling library not available",
+                metadata=DocumentMetadata()
+            )
+
         # Compute file hash
         try:
             file_hash = self._compute_file_hash(file_path_obj)

@@ -10,6 +10,7 @@ Tests cover:
 """
 
 import hashlib
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Generator, List, Optional
@@ -17,6 +18,17 @@ from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
+
+# Ensure sentence_transformers and torch are available as mock modules for patching,
+# even when the real packages are not installed.
+if "sentence_transformers" not in sys.modules:
+    _mock_st = MagicMock()
+    sys.modules["sentence_transformers"] = _mock_st
+
+if "torch" not in sys.modules:
+    _mock_torch = MagicMock()
+    _mock_torch.cuda.is_available.return_value = False
+    sys.modules["torch"] = _mock_torch
 
 from grimoire.core.cache import Cache, DiskCache
 from grimoire.core.embedder import (
@@ -478,7 +490,7 @@ class TestEmbedderDeviceDetection:
         assert device == "cpu"
 
     @pytest.mark.skipif(
-        not __import__("torch").cuda.is_available(),
+        not getattr(getattr(__import__("torch"), "cuda", None), "is_available", lambda: False)(),
         reason="CUDA not available",
     )
     def test_explicit_cuda_device(self) -> None:
@@ -756,6 +768,10 @@ class TestDiskCache:
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(
+    not hasattr(sys.modules.get("sentence_transformers", None), "__file__"),
+    reason="sentence_transformers not installed (only mock available)",
+)
 class TestEmbedderIntegration:
     """Integration tests with real sentence-transformers (slow)."""
 

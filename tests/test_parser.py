@@ -447,13 +447,14 @@ class TestDocumentParserWithMocks:
         mock_docling_result: MagicMock
     ) -> None:
         """Test parsing with mocked Docling converter."""
-        with patch.object(
-            parser,
-            '_get_converter',
-            return_value=MagicMock(
-                convert=lambda path: mock_docling_result
-            )
-        ):
+        with patch("grimoire.core.parser.DOCLEY_AVAILABLE", True), \
+             patch.object(
+                parser,
+                '_get_converter',
+                return_value=MagicMock(
+                    convert=lambda path: mock_docling_result
+                )
+             ):
             result = await parser.parse(sample_pdf)
             assert result.status == "success"
     

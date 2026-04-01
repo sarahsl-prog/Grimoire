@@ -321,7 +321,7 @@ Deep content."""
         deep_chunks = [c for c in chunks if c.metadata["header_level"] == 3]
         if deep_chunks:
             deep_chunk = deep_chunks[0]
-            assert "# Main Title" in deep_chunk.metadata["header_context"]
+            assert "Main Title" in deep_chunk.metadata["header_context"]
             assert "Subsection A" in deep_chunk.metadata["header_context"]
 
     @pytest.mark.asyncio

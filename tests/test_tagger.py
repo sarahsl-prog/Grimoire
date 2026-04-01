@@ -34,7 +34,7 @@ from grimoire.core.tagger import (
     TagSuggestion,
 )
 from grimoire.db.base import Base
-from grimoire.db.models import Category, Document, DocumentTag, FileType, TaggedBy
+from grimoire.db.models import Category, Chunk, Document, DocumentTag, FileType, TaggedBy
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Generator
@@ -648,7 +648,9 @@ class TestTaggerTagDocument:
             tagger, "_call_ollama", return_value=json.dumps(mock_response)
         ):
             result = await tagger.tag_document(
-                mock_db_session, doc, flat_categories, auto_apply=True
+                mock_db_session, doc, flat_categories,
+                sample="Machine learning and AI research document content.",
+                auto_apply=True,
             )
 
         assert len(result.suggestions) == 1
@@ -683,7 +685,9 @@ class TestTaggerTagDocument:
             tagger, "_call_ollama", return_value=json.dumps(mock_response)
         ):
             result = await tagger.tag_document(
-                mock_db_session, doc, flat_categories, auto_apply=False
+                mock_db_session, doc, flat_categories,
+                sample="Test Document content",
+                auto_apply=False,
             )
 
         # Tags suggested but not applied to DB
