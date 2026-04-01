@@ -9,6 +9,13 @@ from grimoire.storage.base import (
     StorageBackend,
     WatchHandle,
 )
+from grimoire.storage.watch_manager import (
+    ActiveWatch,
+    CloudStoragePoller,
+    WatchConfig,
+    WatchManager,
+    WatchType,
+)
 
 try:
     from grimoire.storage.gdrive import (
@@ -20,27 +27,6 @@ try:
     )
 except ImportError:
     pass
-
-__all__ = [
-    "FileChange",
-    "FileChangeType",
-    "FileInfo",
-    "FileMetadata",
-    "StorageAdapter",
-    "StorageBackend",
-    "WatchHandle",
-    "GoogleDriveAdapter",
-    "GoogleDriveError",
-    "AuthenticationError",
-    "RateLimitError",
-    "TokenRefreshError",
-from grimoire.storage.watch_manager import (
-    ActiveWatch,
-    CloudStoragePoller,
-    WatchConfig,
-    WatchManager,
-    WatchType,
-)
 
 __all__ = [
     "StorageAdapter",
@@ -55,4 +41,9 @@ __all__ = [
     "WatchType",
     "ActiveWatch",
     "CloudStoragePoller",
+    "GoogleDriveAdapter",
+    "GoogleDriveError",
+    "AuthenticationError",
+    "RateLimitError",
+    "TokenRefreshError",
 ]
