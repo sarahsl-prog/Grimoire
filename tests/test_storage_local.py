@@ -864,6 +864,9 @@ class TestWatchdogEventHandler:
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Unix permission tests skipped on Windows"
 )
+@pytest.mark.skipif(
+    os.getuid() == 0, reason="Cannot test permissions as root"
+)
 class TestPermissionHandling:
     """Test permission-related behavior on Unix systems."""
 

@@ -53,17 +53,26 @@ def cli(ctx: click.Context, config: Path | None, verbose: bool) -> None:
     )
 
 
-# Placeholder for future subcommands
-# These will be implemented in subsequent tasks
-# from . import ingest, watch, query, generate, categories, status, config
+# Register subcommands
+from grimoire.cli.categories import categories, tag, untag
+from grimoire.cli.config import config as config_cmd
+from grimoire.cli.generate import generate
+from grimoire.cli.ingest import ingest
+from grimoire.cli.query import ask, search
+from grimoire.cli.status import cache_group, status
+from grimoire.cli.watch import watch
 
-# cli.add_command(ingest.ingest)
-# cli.add_command(watch.watch)
-# cli.add_command(query.query)
-# cli.add_command(generate.generate)
-# cli.add_command(categories.categories)
-# cli.add_command(status.status)
-# cli.add_command(config.config)
+cli.add_command(ingest)
+cli.add_command(watch)
+cli.add_command(ask)
+cli.add_command(search)
+cli.add_command(generate)
+cli.add_command(categories)
+cli.add_command(tag)
+cli.add_command(untag)
+cli.add_command(config_cmd)
+cli.add_command(status)
+cli.add_command(cache_group)
 
 
 def main() -> None:
