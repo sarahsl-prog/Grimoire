@@ -498,9 +498,9 @@ grimoire/agents/content_gen.py
 **Goal:** User-facing interfaces
 
 ### Deliverables
-- [ ] CLI commands (Click)
-- [ ] FastAPI REST API
-- [ ] Integration between CLI/API and agents
+- [x] CLI commands (Click)
+- [x] FastAPI REST API
+- [x] Integration between CLI/API and agents
 
 ### Agent Tasks
 
@@ -523,7 +523,7 @@ grimoire/cli/status.py
 - Rich output: progress bars, tables
 
 **Validation:**
-- [ ] CLI smoke tests for each command
+- [x] CLI smoke tests for each command
 
 ---
 
@@ -547,14 +547,14 @@ grimoire/api/dependencies.py
 - Auto-generated OpenAPI docs
 
 **Validation:**
-- [ ] API tests with httpx/httpx.AsyncClient
+- [x] API tests with httpx/httpx.AsyncClient
 
 ---
 
 ### Phase 5 Exit Criteria
-- [ ] CLI commands work end-to-end
-- [ ] API starts and responds
-- [ ] OpenAPI docs accessible at `/docs`
+- [x] CLI commands work end-to-end
+- [x] API starts and responds
+- [x] OpenAPI docs accessible at `/docs`
 
 ---
 
