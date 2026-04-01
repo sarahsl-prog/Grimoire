@@ -654,15 +654,12 @@ class TestTaggerTagDocument:
         assert len(result.suggestions) == 1
         assert len(result.applied_tags) == 1
 
-    async def test_tag_document_with_title(
-
     async def test_tag_document_no_auto_apply(
         self,
         tagger: Tagger,
         mock_db_session: AsyncSession,
         flat_categories: list[Category],
     ) -> None:
-        """Test tagging when no chunks but has title."""
         """Test tagging without auto-applying results."""
         doc = Document(
             id=str(uuid4()),
@@ -670,8 +667,7 @@ class TestTaggerTagDocument:
             storage_backend="local",
             file_type=FileType.PDF,
             file_hash="abc123",
-            title="Technology Research Paper",
-            title="Test",
+            title="Test Document",
             size_bytes=1000,
         )
         mock_db_session.add(doc)
@@ -708,7 +704,6 @@ class TestTaggerTagDocument:
             storage_backend="local",
             file_type=FileType.PDF,
             file_hash="abc123",
-            title="Test",
             title="Some boring title",
             size_bytes=1000,
         )
