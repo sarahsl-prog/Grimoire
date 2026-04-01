@@ -110,25 +110,45 @@ See [.env.example](.env.example) for all available configuration options.
 ### CLI
 
 ```bash
-# Scan and ingest documents
-grimoire ingest /path/to/documents --recursive --strategy semantic
+# Ingest a single file
+grimoire ingest /path/to/document.pdf --strategy semantic
+
+# Ingest a directory recursively
+grimoire ingest /path/to/documents --recursive --auto-tag
 
 # Watch a directory for changes
-grimoire watch /home/user/docs --recursive
+grimoire watch start /home/user/docs --recursive
 
-# Query the knowledge base
-grimoire ask "What are the key findings about neural networks?"
+# Query the knowledge base (RAG pipeline)
+grimoire ask "What are the key findings about neural networks?" --top-k 5
+
+# Search without answer generation
+grimoire search "neural networks" --top-k 10 --format json
 
 # Generate content
-grimoire generate summary --doc-id 42 --style detailed
-grimoire generate flashcards --tag "biology" --count 20
+grimoire generate summary -d doc-id --style detailed
+grimoire generate flashcards -d doc-id --count 20
+grimoire generate cliff-notes -d doc-id
+grimoire generate outline -d doc-id
 
 # Manage categories
 grimoire category add "Research" --description "Research papers"
-grimoire category list --tree
+grimoire category list
+grimoire category remove "research"
 
-# Get status
-grimoire status
+# Tag/untag documents
+grimoire tag doc-id biology science
+grimoire untag doc-id science
+
+# Configuration
+grimoire config init          # Create default grimoire.yaml
+grimoire config show          # Display current settings
+grimoire config show llm      # Show specific section
+
+# System status
+grimoire status --detailed
+grimoire cache stats
+grimoire cache clear
 ```
 
 ### API
@@ -139,10 +159,39 @@ FastAPI automatically generates interactive API documentation:
 - ReDoc: http://localhost:8001/redoc
 
 ```bash
-# Query via curl
-curl -X POST http://localhost:8001/api/v1/query \
+# Health check
+curl http://localhost:8001/health
+
+# Ask a question (RAG pipeline)
+curl -X POST http://localhost:8001/api/v1/query/ask \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is machine learning?", "top_k": 10}'
+  -d '{"query": "What is machine learning?", "top_k": 5}'
+
+# Search without answer generation
+curl -X POST http://localhost:8001/api/v1/query/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "neural networks", "top_k": 10}'
+
+# Ingest a file
+curl -X POST http://localhost:8001/api/v1/ingest/file \
+  -H "Content-Type: application/json" \
+  -d '{"file_path": "/path/to/document.pdf"}'
+
+# Ingest a directory
+curl -X POST http://localhost:8001/api/v1/ingest/directory \
+  -H "Content-Type: application/json" \
+  -d '{"directory": "/path/to/docs", "recursive": true}'
+
+# List documents
+curl http://localhost:8001/api/v1/documents
+
+# Generate a summary
+curl -X POST http://localhost:8001/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{"document_ids": ["doc-id"], "content_type": "summary"}'
+
+# List categories
+curl http://localhost:8001/api/v1/categories
 ```
 
 ## Architecture
