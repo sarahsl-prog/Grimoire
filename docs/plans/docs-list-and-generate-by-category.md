@@ -28,6 +28,7 @@ grimoire docs list --since 7d                               # relative: days
 grimoire docs list --since 2w                               # relative: weeks
 grimoire docs list -c cybersecurity --search playbook       # combined filters
 grimoire docs list --format json                            # JSON output
+grimoire docs list --format markdown                        # Markdown table output
 ```
 
 All filters are combinable (AND logic).
@@ -40,7 +41,7 @@ Create a Click group `docs` with a `list` subcommand. Follow the pattern in `cat
 - `--category` / `-c` (str, optional) — filter by category name or slug
 - `--search` / `-s` (str, optional) — case-insensitive title substring search
 - `--since` (str, optional) — date filter (ISO date or relative like `7d`, `2w`, `3m`)
-- `--format` (`fmt`, Choice `["text", "json"]`, default `"text"`) — output format
+- `--format` (`fmt`, Choice `["text", "json", "markdown"]`, default `"text"`) — output format
 
 **Query construction:**
 - Start with `select(Document)`.
@@ -65,6 +66,16 @@ ID        Title                           Type  Status     Created
 ```
 
 Show first 8 chars of ID (enough to copy-paste for other commands). Include total count at the bottom.
+
+**Markdown output (`--format markdown`):**
+```markdown
+| ID       | Title                          | Type | Status    | Created    |
+|----------|--------------------------------|------|-----------|------------|
+| 834b3195 | Devpost-AI-Hackathon-Playbook  | pdf  | completed | 2026-04-03 |
+| 274dd7a2 | LLM_Int8                       | pdf  | completed | 2026-04-03 |
+```
+
+Same columns as text output, rendered as a GitHub-flavored markdown table. Include total count below the table.
 
 **JSON output:** List of objects with full `id`, `title`, `file_type`, `processing_status`, `created_at`, and `categories` (list of category names from tags).
 
@@ -140,6 +151,7 @@ For each of the four commands:
 - `test_docs_list_by_since_absolute` — `--since 2026-03-01`
 - `test_docs_list_combined_filters` — `--category X --search Y --since 7d`
 - `test_docs_list_json_output` — `--format json`, validates JSON structure
+- `test_docs_list_markdown_output` — `--format markdown`, validates markdown table structure (header row, separator, data rows)
 - `test_docs_list_empty` — no matching documents, graceful output
 - `test_docs_list_bad_since` — invalid `--since` value, clean error
 
