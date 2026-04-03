@@ -186,6 +186,9 @@ log/
 /models/
 /.cache/
 
+# grimoire configuration files
+grimoire.yaml
+
 # Token stores (contain sensitive OAuth tokens)
 *.tokens.json
 *_tokens.json
