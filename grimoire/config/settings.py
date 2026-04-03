@@ -192,7 +192,7 @@ class DatabaseConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: str = Field(
-        default="postgresql://grimoire:changeme@localhost:5432/grimoire",
+        default="postgresql+asyncpg://grimoire:changeme@localhost:5432/grimoire",
         description="PostgreSQL connection URL",
     )
     dev_url: str = Field(
@@ -206,7 +206,7 @@ class DatabaseConfig(BaseModel):
     @classmethod
     def validate_db_url(cls, v: str) -> str:
         """Validate database URL format."""
-        if not v.startswith(("postgresql://", "sqlite://")):
+        if not v.startswith(("postgresql://", "postgresql+asyncpg://", "sqlite://")):
             raise ValueError(
                 f"Database URL must start with postgresql:// or sqlite://: {v}"
             )
@@ -216,7 +216,7 @@ class DatabaseConfig(BaseModel):
     @classmethod
     def validate_postgres_url(cls, v: str) -> str:
         """Validate PostgreSQL URL has required components."""
-        if v.startswith("postgresql://"):
+        if v.startswith(("postgresql://", "postgresql+asyncpg://")):
             # Basic validation - should have user:pass@host:port/dbname
             if "@" not in v:
                 raise ValueError(

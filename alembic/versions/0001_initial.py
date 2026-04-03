@@ -32,52 +32,6 @@ def upgrade() -> None:
     dialect = op.get_bind().dialect.name
     is_postgresql = dialect == "postgresql"
 
-    # Create enum types first (PostgreSQL only)
-    if is_postgresql:
-        op.execute("""
-            CREATE TYPE storage_backend_enum AS ENUM (
-                'local', 'usb', 'rclone', 'gdrive', 'onedrive'
-            )
-        """)
-        op.execute("""
-            CREATE TYPE file_type_enum AS ENUM (
-                'pdf', 'docx', 'pptx', 'xlsx', 'html', 'md', 'txt',
-                'image', 'audio', 'video', 'other'
-            )
-        """)
-        op.execute("""
-            CREATE TYPE processing_status_enum AS ENUM (
-                'pending', 'processing', 'completed', 'failed', 'stale'
-            )
-        """)
-        op.execute("""
-            CREATE TYPE content_type_enum AS ENUM (
-                'summary', 'flash_card', 'cliff_notes', 'outline', 'image', 'extract'
-            )
-        """)
-        op.execute("""
-            CREATE TYPE relationship_type_enum AS ENUM (
-                'related', 'references', 'summarizes', 'derived_from', 'similar'
-            )
-        """)
-        op.execute("""
-            CREATE TYPE tagged_by_enum AS ENUM ('llm', 'user', 'rule')
-        """)
-        op.execute("""
-            CREATE TYPE discovered_by_enum AS ENUM ('llm', 'user', 'manual')
-        """)
-        op.execute("""
-            CREATE TYPE action_type_enum AS ENUM (
-                'discovered', 'extracted', 'chunked', 'tagged', 'failed'
-            )
-        """)
-        op.execute("""
-            CREATE TYPE status_type_enum AS ENUM ('success', 'partial', 'failed')
-        """)
-        op.execute("""
-            CREATE TYPE cache_type_enum AS ENUM ('query', 'search', 'generated')
-        """)
-
     # documents table
     op.create_table(
         'documents',
@@ -86,14 +40,14 @@ def upgrade() -> None:
         sa.Column(
             'storage_backend',
             sa.Enum('local', 'usb', 'rclone', 'gdrive', 'onedrive',
-                    name='storage_backend_enum') if is_postgresql else sa.String(20),
+                    name='storage_backend_enum', create_type=True) if is_postgresql else sa.String(20),
             nullable=False,
         ),
         sa.Column(
             'file_type',
             sa.Enum('pdf', 'docx', 'pptx', 'xlsx', 'html', 'md', 'txt',
                     'image', 'audio', 'video', 'other',
-                    name='file_type_enum') if is_postgresql else sa.String(10),
+                    name='file_type_enum', create_type=True) if is_postgresql else sa.String(10),
             nullable=False,
         ),
         sa.Column('file_hash', sa.String(length=64), nullable=False),
@@ -106,7 +60,7 @@ def upgrade() -> None:
             'processing_status',
             sa.Enum('pending', 'processing', 'completed',
                     'failed', 'stale',
-                    name='processing_status_enum') if is_postgresql else sa.String(20),
+                    name='processing_status_enum', create_type=True) if is_postgresql else sa.String(20),
             default='pending' if not is_postgresql else None,
             nullable=False,
         ),
@@ -180,7 +134,7 @@ def upgrade() -> None:
         sa.Column('confidence', sa.Float(), nullable=False),
         sa.Column(
             'tagged_by',
-            sa.Enum('llm', 'user', 'rule', name='tagged_by_enum') if is_postgresql else sa.String(10),
+            sa.Enum('llm', 'user', 'rule', name='tagged_by_enum', create_type=True) if is_postgresql else sa.String(10),
             nullable=False,
         ),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
@@ -204,7 +158,7 @@ def upgrade() -> None:
             'content_type',
             sa.Enum('summary', 'flash_card', 'cliff_notes',
                     'outline', 'image', 'extract',
-                    name='content_type_enum') if is_postgresql else sa.String(20),
+                    name='content_type_enum', create_type=True) if is_postgresql else sa.String(20),
             nullable=False,
         ),
         sa.Column('content', sa.Text(), nullable=False),
@@ -232,14 +186,14 @@ def upgrade() -> None:
             'relationship_type',
             sa.Enum('related', 'references', 'summarizes',
                     'derived_from', 'similar',
-                    name='relationship_type_enum') if is_postgresql else sa.String(20),
+                    name='relationship_type_enum', create_type=True) if is_postgresql else sa.String(20),
             nullable=False,
         ),
         sa.Column('confidence', sa.Float(), nullable=False),
         sa.Column(
             'discovered_by',
             sa.Enum('llm', 'user', 'manual',
-                    name='discovered_by_enum') if is_postgresql else sa.String(10),
+                    name='discovered_by_enum', create_type=True) if is_postgresql else sa.String(10),
             nullable=False,
         ),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
@@ -268,7 +222,7 @@ def upgrade() -> None:
         sa.Column(
             'storage_backend',
             sa.Enum('local', 'usb', 'rclone', 'gdrive', 'onedrive',
-                    name='storage_backend_enum') if is_postgresql else sa.String(20),
+                    name='storage_backend_enum', create_type=True) if is_postgresql else sa.String(20),
             nullable=False,
         ),
         sa.Column('recursive', sa.Boolean(), nullable=False),
@@ -288,12 +242,12 @@ def upgrade() -> None:
         sa.Column(
             'action',
             sa.Enum('discovered', 'extracted', 'chunked', 'tagged', 'failed',
-                    name='action_type_enum') if is_postgresql else sa.String(20),
+                    name='action_type_enum', create_type=True) if is_postgresql else sa.String(20),
             nullable=False,
         ),
         sa.Column(
             'status',
-            sa.Enum('success', 'partial', 'failed', name='status_type_enum') if is_postgresql else sa.String(10),
+            sa.Enum('success', 'partial', 'failed', name='status_type_enum', create_type=True) if is_postgresql else sa.String(10),
             nullable=False,
         ),
         sa.Column('details', json_type(astext_type=sa.Text()) if is_postgresql else json_type(), nullable=True),
@@ -318,7 +272,7 @@ def upgrade() -> None:
         sa.Column('cache_key', sa.String(length=512), nullable=False),
         sa.Column(
             'cache_type',
-            sa.Enum('query', 'search', 'generated', name='cache_type_enum') if is_postgresql else sa.String(10),
+            sa.Enum('query', 'search', 'generated', name='cache_type_enum', create_type=True) if is_postgresql else sa.String(10),
             nullable=False,
         ),
         sa.Column('data', json_type(astext_type=sa.Text()) if is_postgresql else json_type(), nullable=False),
