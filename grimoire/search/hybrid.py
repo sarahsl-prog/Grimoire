@@ -210,6 +210,14 @@ class HybridSearch:
             List of HybridResult with vector scores.
         """
         try:
+            # Ensure vector store is initialized (lazy init)
+            if hasattr(self._vector_store, 'is_initialized') and not self._vector_store.is_initialized:
+                embedding_dim = self._embedder.embedding_dim
+                await self._vector_store.initialize(
+                    collection_name=getattr(self._vector_store, 'collection_name', 'documents'),
+                    embedding_dim=embedding_dim,
+                )
+
             query_embedding = await self._embedder.embed_single(query)
             raw_results = await self._vector_store.search(
                 query_embedding=query_embedding,

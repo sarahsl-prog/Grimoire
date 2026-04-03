@@ -289,6 +289,10 @@ class MarkdownHeaderTextSplitter(Chunker):
                 chunk.index = len(final_chunks)
                 final_chunks.append(chunk)
 
+        # Reindex to ensure sequential indices after splits
+        for idx, chunk in enumerate(final_chunks):
+            chunk.index = idx
+
         # Set continuity links
         if final_chunks:
             self._set_continuity_links(final_chunks, doc_id or "doc")

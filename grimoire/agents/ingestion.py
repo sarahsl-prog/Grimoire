@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.core.chunker import Chunk, ChunkConfig, ChunkingStrategy, Chunker
 from grimoire.core.chunker.markdown import MarkdownHeaderTextSplitter
-from grimoire.core.chunker.recursive import RecursiveCharacterTextSplitter
+from grimoire.core.chunker.recursive import RecursiveCharacterTextSplitter, RecursiveChunkConfig
 from grimoire.core.chunker.semantic import SemanticChunker
 from grimoire.core.dedup import DedupResult, DeduplicationAction, Deduplicator
 from grimoire.core.embedder import Embedder
@@ -235,6 +235,15 @@ class IngestionAgent:
 
         logger.info(f"Ingesting file: {file_path}")
 
+        # Ensure vector store is initialized (lazy init)
+        if hasattr(self._vector_store, 'is_initialized') and not self._vector_store.is_initialized:
+            embedding_dim = self._embedder.embedding_dim
+            await self._vector_store.initialize(
+                collection_name=getattr(self._vector_store, 'collection_name', 'documents'),
+                embedding_dim=embedding_dim,
+            )
+            logger.debug("Vector store initialized")
+
         try:
             # Step 1: Detect file type
             file_type = detect_file_type(file_path)
@@ -315,6 +324,8 @@ class IngestionAgent:
             # Step 8: Auto-tag (optional)
             tags_applied = 0
             if auto_tag and self._tagger:
+                if categories is None:
+                    categories = await self._fetch_categories(db)
                 tags_applied = await self._auto_tag(
                     db, doc, parsed.text, categories,
                 )
@@ -479,12 +490,22 @@ class IngestionAgent:
         Returns:
             Configured Chunker instance.
         """
+        size = self._chunk_config.chunk_size
+        overlap = self._chunk_config.chunk_overlap
         if strategy == ChunkingStrategy.MARKDOWN:
-            return MarkdownHeaderTextSplitter(self._chunk_config)
+            from grimoire.core.chunker.markdown import MarkdownChunkConfig
+            return MarkdownHeaderTextSplitter(
+                MarkdownChunkConfig(chunk_size=size, chunk_overlap=overlap)
+            )
         elif strategy == ChunkingStrategy.SEMANTIC:
-            return SemanticChunker(self._chunk_config)
+            from grimoire.core.chunker.semantic import SemanticChunkConfig
+            return SemanticChunker(
+                SemanticChunkConfig(chunk_size=size, chunk_overlap=overlap)
+            )
         else:
-            return RecursiveCharacterTextSplitter(self._chunk_config)
+            return RecursiveCharacterTextSplitter(
+                RecursiveChunkConfig(chunk_size=size, chunk_overlap=overlap)
+            )
 
     async def _store_chunks_in_db(
         self, db: AsyncSession, doc_id: str, chunks: List[Chunk],
@@ -508,11 +529,17 @@ class IngestionAgent:
                 content=chunk.content,
                 token_count=chunk.token_count,
                 embedding_model=self._embedding_model,
-                prev_chunk_id=chunk.prev_chunk_id,
-                next_chunk_id=chunk.next_chunk_id,
             )
             db.add(chunk_model)
             chunk_models.append(chunk_model)
+
+        # Insert chunks first without continuity links to avoid FK violations
+        await db.flush()
+
+        # Now set prev/next links since all chunks exist in the DB
+        for chunk, chunk_model in zip(chunks, chunk_models):
+            chunk_model.prev_chunk_id = chunk.prev_chunk_id
+            chunk_model.next_chunk_id = chunk.next_chunk_id
 
         await db.flush()
         logger.debug(f"Stored {len(chunk_models)} chunks in database")

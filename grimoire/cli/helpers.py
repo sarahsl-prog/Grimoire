@@ -75,7 +75,7 @@ def build_ingestion_agent() -> Any:
 
     vector_store = ChromaDBStore(
         persist_directory=settings.vector_store.chromadb.path,
-        collection_name=settings.vector_store.chromadb.collection,
+        collection_name=settings.vector_store.chromadb.collection_name,
     )
 
     tagger = Tagger(settings)
@@ -111,7 +111,7 @@ def build_query_agent() -> Any:
 
     vector_store = ChromaDBStore(
         persist_directory=settings.vector_store.chromadb.path,
-        collection_name=settings.vector_store.chromadb.collection,
+        collection_name=settings.vector_store.chromadb.collection_name,
     )
 
     hybrid = HybridSearch(

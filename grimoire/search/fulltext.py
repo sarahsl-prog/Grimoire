@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, List, Optional, Union
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, literal_column, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -286,12 +286,12 @@ class FulltextSearch:
                     func.ts_rank(
                         func.setweight(
                             func.to_tsvector(self.language, Document.title),
-                            self.WEIGHT_TITLE,
+                            literal_column(f"'{self.WEIGHT_TITLE}'"),
                         )
                         .concat(
                             func.setweight(
                                 func.to_tsvector(self.language, Chunk.content),
-                                self.WEIGHT_CONTENT,
+                                literal_column(f"'{self.WEIGHT_CONTENT}'"),
                             )
                         ),
                         tsquery_expr,

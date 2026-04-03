@@ -208,10 +208,7 @@ class Chunker(ABC):
 
         # Generate IDs for all chunks first
         for i, chunk in enumerate(chunks):
-            if doc_id:
-                chunk_id = f"{doc_id}-chunk-{i}"
-            else:
-                chunk_id = str(uuid4())
+            chunk_id = str(uuid4())
             chunk.metadata["chunk_id"] = chunk_id
 
         # Set continuity links

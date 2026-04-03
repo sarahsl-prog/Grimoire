@@ -22,7 +22,7 @@ from uuid import uuid4
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as SQLEnum,
+    Enum as _SQLEnum,
     Float,
     ForeignKey,
     Index,
@@ -37,6 +37,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from grimoire.db.base import Base
+
+
+def SQLEnum(enum_class, **kwargs):
+    """Wrapper around SQLAlchemy Enum that uses enum values (lowercase) instead of names."""
+    return _SQLEnum(enum_class, values_callable=lambda x: [e.value for e in x], **kwargs)
 
 
 # Portable JSON type that works with both PostgreSQL (JSONB) and SQLite (JSON)
