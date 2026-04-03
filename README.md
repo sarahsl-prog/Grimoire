@@ -54,7 +54,16 @@ Grimoire is a production-ready, modular knowledge management platform supporting
    uv run alembic upgrade head
    ```
 
-6. **Run the application**
+6. **Create categories** (optional, required for auto-tagging)
+
+   Grimoire's LLM auto-tagger can only assign categories that already exist in the database. If you want documents to be automatically categorized during ingestion, create your categories first:
+   ```bash
+   grimoire category add "Research" --description "Research papers"
+   grimoire category add "AI/ML" --parent research --color "#3498db"
+   grimoire category add "Tutorials" --description "Guides and how-tos"
+   ```
+
+7. **Run the application**
    ```bash
    # CLI
    uv run grimoire --help
@@ -133,7 +142,9 @@ grimoire generate outline -d doc-id
 
 # Manage categories
 grimoire category add "Research" --description "Research papers"
-grimoire category list
+grimoire category add "AI/ML" --parent research --color "#3498db"
+grimoire category add "Deep Learning" --parent ai-ml
+grimoire category list --tree
 grimoire category remove "research"
 
 # Tag/untag documents

@@ -510,44 +510,6 @@ class Tagger:
 
         return matched
 
-    async def _call_ollama(self, prompt: str) -> str:
-        """Call Ollama API with prompt.
-
-        Args:
-            prompt: Prompt text to send
-
-        Returns:
-            Raw LLM response text
-
-        Raises:
-            httpx.HTTPError: If API call fails
-            ValueError: If response is invalid
-        """
-        client = await self._get_client()
-
-        url = f"{self.llm_config.url.rstrip('/')}/api/generate"
-        payload = {
-            "model": self.llm_config.model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": self.llm_config.temperature,
-                "num_predict": self.llm_config.max_tokens,
-            },
-        }
-
-        logger.debug(f"Calling Ollama API at {url} with model {self.llm_config.model}")
-
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-
-        result = response.json()
-
-        if "response" not in result:
-            raise ValueError(f"Unexpected Ollama response format: {result.keys()}")
-
-        return str(result["response"])
-
     async def suggest_tags(
         self,
         document_sample: str,

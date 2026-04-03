@@ -288,7 +288,7 @@ class RecursiveCharacterTextSplitter(Chunker):
             chunk = Chunk(
                 content=content,
                 token_count=token_count,
-                index=i,
+                index=len(chunks),
                 metadata={
                     "strategy": "recursive",
                     "separator_count": len(self.config.separators),
