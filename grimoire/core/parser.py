@@ -92,7 +92,7 @@ class ParserConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     
     ocr_enabled: bool = Field(default=True, description="Enable OCR for images/scanned documents")
-    parse_images: bool = Field(default=False, description="Extract images from documents")
+    parse_images: bool = Field(default=True, description="Extract images from documents")
     enable_tables: bool = Field(default=True, description="Extract tables as markdown")
     enable_figures: bool = Field(default=True, description="Extract figures from documents")
     max_file_size: int = Field(default=100 * 1024 * 1024, description="Maximum file size in bytes (100MB)")
@@ -558,7 +558,7 @@ class DocumentParser:
 async def parse_document(
     file_path: str | Path,
     ocr_enabled: bool = True,
-    parse_images: bool = False
+    parse_images: bool = True
 ) -> ParsedDocument:
     """Parse a document with default configuration.
     
