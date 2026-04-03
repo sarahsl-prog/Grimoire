@@ -64,7 +64,7 @@ async def ask(ctx: click.Context, question: str, top_k: int, tag: tuple[str, ...
 @click.argument("query", type=str)
 @click.option("--top-k", "-k", type=int, default=10, help="Number of results.")
 @click.option("--tag", "-t", type=str, multiple=True, help="Filter by tag (repeatable).")
-@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
+@click.option("--format", "fmt", type=click.Choice(["text", "json", "markdown"]), default="text", help="Output format.")
 @click.pass_context
 @async_command
 async def search(ctx: click.Context, query: str, top_k: int, tag: tuple[str, ...], fmt: str) -> None:
@@ -75,6 +75,8 @@ async def search(ctx: click.Context, query: str, top_k: int, tag: tuple[str, ...
         grimoire search "machine learning" --tag research
 
         grimoire search "quarterly report" --format json --top-k 20
+
+        grimoire search "neural networks" --format markdown
     """
     await setup_db()
     try:
@@ -90,6 +92,18 @@ async def search(ctx: click.Context, query: str, top_k: int, tag: tuple[str, ...
 
         if not result.results:
             click.echo("No results found.")
+            return
+
+        if fmt == "markdown":
+            click.echo(f"Found {result.total_results} results ({result.duration_ms}ms):\n")
+            click.echo("| # | Score | Title | Snippet |")
+            click.echo("|---|-------|-------|---------|")
+            for i, r in enumerate(result.results, 1):
+                title = r.get("document_title", r.get("document_id", "")[:8])
+                score = r.get("score", 0)
+                snippet = r.get("content", "")[:80].replace("\n", " ").replace("|", "\\|")
+                click.echo(f"| {i} | {score:.2f} | {title} | {snippet}... |")
+            click.echo()
             return
 
         click.echo(f"Found {result.total_results} results ({result.duration_ms}ms):\n")

@@ -306,6 +306,34 @@ class TestSearchCommand:
     @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
+    def test_search_markdown_output(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_result = MagicMock(
+            total_results=2, duration_ms=42,
+            results=[
+                {"document_title": "Doc A", "score": 0.95, "content": "Some content here"},
+                {"document_title": "Doc B", "score": 0.85, "content": "Other content"},
+            ],
+        )
+        mock_agent = MagicMock()
+        mock_agent.search = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(cli, ["search", "machine learning", "--format", "markdown"])
+        assert result.exit_code == 0
+        assert "| #" in result.output
+        assert "|---" in result.output
+        assert "Doc A" in result.output
+        assert "Doc B" in result.output
+
+    @patch(f"{_QUERY}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.build_query_agent")
+    @patch(f"{_QUERY}.get_db_context")
     def test_search_no_results(
         self, mock_ctx: MagicMock, mock_build: MagicMock,
         mock_setup: AsyncMock, mock_teardown: AsyncMock,
