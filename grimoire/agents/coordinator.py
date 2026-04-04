@@ -357,7 +357,11 @@ class CoordinatorAgent:
                 self._use_llm_fallback
                 and confidence < self._llm_fallback_threshold
             ):
-                llm_intent = await self._llm_classify(user_input)
+                try:
+                    llm_intent = await self._llm_classify(user_input)
+                except Exception as exc:
+                    logger.warning(f"LLM fallback classification raised: {exc}")
+                    llm_intent = None
                 if llm_intent is not None:
                     intent = llm_intent
                     confidence = 0.85

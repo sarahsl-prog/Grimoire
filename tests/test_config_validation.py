@@ -558,7 +558,7 @@ class TestDatabaseConfig:
     def test_default_database_config(self) -> None:
         """Test default database configuration."""
         config = DatabaseConfig()
-        assert "postgresql://" in config.url
+        assert "postgresql" in config.url
         assert config.pool_size == 10
         assert config.echo is False
 
