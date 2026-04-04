@@ -152,6 +152,59 @@ def build_content_gen_agent() -> Any:
     )
 
 
+def build_coordinator_agent(
+    *,
+    with_ingestion: bool = True,
+    with_query: bool = True,
+    with_content_gen: bool = True,
+    with_watcher: bool = False,
+    use_llm_fallback: bool = False,
+) -> Any:
+    """Create a CoordinatorAgent wired with the configured sub-agents.
+
+    Args:
+        with_ingestion: Include the IngestionAgent.
+        with_query: Include the QueryAgent.
+        with_content_gen: Include the ContentGenerationAgent.
+        with_watcher: Include the WatcherAgent (requires watch_manager).
+        use_llm_fallback: Enable LLM-assisted intent classification fallback.
+
+    Returns:
+        Configured CoordinatorAgent instance.
+    """
+    from grimoire.agents.coordinator import CoordinatorAgent
+
+    settings = get_settings()
+
+    ingestion_agent = build_ingestion_agent() if with_ingestion else None
+    query_agent = build_query_agent() if with_query else None
+    content_gen_agent = build_content_gen_agent() if with_content_gen else None
+
+    watcher_agent = None
+    if with_watcher:
+        from grimoire.agents.watcher import WatcherAgent
+        from grimoire.storage.watch_manager import WatchManager
+
+        watch_manager = WatchManager()
+        # IngestionAgent is required for WatcherAgent
+        _ingestion = ingestion_agent or build_ingestion_agent()
+        watcher_agent = WatcherAgent(
+            watch_manager=watch_manager,
+            ingestion_agent=_ingestion,
+            db_session_factory=get_db_context,
+        )
+
+    return CoordinatorAgent(
+        ingestion_agent=ingestion_agent,
+        query_agent=query_agent,
+        content_gen_agent=content_gen_agent,
+        watcher_agent=watcher_agent,
+        llm_url=settings.llm.url,
+        llm_model=settings.llm.model,
+        use_llm_fallback=use_llm_fallback,
+    )
+
+
 def get_db_context():
     """Get async DB context manager. Import wrapper for testability."""
     from grimoire.db.session import get_db_context as _ctx
