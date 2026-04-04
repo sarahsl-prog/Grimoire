@@ -13,6 +13,7 @@ Tests cover:
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -43,6 +44,7 @@ _INGEST = "grimoire.cli.ingest"
 _QUERY = "grimoire.cli.query"
 _GEN = "grimoire.cli.generate"
 _STATUS = "grimoire.cli.status"
+_DOCS = "grimoire.cli.docs"
 
 
 # =============================================================================
@@ -57,7 +59,7 @@ class TestCommandRegistration:
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         for cmd in ["ingest", "ask", "search", "generate", "category", "watch",
-                     "status", "config", "cache", "tag", "untag"]:
+                     "status", "config", "cache", "tag", "untag", "docs"]:
             assert cmd in result.output
 
     def test_version(self, runner: CliRunner) -> None:
@@ -75,6 +77,7 @@ class TestCommandRegistration:
         (["config", "--help"], "init"),
         (["cache", "--help"], "clear"),
         (["status", "--help"], "--detailed"),
+        (["docs", "--help"], "list"),
     ])
     def test_subcommand_help(self, runner: CliRunner, cmd: list[str], expected: str) -> None:
         result = runner.invoke(cli, cmd)
@@ -298,6 +301,34 @@ class TestSearchCommand:
         assert result.exit_code == 0
         parsed = json.loads(result.output)
         assert "results" in parsed
+
+    @patch(f"{_QUERY}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.build_query_agent")
+    @patch(f"{_QUERY}.get_db_context")
+    def test_search_markdown_output(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_result = MagicMock(
+            total_results=2, duration_ms=42,
+            results=[
+                {"document_title": "Doc A", "score": 0.95, "content": "Some content here"},
+                {"document_title": "Doc B", "score": 0.85, "content": "Other content"},
+            ],
+        )
+        mock_agent = MagicMock()
+        mock_agent.search = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(cli, ["search", "machine learning", "--format", "markdown"])
+        assert result.exit_code == 0
+        assert "| #" in result.output
+        assert "|---" in result.output
+        assert "Doc A" in result.output
+        assert "Doc B" in result.output
 
     @patch(f"{_QUERY}.teardown_db", new_callable=AsyncMock)
     @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
@@ -544,6 +575,403 @@ class TestStatusCommand:
 
 
 # =============================================================================
+# Docs List Tests
+# =============================================================================
+
+
+def _make_mock_doc(
+    doc_id: str = "abcd1234-5678-9abc-def0-123456789abc",
+    title: str = "Test Document",
+    file_type: str = "pdf",
+    status: str = "completed",
+    created_at: datetime | None = None,
+) -> MagicMock:
+    """Create a mock Document object."""
+    doc = MagicMock()
+    doc.id = doc_id
+    doc.title = title
+    doc.file_type = MagicMock(value=file_type)
+    doc.processing_status = MagicMock(value=status)
+    doc.created_at = created_at or datetime(2026, 4, 3, 12, 0, 0)
+    return doc
+
+
+class TestDocsListCommand:
+    """Test the docs list command."""
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_all(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = [
+            _make_mock_doc(title="Doc A"),
+            _make_mock_doc(doc_id="bbbb2222-0000-0000-0000-000000000000", title="Doc B"),
+        ]
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["docs", "list"])
+        assert result.exit_code == 0
+        assert "Doc A" in result.output
+        assert "Doc B" in result.output
+        assert "2 document(s) found" in result.output
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_by_category(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = [
+            _make_mock_doc(title="ML Paper"),
+        ]
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["docs", "list", "--category", "Research"])
+        assert result.exit_code == 0
+        assert "ML Paper" in result.output
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_by_search(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = [
+            _make_mock_doc(title="LLM Quantization Guide"),
+        ]
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["docs", "list", "--search", "quantization"])
+        assert result.exit_code == 0
+        assert "Quantization" in result.output
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_by_since_relative(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = [
+            _make_mock_doc(title="Recent Doc"),
+        ]
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["docs", "list", "--since", "7d"])
+        assert result.exit_code == 0
+        assert "Recent Doc" in result.output
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_by_since_absolute(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = [
+            _make_mock_doc(title="March Doc"),
+        ]
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["docs", "list", "--since", "2026-03-01"])
+        assert result.exit_code == 0
+        assert "March Doc" in result.output
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_combined_filters(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = [
+            _make_mock_doc(title="Filtered Doc"),
+        ]
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, [
+            "docs", "list", "--category", "AI", "--search", "deep", "--since", "7d",
+        ])
+        assert result.exit_code == 0
+        assert "Filtered Doc" in result.output
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_json_output(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        # First call returns documents, second call returns categories per doc
+        doc = _make_mock_doc(title="JSON Doc")
+        mock_exec_docs = MagicMock()
+        mock_exec_docs.scalars.return_value.all.return_value = [doc]
+
+        mock_exec_cats = MagicMock()
+        mock_exec_cats.scalars.return_value.all.return_value = ["Research", "AI"]
+
+        mock_session.execute = AsyncMock(side_effect=[mock_exec_docs, mock_exec_cats])
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["docs", "list", "--format", "json"])
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        assert len(parsed) == 1
+        assert parsed[0]["title"] == "JSON Doc"
+        assert "Research" in parsed[0]["categories"]
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_markdown_output(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = [
+            _make_mock_doc(title="MD Doc"),
+        ]
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["docs", "list", "--format", "markdown"])
+        assert result.exit_code == 0
+        assert "| ID" in result.output
+        assert "|---" in result.output
+        assert "MD Doc" in result.output
+        assert "1 document(s) found" in result.output
+
+    @patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_DOCS}.get_db_context")
+    def test_docs_list_empty(
+        self, mock_ctx: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = []
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["docs", "list"])
+        assert result.exit_code == 0
+        assert "No documents found" in result.output
+
+    def test_docs_list_bad_since(self, runner: CliRunner) -> None:
+        """Invalid --since value should produce a clean error."""
+        # _parse_since runs before DB setup, so no mocking needed for the bad-param path
+        # However, setup_db is called first, so we need to mock it
+        with patch(f"{_DOCS}.setup_db", new_callable=AsyncMock), \
+             patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock), \
+             patch(f"{_DOCS}.get_db_context") as mock_ctx:
+            mock_session = AsyncMock()
+            mock_exec = MagicMock()
+            mock_exec.scalars.return_value.all.return_value = []
+            mock_session.execute = AsyncMock(return_value=mock_exec)
+
+            ctx = MagicMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_ctx.return_value = ctx
+
+            result = runner.invoke(cli, ["docs", "list", "--since", "not-a-date"])
+            assert result.exit_code != 0
+            assert "Invalid date" in result.output
+
+
+# =============================================================================
+# Generate with Category Tests
+# =============================================================================
+
+
+class TestGenerateWithCategory:
+    """Test generate commands with --category flag."""
+
+    @patch(f"{_GEN}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.build_content_gen_agent")
+    @patch(f"{_GEN}.get_db_context")
+    def test_generate_summary_with_category(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        # _resolve_doc_ids query returns document IDs
+        mock_exec_ids = MagicMock()
+        mock_exec_ids.scalars.return_value.all.return_value = ["id1", "id2"]
+        mock_session.execute = AsyncMock(return_value=mock_exec_ids)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_result = MagicMock(content="Category summary.", cached=False, duration_ms=100, model_used="llama3")
+        mock_agent = MagicMock()
+        mock_agent.generate_summary = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+
+        result = runner.invoke(cli, ["generate", "summary", "--category", "machine-learning"])
+        assert result.exit_code == 0
+        assert "Category summary." in result.output
+
+    @patch(f"{_GEN}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.build_content_gen_agent")
+    @patch(f"{_GEN}.get_db_context")
+    def test_generate_flashcards_with_category(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_ids = MagicMock()
+        mock_exec_ids.scalars.return_value.all.return_value = ["id1"]
+        mock_session.execute = AsyncMock(return_value=mock_exec_ids)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_result = MagicMock(content="Q: What?\nA: That.", cached=False, duration_ms=50, model_used="")
+        mock_agent = MagicMock()
+        mock_agent.generate_flash_cards = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+
+        result = runner.invoke(cli, ["generate", "flashcards", "--category", "AI"])
+        assert result.exit_code == 0
+        assert "What?" in result.output
+
+    @patch(f"{_GEN}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.build_content_gen_agent")
+    @patch(f"{_GEN}.get_db_context")
+    def test_generate_both_flags_error(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(cli, [
+            "generate", "summary", "-d", "abc123", "--category", "AI",
+        ])
+        assert result.exit_code != 0
+        assert "not both" in result.output
+
+    @patch(f"{_GEN}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.build_content_gen_agent")
+    @patch(f"{_GEN}.get_db_context")
+    def test_generate_neither_flag_error(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(cli, ["generate", "summary"])
+        assert result.exit_code != 0
+        assert "Provide --doc-id or --category" in result.output
+
+    @patch(f"{_GEN}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.build_content_gen_agent")
+    @patch(f"{_GEN}.get_db_context")
+    def test_generate_category_no_docs(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_ids = MagicMock()
+        mock_exec_ids.scalars.return_value.all.return_value = []
+        mock_session.execute = AsyncMock(return_value=mock_exec_ids)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        result = runner.invoke(cli, ["generate", "summary", "--category", "empty-category"])
+        assert result.exit_code == 0
+        assert "No documents found in category" in result.output
+
+
+# =============================================================================
 # Edge Cases
 # =============================================================================
 
@@ -559,9 +987,17 @@ class TestCLIEdgeCases:
         result = runner.invoke(cli, ["ask"])
         assert result.exit_code != 0
 
-    def test_generate_no_doc_id(self, runner: CliRunner) -> None:
+    @patch(f"{_GEN}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_GEN}.get_db_context")
+    def test_generate_no_doc_id(
+        self, mock_ctx: MagicMock, mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_ctx.return_value = _mock_db_ctx()
         result = runner.invoke(cli, ["generate", "summary"])
         assert result.exit_code != 0
+        assert "Provide --doc-id or --category" in result.output
 
     def test_search_missing_argument(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["search"])

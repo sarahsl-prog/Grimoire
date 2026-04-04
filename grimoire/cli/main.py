@@ -55,6 +55,7 @@ def cli(ctx: click.Context, config: Path | None, verbose: bool) -> None:
 
 # Register subcommands
 from grimoire.cli.categories import categories, tag, untag
+from grimoire.cli.docs import docs
 from grimoire.cli.config import config as config_cmd
 from grimoire.cli.generate import generate
 from grimoire.cli.ingest import ingest
@@ -73,6 +74,7 @@ cli.add_command(untag)
 cli.add_command(config_cmd)
 cli.add_command(status)
 cli.add_command(cache_group)
+cli.add_command(docs)
 
 
 def main() -> None:

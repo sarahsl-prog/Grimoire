@@ -134,11 +134,20 @@ grimoire ask "What are the key findings about neural networks?" --top-k 5
 # Search without answer generation
 grimoire search "neural networks" --top-k 10 --format json
 
-# Generate content
+# List ingested documents
+grimoire docs list                                          # all docs
+grimoire docs list --category "machine-learning"            # by category
+grimoire docs list --search "quantization" --since 7d       # combined filters
+grimoire docs list --format json                            # JSON output
+grimoire docs list --format markdown                        # Markdown table
+
+# Generate content (by doc ID or category)
 grimoire generate summary -d doc-id --style detailed
 grimoire generate flashcards -d doc-id --count 20
 grimoire generate cliff-notes -d doc-id
 grimoire generate outline -d doc-id
+grimoire generate summary --category "machine-learning"
+grimoire generate flashcards --category "cybersecurity"
 
 # Manage categories
 grimoire category add "Research" --description "Research papers"

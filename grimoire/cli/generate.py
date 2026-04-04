@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 
 import click
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.cli.helpers import (
     async_command,
@@ -22,34 +24,67 @@ def generate() -> None:
     """Generate content from ingested documents."""
 
 
-def _parse_doc_ids(doc_id: tuple[str, ...], tag: str | None) -> list[str]:
-    """Resolve document IDs from --doc-id flags or --tag filter."""
+async def _resolve_doc_ids(
+    db: AsyncSession,
+    doc_id: tuple[str, ...],
+    category: str | None,
+) -> list[str]:
+    """Resolve document IDs from --doc-id or --category.
+
+    Exactly one of doc_id or category must be provided.
+    """
+    if doc_id and category:
+        raise click.UsageError("Use --doc-id or --category, not both.")
+    if not doc_id and not category:
+        raise click.UsageError("Provide --doc-id or --category.")
     if doc_id:
         return list(doc_id)
-    return []
+
+    # Resolve by category
+    from grimoire.db.models import Category, Document, DocumentTag, ProcessingStatus
+
+    stmt = (
+        select(Document.id)
+        .join(DocumentTag, Document.id == DocumentTag.document_id)
+        .join(Category, DocumentTag.category_id == Category.id)
+        .where(
+            (func.lower(Category.name) == category.lower())
+            | (Category.slug == category.lower())
+        )
+        .where(Document.processing_status == ProcessingStatus.COMPLETED)
+    )
+    result = await db.execute(stmt)
+    ids = list(result.scalars().all())
+    if not ids:
+        echo_error(f"No documents found in category '{category}'.")
+    return ids
 
 
 @generate.command()
-@click.option("--doc-id", "-d", type=str, multiple=True, required=True, help="Document ID (repeatable).")
+@click.option("--doc-id", "-d", type=str, multiple=True, required=False, help="Document ID (repeatable).")
+@click.option("--category", type=str, default=None, help="Generate from all docs in this category.")
 @click.option("--style", type=click.Choice(["concise", "detailed"]), default="concise", help="Summary style.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
 @click.pass_context
 @async_command
-async def summary(ctx: click.Context, doc_id: tuple[str, ...], style: str, fmt: str) -> None:
+async def summary(ctx: click.Context, doc_id: tuple[str, ...], category: str | None, style: str, fmt: str) -> None:
     """Generate a summary of specified documents.
 
     Examples:
 
         grimoire generate summary --doc-id abc123 --style detailed
 
+        grimoire generate summary --category "machine-learning"
+
         grimoire generate summary -d id1 -d id2 --format json
     """
     await setup_db()
     try:
-        agent = build_content_gen_agent()
-        ids = list(doc_id)
-
         async with get_db_context() as db:
+            ids = await _resolve_doc_ids(db, doc_id, category)
+            if not ids:
+                return
+            agent = build_content_gen_agent()
             result = await agent.generate_summary(db, ids, style=style)
 
         _output_result(result, fmt)
@@ -58,24 +93,28 @@ async def summary(ctx: click.Context, doc_id: tuple[str, ...], style: str, fmt: 
 
 
 @generate.command("flashcards")
-@click.option("--doc-id", "-d", type=str, multiple=True, required=True, help="Document ID (repeatable).")
+@click.option("--doc-id", "-d", type=str, multiple=True, required=False, help="Document ID (repeatable).")
+@click.option("--category", type=str, default=None, help="Generate from all docs in this category.")
 @click.option("--count", "-n", type=int, default=10, help="Number of flash cards.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
 @click.pass_context
 @async_command
-async def flashcards(ctx: click.Context, doc_id: tuple[str, ...], count: int, fmt: str) -> None:
+async def flashcards(ctx: click.Context, doc_id: tuple[str, ...], category: str | None, count: int, fmt: str) -> None:
     """Generate flash cards from documents.
 
     Examples:
 
         grimoire generate flashcards --doc-id abc123 --count 20
+
+        grimoire generate flashcards --category "machine-learning"
     """
     await setup_db()
     try:
-        agent = build_content_gen_agent()
-        ids = list(doc_id)
-
         async with get_db_context() as db:
+            ids = await _resolve_doc_ids(db, doc_id, category)
+            if not ids:
+                return
+            agent = build_content_gen_agent()
             result = await agent.generate_flash_cards(db, ids, count=count)
 
         _output_result(result, fmt)
@@ -84,23 +123,27 @@ async def flashcards(ctx: click.Context, doc_id: tuple[str, ...], count: int, fm
 
 
 @generate.command("cliff-notes")
-@click.option("--doc-id", "-d", type=str, multiple=True, required=True, help="Document ID (repeatable).")
+@click.option("--doc-id", "-d", type=str, multiple=True, required=False, help="Document ID (repeatable).")
+@click.option("--category", type=str, default=None, help="Generate from all docs in this category.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
 @click.pass_context
 @async_command
-async def cliff_notes(ctx: click.Context, doc_id: tuple[str, ...], fmt: str) -> None:
+async def cliff_notes(ctx: click.Context, doc_id: tuple[str, ...], category: str | None, fmt: str) -> None:
     """Generate cliff notes from documents.
 
     Examples:
 
         grimoire generate cliff-notes --doc-id abc123
+
+        grimoire generate cliff-notes --category "cybersecurity"
     """
     await setup_db()
     try:
-        agent = build_content_gen_agent()
-        ids = list(doc_id)
-
         async with get_db_context() as db:
+            ids = await _resolve_doc_ids(db, doc_id, category)
+            if not ids:
+                return
+            agent = build_content_gen_agent()
             result = await agent.generate_cliff_notes(db, ids)
 
         _output_result(result, fmt)
@@ -109,23 +152,27 @@ async def cliff_notes(ctx: click.Context, doc_id: tuple[str, ...], fmt: str) -> 
 
 
 @generate.command()
-@click.option("--doc-id", "-d", type=str, multiple=True, required=True, help="Document ID (repeatable).")
+@click.option("--doc-id", "-d", type=str, multiple=True, required=False, help="Document ID (repeatable).")
+@click.option("--category", type=str, default=None, help="Generate from all docs in this category.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
 @click.pass_context
 @async_command
-async def outline(ctx: click.Context, doc_id: tuple[str, ...], fmt: str) -> None:
+async def outline(ctx: click.Context, doc_id: tuple[str, ...], category: str | None, fmt: str) -> None:
     """Generate an outline from documents.
 
     Examples:
 
         grimoire generate outline --doc-id abc123
+
+        grimoire generate outline --category "development"
     """
     await setup_db()
     try:
-        agent = build_content_gen_agent()
-        ids = list(doc_id)
-
         async with get_db_context() as db:
+            ids = await _resolve_doc_ids(db, doc_id, category)
+            if not ids:
+                return
+            agent = build_content_gen_agent()
             result = await agent.generate_outline(db, ids)
 
         _output_result(result, fmt)
