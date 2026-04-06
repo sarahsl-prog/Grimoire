@@ -238,7 +238,7 @@ class TestParserConfig:
         """Test default parser configuration."""
         config = ParserConfig()
         assert config.ocr_enabled is True
-        assert config.parse_images is False
+        assert config.parse_images is True
         assert config.enable_tables is True
         assert config.max_file_size == 100 * 1024 * 1024  # 100MB
     

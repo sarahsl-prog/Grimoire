@@ -1,16 +1,25 @@
-"""LangChain Deep Agents for Grimoire.
+"""Grimoire agents package.
 
-This module provides four specialized agents:
+Provides five specialised agents:
 - IngestionAgent: Document processing pipeline orchestration
 - WatcherAgent: Directory monitoring and ingestion triggering
 - QueryAgent: Agentic RAG question answering with hybrid search
 - ContentGenerationAgent: On-demand derived content generation
+- CoordinatorAgent: Top-level router that dispatches to the above agents
 """
 
 from grimoire.agents.content_gen import (
     ContentGenerationAgent,
     GenerationRequest,
     GenerationResult,
+)
+from grimoire.agents.coordinator import (
+    CoordinatorAgent,
+    CoordinatorContext,
+    CoordinatorResult,
+    IntentType,
+    classify_intent,
+    extract_content_type,
 )
 from grimoire.agents.ingestion import (
     BatchIngestionResult,
@@ -47,4 +56,11 @@ __all__ = [
     "ContentGenerationAgent",
     "GenerationRequest",
     "GenerationResult",
+    # Coordinator Agent
+    "CoordinatorAgent",
+    "CoordinatorContext",
+    "CoordinatorResult",
+    "IntentType",
+    "classify_intent",
+    "extract_content_type",
 ]
