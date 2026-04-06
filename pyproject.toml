@@ -42,6 +42,7 @@ dependencies = [
     "aiohttp>=3.9",
     "rich>=13.0",
     "pyyaml>=6.0",
+    "python-slugify>=8.0",
     "tiktoken>=0.6",
     "numpy>=1.26",
     "colorama>=0.4",
