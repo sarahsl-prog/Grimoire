@@ -129,7 +129,7 @@ class GoogleDriveAdapter(StorageAdapter):
         creds_path = Path(self.config.credentials_path).expanduser()
         if not creds_path.exists():
             raise AuthenticationError(
-                f"Google credentials file not found: {creds_path}.n"
+                f"Google credentials file not found: {creds_path}."
                 "Please create OAuth2 credentials at "
                 "https://console.cloud.google.com/apis/credentials"
             )
