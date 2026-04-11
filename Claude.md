@@ -1,6 +1,19 @@
 
 # Claude.md - template
 
+## Harness: Grimoire Development
+
+**Goal:** Route all Grimoire development tasks to specialist agents for ingestion, query/RAG, content gen, infrastructure, API/CLI, and QA.
+
+**Trigger:** For ANY implementation, bug fix, feature, or test task in this codebase, use the `grimoire-orchestrator` skill. Simple one-line questions can be answered directly.
+
+**변경 이력:**
+| Date | Change | Target | Reason |
+|------|--------|--------|--------|
+| 2026-04-11 | Initial harness setup | All | New project harness |
+
+---
+
 # Project overview
 - Python 3.12, FastAPI API backend, PostgreSQL, Redis.
 - Main app code in `app/`, tests in `tests/`, infra scripts in `infra/`. 
