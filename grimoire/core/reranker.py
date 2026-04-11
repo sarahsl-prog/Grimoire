@@ -1,7 +1,10 @@
 """Abstract base class for document reranking implementations."""
 
+import asyncio
 from abc import ABC, abstractmethod
 from typing import List
+
+import numpy as np
 
 
 class Reranker(ABC):
@@ -59,3 +62,46 @@ class Reranker(ABC):
             ```
         """
         raise NotImplementedError("Subclasses must implement rerank()")
+
+
+class CrossEncoderReranker(Reranker):
+    """Cross-encoder reranker using sentence-transformers.
+
+    Uses a pre-trained cross-encoder model to score query-document pairs.
+    Default model: cross-encoder/ms-marco-MiniLM-L-6-v2
+
+    Typical Pipeline:
+        1. Vector search returns Top 50 results
+        2. Reranker scores all 50 against query
+        3. Top-k indices are returned for LLM context
+    """
+
+    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+        self._model_name = model_name
+        self._model = None
+
+    def _get_model(self):
+        """Lazy-load the cross-encoder model."""
+        if self._model is None:
+            from sentence_transformers import CrossEncoder
+
+            self._model = CrossEncoder(self._model_name)
+        return self._model
+
+    async def rerank(self, query: str, documents: List[str], top_k: int = 5) -> List[int]:
+        if top_k <= 0 or not documents:
+            return []
+
+        model = self._get_model()
+        pairs = [[query, doc] for doc in documents]
+
+        def _score():
+            return model.predict(pairs)
+
+        scores = await asyncio.get_running_loop().run_in_executor(None, _score)
+
+        if isinstance(scores, np.ndarray):
+            scores = scores.tolist()
+
+        doc_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        return doc_indices[:top_k]

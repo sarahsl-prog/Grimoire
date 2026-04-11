@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Union, cast
 import chromadb
 from chromadb.api import ClientAPI
 from chromadb.api.models.Collection import Collection
-from chromadb.config import Settings as ChromaSettings
 from chromadb.errors import ChromaError, NotFoundError
 from loguru import logger
 
@@ -55,6 +54,8 @@ class ChromaDBStore(VectorStore):
         collection_name: str = "documents",
         distance_metric: str = "cosine",
         anonymized_telemetry: bool = False,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
     ):
         """Initialize ChromaDBStore with configuration.
 
@@ -63,6 +64,8 @@ class ChromaDBStore(VectorStore):
             collection_name: Name of the collection (default: "documents").
             distance_metric: Distance function (cosine, euclidean, ip).
             anonymized_telemetry: Whether to enable ChromaDB telemetry.
+            host: Optional ChromaDB server host for remote connections.
+            port: Optional ChromaDB server port for remote connections.
 
         Raises:
             ValueError: If distance_metric is not supported.
@@ -71,6 +74,8 @@ class ChromaDBStore(VectorStore):
         self.collection_name = collection_name
         self.distance_metric = self._validate_distance_metric(distance_metric)
         self.anonymized_telemetry = anonymized_telemetry
+        self.host = host
+        self.port = port
         self._client: Optional[ClientAPI] = None
         self._collection: Optional[Collection] = None
         self._embedding_dim: int = 0
@@ -120,19 +125,16 @@ class ChromaDBStore(VectorStore):
         self.collection_name = collection_name
 
         try:
-            # Ensure persistence directory exists
-            self.persist_directory.mkdir(parents=True, exist_ok=True)
-            logger.debug(f"ChromaDB persistence directory: {self.persist_directory}")
-
-            # Initialize ChromaDB client with settings
-            settings = ChromaSettings(
-                is_persistent=True,
-                persist_directory=str(self.persist_directory),
-                anonymized_telemetry=self.anonymized_telemetry,
-            )
-
-            self._client = chromadb.Client(settings=settings)
-            logger.info(f"ChromaDB client initialized at {self.persist_directory}")
+            if self.host is not None:
+                # Use HttpClient for remote ChromaDB server
+                self._client = chromadb.HttpClient(host=self.host, port=self.port or 8000)
+                logger.info(f"ChromaDB HTTP client initialized at {self.host}:{self.port}")
+            else:
+                # Use PersistentClient for local persistence
+                self.persist_directory.mkdir(parents=True, exist_ok=True)
+                logger.debug(f"ChromaDB persistence directory: {self.persist_directory}")
+                self._client = chromadb.PersistentClient(path=str(self.persist_directory))
+                logger.info(f"ChromaDB client initialized at {self.persist_directory}")
 
             # Get or create collection with metadata schema
             # metadata is only used when creating a new collection

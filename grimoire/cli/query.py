@@ -9,7 +9,6 @@ import click
 from grimoire.cli.helpers import (
     async_command,
     build_query_agent,
-    echo_error,
     get_db_context,
     setup_db,
     teardown_db,

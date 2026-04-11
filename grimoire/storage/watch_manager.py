@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -79,6 +79,7 @@ class WatchManager:
         self._watches: dict[str, ActiveWatch] = {}
         self._max_local_watches = max_local_watches
         self._local_watch_count = 0
+        self._poller = CloudStoragePoller()
 
         self._default_poll_intervals: dict[StorageBackend, int] = {
             StorageBackend.LOCAL: 0,
@@ -193,7 +194,7 @@ class WatchManager:
         )
         active_watch.cloud_task = task
         active_watch.is_running = True
-        active_watch.last_poll_time = datetime.now()
+        active_watch.last_poll_time = datetime.now(tz=timezone.utc)
         logger.debug(f"Started cloud polling for {active_watch.config.path}")
 
     async def _cloud_poll_loop(self, active_watch: ActiveWatch) -> None:
@@ -204,8 +205,23 @@ class WatchManager:
         try:
             while active_watch.is_running:
                 try:
-                    active_watch.last_poll_time = datetime.now()
                     await asyncio.sleep(config.poll_interval)
+                    changes = await self._poller.poll_changes(
+                        config.backend,
+                        config.path,
+                        active_watch.last_poll_time,
+                    )
+                    for change in changes:
+                        try:
+                            if asyncio.iscoroutinefunction(config.callback):
+                                asyncio.create_task(
+                                    self._invoke_async_callback(config.callback, change)
+                                )
+                            else:
+                                config.callback(change)
+                        except Exception as e:
+                            logger.error(f"Error invoking watch callback: {e}")
+                    active_watch.last_poll_time = datetime.now(tz=timezone.utc)
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -216,6 +232,15 @@ class WatchManager:
             raise
         finally:
             logger.info(f"Cloud polling stopped for {config.path}")
+
+    async def _invoke_async_callback(
+        self, callback: Callable[[FileChange], Any], change: FileChange
+    ) -> None:
+        """Invoke an async callback, suppressing errors."""
+        try:
+            await callback(change)
+        except Exception as e:
+            logger.error(f"Error in async watch callback: {e}")
 
     async def stop_watch(self, watch_id: str) -> bool:
         """Stop watching a specific path."""
@@ -388,6 +413,7 @@ class CloudStoragePoller:
 
     def __init__(self) -> None:
         self._page_tokens: dict[str, str] = {}
+        self._adapters: dict[StorageBackend, Any] = {}
 
     async def poll_changes(
         self,
@@ -396,7 +422,42 @@ class CloudStoragePoller:
         since: datetime,
     ) -> list[FileChange]:
         logger.debug(f"Polling {backend.value}:{path} for changes since {since}")
-        return []
+        adapter = self._get_adapter(backend)
+        if adapter is None:
+            return []
+        try:
+            changes = await adapter.list_changes(since, path)
+            return changes
+        except NotImplementedError:
+            logger.warning(f"Adapter {backend.value} does not support list_changes()")
+            return []
+        except Exception as e:
+            logger.error(f"Error polling {backend.value}: {e}")
+            return []
+
+    def _get_adapter(self, backend: StorageBackend) -> Any:
+        """Get or create a cloud storage adapter for the given backend."""
+        if backend in self._adapters:
+            return self._adapters[backend]
+
+        try:
+            if backend == StorageBackend.GOOGLE_DRIVE:
+                from grimoire.config.settings import get_settings
+                settings = get_settings()
+                if settings.cloud and settings.cloud.google:
+                    from grimoire.storage.gdrive import GoogleDriveAdapter
+                    self._adapters[backend] = GoogleDriveAdapter(settings.cloud.google)
+                    return self._adapters[backend]
+            elif backend == StorageBackend.ONE_DRIVE:
+                from grimoire.config.settings import get_settings
+                settings = get_settings()
+                if settings.cloud and settings.cloud.microsoft:
+                    from grimoire.storage.onedrive import OneDriveAdapter
+                    self._adapters[backend] = OneDriveAdapter(settings.cloud.microsoft)
+                    return self._adapters[backend]
+        except Exception as e:
+            logger.error(f"Failed to create {backend.value} adapter: {e}")
+        return None
 
     def get_page_token(self, path: str) -> str | None:
         return self._page_tokens.get(path)

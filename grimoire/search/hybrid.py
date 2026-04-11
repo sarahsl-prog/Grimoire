@@ -6,6 +6,7 @@ with configurable weights, deduplication, and optional reranking.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -14,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.core.embedder import Embedder
 from grimoire.core.reranker import Reranker
-from grimoire.search.fulltext import FTSResult, FulltextSearch
+from grimoire.search.fulltext import FulltextSearch
 from grimoire.vectorstore.base import VectorStore
 
 
@@ -130,10 +131,10 @@ class HybridSearch:
         rerank_top_k = rerank_top_k or top_k
 
         # Run vector search and FTS in parallel
-        vector_results = await self._vector_search(
-            query, top_k=vector_top_k, filter_dict=filter_dict,
+        vector_results, fts_results = await asyncio.gather(
+            self._vector_search(query, top_k=vector_top_k, filter_dict=filter_dict),
+            self._fts_search(db, query, top_k=fts_top_k),
         )
-        fts_results = await self._fts_search(db, query, top_k=fts_top_k)
 
         # Merge and deduplicate
         merged = self._merge_results(vector_results, fts_results)

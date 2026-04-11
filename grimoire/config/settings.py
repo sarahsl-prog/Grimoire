@@ -950,5 +950,3 @@ def reload_settings() -> GrimoireSettings:
     return get_settings()
 
 
-# Convenience import
-settings = get_settings()

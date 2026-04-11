@@ -220,43 +220,46 @@ class RecursiveCharacterTextSplitter(Chunker):
             return []
 
         if not separators:
-            # No separators left - return text as-is
             return [text]
 
         separator = separators[0]
         remaining_separators = separators[1:]
 
-        # Split using current separator
         splits = self._split_text_with_separator(
             text, separator, self.config.keep_separator
         )
 
-        # Estimate chars per token
         chars_per_token = 4
         target_chars = self.config.chunk_size * chars_per_token
 
-        # Check if splits are small enough
-        good_splits = [s for s in splits if len(s) <= target_chars]
-        large_splits = [s for s in splits if len(s) > target_chars]
+        result: List[str] = []
+        merged: List[str] = []
 
-        # Merge good splits into chunks
-        if good_splits:
-            merged = self._merge_splits_with_overlap(good_splits, separator="")
-        else:
-            merged = []
-
-        # Recursively split large splits
-        for large in large_splits:
-            if remaining_separators:
-                sub_splits = self._recursive_split(large, remaining_separators)
-                merged.extend(
-                    self._merge_splits_with_overlap(sub_splits, separator="")
-                )
+        for s in splits:
+            if len(s) <= target_chars:
+                if merged:
+                    sub = self._merge_splits_with_overlap(merged + [s], separator="")
+                    merged = []
+                    result.extend(sub[:-1] if len(sub) > 1 else sub)
+                chunk = self._merge_splits_with_overlap([s], separator="")
+                result.extend(chunk)
             else:
-                # No more separators - just truncate
-                merged.extend(self._merge_splits_with_overlap([large], separator=""))
+                if merged:
+                    sub = self._merge_splits_with_overlap(merged, separator="")
+                    result.extend(sub)
+                    merged = []
+                if remaining_separators:
+                    sub_splits = self._recursive_split(s, remaining_separators)
+                    sub = self._merge_splits_with_overlap(sub_splits, separator="")
+                    result.extend(sub)
+                else:
+                    sub = self._merge_splits_with_overlap([s], separator="")
+                    result.extend(sub)
 
-        return merged
+        if merged:
+            result.extend(self._merge_splits_with_overlap(merged, separator=""))
+
+        return result
 
     async def chunk(self, text: str, doc_id: Optional[str] = None) -> List[Chunk]:
         """Split text recursively using hierarchical separators.

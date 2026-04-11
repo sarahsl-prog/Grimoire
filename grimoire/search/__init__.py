@@ -13,11 +13,13 @@ from grimoire.search.fulltext import (
     search_chunks,
     search_with_title,
 )
+from grimoire.search.hybrid import HybridSearch
 
 __all__ = [
     "FTSQuery",
     "FTSResult",
     "FulltextSearch",
+    "HybridSearch",
     "escape_special_chars",
     "parse_query",
     "search_chunks",

@@ -6,7 +6,6 @@ import click
 
 from grimoire.cli.helpers import (
     async_command,
-    echo_error,
     echo_success,
     get_db_context,
     setup_db,
@@ -73,7 +72,7 @@ async def status(ctx: click.Context, detailed: bool) -> None:
                 cache = CacheFactory.create(backend=settings.cache.storage, path=settings.cache.path)
                 if isinstance(cache, DiskCache):
                     stats = cache.get_stats()
-                    click.echo(f"\n  Cache:")
+                    click.echo("\n  Cache:")
                     click.echo(f"    Size:     {stats.get('size', 0)} items")
                     click.echo(f"    Disk:     {stats.get('volume', 0)} bytes")
             except Exception:

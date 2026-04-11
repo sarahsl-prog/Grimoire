@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import sys
 from typing import Any, Callable
 
 import click
-from loguru import logger
 
 from grimoire.config.settings import get_settings
 

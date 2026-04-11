@@ -141,8 +141,6 @@ class MarkdownHeaderTextSplitter(Chunker):
         current_content: List[str] = []
         current_header: Optional[str] = None
 
-        header_set = set(self.config.headers_to_split_on)
-
         for line in lines:
             stripped = line.strip()
             if not stripped:
@@ -151,7 +149,7 @@ class MarkdownHeaderTextSplitter(Chunker):
 
             # Check if line is a header
             is_header = False
-            for header_marker in header_set:
+            for header_marker in sorted(self.config.headers_to_split_on, key=len, reverse=True):
                 if stripped.startswith(header_marker + " "):
                     # Save previous section
                     if current_content:

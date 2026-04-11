@@ -11,8 +11,7 @@ any storage backend into the vector store and metadata database.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional
 from uuid import uuid4
@@ -332,7 +331,7 @@ class IngestionAgent:
 
             # Step 9: Mark as completed
             doc.processing_status = ProcessingStatus.COMPLETED
-            doc.processed_at = datetime.utcnow()
+            doc.processed_at = datetime.now(tz=timezone.utc)
             doc.error_message = None
             await db.flush()
 
@@ -355,6 +354,7 @@ class IngestionAgent:
 
         except Exception as e:
             logger.error(f"Ingestion failed for {file_path}: {e}")
+            await db.rollback()
             return IngestionResult(
                 file_path=str(file_path),
                 status="failed",
@@ -716,7 +716,7 @@ class IngestionAgent:
         doc.title = parsed.metadata.title or doc.title
         doc.processing_status = ProcessingStatus.PROCESSING
         doc.version += 1
-        doc.updated_at = datetime.utcnow()
+        doc.updated_at = datetime.now(tz=timezone.utc)
         await db.flush()
         logger.debug(f"Updated document record: {doc.id} (v{doc.version})")
 
