@@ -13,7 +13,6 @@ Example:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -253,18 +252,22 @@ class Tagger:
             c.id: c for c in categories if c.id is not None
         }
 
-        def build_path(cat: Category) -> str:
+        def build_path(cat: Category, visited: set[str]) -> str:
             """Build hierarchical path for a category."""
+            if cat.id in visited:
+                return cat.name
+            visited.add(cat.id)
             if not include_hierarchy or cat.parent_id is None:
                 return cat.name
             parent = categories_by_id.get(cat.parent_id)
             if parent:
-                parent_path = build_path(parent)
+                parent_path = build_path(parent, visited)
                 return f"{parent_path}/{cat.name}"
             return cat.name
 
         for cat in categories:
-            path = build_path(cat)
+            visited: set[str] = set()
+            path = build_path(cat, visited)
             contexts.append(
                 CategoryContext(path=path, category=cat, description=cat.description)
             )
@@ -572,6 +575,8 @@ class Tagger:
         except httpx.RequestError as e:
             logger.error(f"Ollama API request error: {e}")
             raise
+        finally:
+            await self._close_client()
 
         # Parse response
         raw_suggestions = self._parse_llm_response(response_text)
@@ -685,7 +690,6 @@ class Tagger:
         Returns:
             TaggingResult with suggestions and applied tags
         """
-        from grimoire.db.models import Chunk
 
         # Build sample if not provided
         if sample is None:

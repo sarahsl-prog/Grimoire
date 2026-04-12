@@ -19,7 +19,7 @@ from grimoire.cli.helpers import (
 
 @click.command()
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
-@click.option("--recursive", "-r", is_flag=True, default=True, help="Recurse into subdirectories.")
+@click.option("--recursive/--no-recursive", "-r", default=True, help="Recurse into subdirectories.")
 @click.option("--strategy", type=click.Choice(["semantic", "markdown", "recursive"]), default=None, help="Chunking strategy.")
 @click.option("--auto-tag/--no-auto-tag", default=True, help="Auto-tag documents with LLM.")
 @click.pass_context

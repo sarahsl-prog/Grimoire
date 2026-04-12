@@ -8,11 +8,10 @@ decisions in the processing log.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum, EnumMeta
+from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, Optional
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
@@ -483,6 +482,6 @@ def get_file_mtime(file_path: Path | str) -> Optional[datetime]:
     try:
         path = Path(file_path)
         mtime = path.stat().st_mtime
-        return datetime.fromtimestamp(mtime)
+        return datetime.fromtimestamp(mtime, tz=timezone.utc)
     except (FileNotFoundError, OSError):
         return None

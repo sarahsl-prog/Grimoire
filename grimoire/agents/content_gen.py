@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import httpx
 from loguru import logger
@@ -21,7 +21,6 @@ from grimoire.core.cache import Cache
 from grimoire.db.models import (
     Chunk,
     ContentType,
-    Document,
     GeneratedContent,
 )
 
@@ -468,6 +467,7 @@ class ContentGenerationAgent:
         first_id: Optional[str] = None
 
         for doc_id in request.document_ids:
+            is_err = content.startswith("Error:")
             record = GeneratedContent(
                 document_id=doc_id,
                 content_type=request.content_type,
@@ -481,6 +481,7 @@ class ContentGenerationAgent:
                     "query": request.query,
                 },
                 cache_hit=False,
+                is_error=is_err,
             )
             db.add(record)
             if first_id is None:
@@ -560,7 +561,7 @@ class ContentGenerationAgent:
 
     async def _store_cache(self, key: str, result: GenerationResult) -> None:
         """Store result in cache."""
-        if not self._cache:
+        if not self._cache or result.content.startswith("Error:"):
             return
         try:
             await self._cache.set(

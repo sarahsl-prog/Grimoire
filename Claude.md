@@ -16,7 +16,7 @@
 
 # Project overview
 - Python 3.12, FastAPI API backend, PostgreSQL, Redis.
-- Main app code in `app/`, tests in `tests/`, infra scripts in `infra/`. 
+- Main app code in `grimoire/`, tests in `tests/`, infra scripts in `infra/`. 
 
 ## Workflow
 - Start complex tasks in Plan mode
@@ -43,10 +43,10 @@ Use **uv** for all new work in this project.
 
 # Commands Claude should use
 - Install deps: `uv pip install`
-- Run app: `uv run uvicorn app.main:app --reload`
+- Run app: `uv run uvicorn grimoire.api.main:app --reload`
 - Run tests: `uv run pytest -q`
 - Lint: `uv run ruff check .`
-- Format: `uv run black app tests`
+- Format: `uv run black grimoire tests`
 
 # Security & performance
 - Never log secrets or tokens.
@@ -57,13 +57,12 @@ Use **uv** for all new work in this project.
 # Testing & quality
 - Use `pytest` for tests, `pytest -q` for quick runs.
 - Add tests for all new public functions; keep coverage high.
-- Run `ruff check .` and `black` before com
+- Run `ruff check .` and `black` before committing.
 
 ## Verification Requirements
-- Run `npm test` after code changes
-- Run `npm run typecheck` before marking complete
+- Run `uv run pytest -q` after code changes
+- Run `uv run ruff check .` and `uv run ruff format .` before committing
 - For API changes, test with `curl` or Postman
-- For UI changes, verify in browser before committing
 
 
 

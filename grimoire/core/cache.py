@@ -455,12 +455,18 @@ class RedisCache(Cache):
 
         try:
             pattern = f"{self._namespace}*"
-            keys = await self._client.keys(pattern)  # type: ignore[union-attr]
-            if keys:
-                await self._client.delete(*keys)  # type: ignore[union-attr]
-                logger.info(f"Cache CLEAR: deleted {len(keys)} keys")
-            else:
-                logger.info("Cache CLEAR: no keys found in namespace")
+            cursor = 0
+            deleted = 0
+            while True:
+                cursor, keys = await self._client.scan(
+                    cursor=cursor, match=pattern, count=100
+                )
+                if keys:
+                    await self._client.delete(*keys)  # type: ignore[union-attr]
+                    deleted += len(keys)
+                if cursor == 0:
+                    break
+            logger.info(f"Cache CLEAR: deleted {deleted} keys")
         except Exception as e:
             logger.error(f"Redis CLEAR failed: {e}")
             raise RuntimeError(f"Cache clearing failed: {e}") from e

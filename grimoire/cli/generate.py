@@ -12,7 +12,6 @@ from grimoire.cli.helpers import (
     async_command,
     build_content_gen_agent,
     echo_error,
-    echo_success,
     get_db_context,
     setup_db,
     teardown_db,

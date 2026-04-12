@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.core.cache import Cache
-from grimoire.db.models import Chunk, Document
+from grimoire.db.models import Document
 from grimoire.search.hybrid import HybridResult, HybridSearch
 
 
@@ -72,6 +72,7 @@ class QueryResult(BaseModel):
     model_used: str = ""
     search_results_count: int = 0
     cached: bool = False
+    llm_error: bool = False
     duration_ms: int = 0
 
 
@@ -207,7 +208,7 @@ class QueryAgent:
         context = self._assemble_context(search_results)
 
         # Step 4: Generate answer
-        answer = await self._generate_answer(query, context)
+        answer, is_error = await self._generate_answer(query, context)
 
         result = QueryResult(
             query=query,
@@ -215,6 +216,7 @@ class QueryAgent:
             citations=citations,
             model_used=self._llm_model,
             search_results_count=len(search_results),
+            llm_error=is_error,
             duration_ms=self._elapsed_ms(start_time),
         )
 
@@ -366,7 +368,7 @@ class QueryAgent:
         "and accurate."
     )
 
-    async def _generate_answer(self, query: str, context: str) -> str:
+    async def _generate_answer(self, query: str, context: str) -> tuple[str, bool]:
         """Generate an answer using the LLM.
 
         Args:
@@ -374,7 +376,7 @@ class QueryAgent:
             context: Assembled context from search results.
 
         Returns:
-            Generated answer text.
+            Tuple of (generated answer, is_error flag).
         """
         prompt = (
             f"Context:\n{context}\n\n"
@@ -399,19 +401,21 @@ class QueryAgent:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data.get("response", "").strip()
+                return data.get("response", "").strip(), False
 
         except httpx.ConnectError:
             logger.error(f"Cannot connect to LLM at {self._llm_url}")
             return (
                 "Unable to generate an answer (LLM unavailable). "
-                "Here are the relevant sources found:\n\n" + context
+                "Here are the relevant sources found:\n\n" + context,
+                True,
             )
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
             return (
                 f"Unable to generate an answer: {e}\n\n"
-                "Here are the relevant sources found:\n\n" + context
+                "Here are the relevant sources found:\n\n" + context,
+                True,
             )
 
     # -------------------------------------------------------------------------
@@ -475,7 +479,7 @@ class QueryAgent:
             filter_dict: Optional filters.
             result: Result to cache.
         """
-        if not self._cache:
+        if not self._cache or result.llm_error:
             return
 
         try:

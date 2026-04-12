@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import click
 from sqlalchemy import func, select
-from sqlalchemy.orm import joinedload
 
 from grimoire.cli.helpers import (
     async_command,
-    echo_error,
     get_db_context,
     setup_db,
     teardown_db,
@@ -34,7 +32,7 @@ def _parse_since(value: str) -> datetime:
             delta = timedelta(weeks=amount)
         else:  # "m"
             delta = timedelta(days=amount * 30)
-        return datetime.utcnow() - delta
+        return datetime.now(tz=timezone.utc) - delta
 
     try:
         return datetime.fromisoformat(value)

@@ -141,7 +141,7 @@ class Embedder:
 
                 try:
                     self._model = SentenceTransformer(model_name, device=device)
-                except Exception as e:
+                except Exception:
                     logger.warning(
                         f"Failed to load {model_name}, trying fallback: "
                         f"{self.config.fallback_model}"

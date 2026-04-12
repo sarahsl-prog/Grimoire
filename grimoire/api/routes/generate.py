@@ -23,7 +23,11 @@ async def generate_content(
     """
     agent = get_content_gen_agent()
 
-    ct = ContentType(request.content_type)
+    try:
+        ct = ContentType(request.content_type)
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Invalid content_type: {request.content_type}")
 
     if ct == ContentType.SUMMARY:
         result = await agent.generate_summary(db, request.document_ids, style=request.style or "concise")

@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, List, Optional, Union
+from typing import List, Optional
 
 from sqlalchemy import func, literal_column, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from grimoire.db.models import Chunk, Document
 
@@ -80,7 +79,7 @@ def escape_special_chars(query: str) -> str:
     """Escape special characters in search query.
 
     PostgreSQL FTS has special characters that need escaping:
-    ! & | ( ) : * '
+    ! & | ( ) : * ' \
 
     Args:
         query: Raw query string
@@ -92,6 +91,9 @@ def escape_special_chars(query: str) -> str:
     escaped = query.replace("\\", "\\\\")
     # Escape single quotes (doubling them for SQL)
     escaped = escaped.replace("'", "''")
+    # Escape FTS operators: ! & | ( ) : *
+    for char in ('!', '&', '|', '(', ')', ':', '*'):
+        escaped = escaped.replace(char, '\\' + char)
     return escaped
 
 
@@ -269,7 +271,7 @@ class FulltextSearch:
             List of ranked search results
         """
         # Build the to_tsquery expression
-        tsquery_expr = func.to_tsquery(self.language, parsed_query)
+        tsquery_expr = text("to_tsquery(:lang, :q)").bindparams(lang=self.language, q=parsed_query)
 
         # Build tsvector for content
         content_vector = func.to_tsvector(self.language, Chunk.content)
@@ -444,7 +446,7 @@ class FulltextSearch:
             return content
 
         tsquery_expr = func.to_tsquery(self.language, ftq.parsed)
-        tsvector_expr = func.to_tsvector(self.language, Chunk.content)
+        func.to_tsvector(self.language, Chunk.content)
 
         # Build ts_headline call
         headline_expr = func.ts_headline(

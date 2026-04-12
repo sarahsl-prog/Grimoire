@@ -6,6 +6,9 @@ the text. This is ideal for mixed documents where topic boundaries
 are more important than fixed character counts.
 """
 
+from __future__ import annotations
+
+import asyncio
 from typing import Any, List, Optional
 
 import numpy as np
@@ -121,7 +124,7 @@ class SemanticChunker(Chunker):
         sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])|(?<=[.!?])\s*$", text.strip())
         return [s.strip() for s in sentences if s.strip()]
 
-    def _compute_embeddings(self, sentences: List[str]) -> Optional[np.ndarray]:
+    async def _compute_embeddings(self, sentences: List[str]) -> Optional[np.ndarray]:
         """Compute embeddings for sentences.
 
         Args:
@@ -134,7 +137,10 @@ class SemanticChunker(Chunker):
         if model is None or not sentences:
             return None
         try:
-            result: Any = model.encode(sentences, show_progress_bar=False)
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, lambda: model.encode(sentences, show_progress_bar=False)
+            )
             return result if isinstance(result, np.ndarray) else None
         except Exception:
             return None
@@ -196,7 +202,7 @@ class SemanticChunker(Chunker):
             return []
 
         # Compute embeddings
-        embeddings = self._compute_embeddings(sentences)
+        embeddings = await self._compute_embeddings(sentences)
 
         # Find semantic boundaries
         if embeddings is not None and len(sentences) > 1:

@@ -8,17 +8,16 @@ filesystem watching (via watchdog) and cloud storage polling.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from grimoire.agents.ingestion import IngestionAgent, IngestionResult
-from grimoire.db.models import StorageBackend, WatchPath
+from grimoire.agents.ingestion import IngestionAgent
+from grimoire.db.models import StorageBackend
 from grimoire.storage.base import FileChange, FileChangeType
 from grimoire.storage.watch_manager import WatchManager
 
@@ -387,7 +386,7 @@ class WatcherAgent:
 
         file_path = change.path
         logger.info(f"WatcherAgent: processing {change.change_type.value} event for {file_path}")
-        tracker.last_event_at = datetime.utcnow()
+        tracker.last_event_at = datetime.now(tz=timezone.utc)
 
         try:
             async with self._db_session_factory() as db:

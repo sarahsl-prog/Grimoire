@@ -6,7 +6,6 @@ from typing import Any, AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from grimoire.config.settings import get_settings
 from grimoire.db.session import get_db
 
 
