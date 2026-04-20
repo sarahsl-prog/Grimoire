@@ -45,6 +45,7 @@ from grimoire.config.settings import (
     ChunkingMarkdownConfig,
     ProcessingConfig,
     APIConfig,
+    WikiConfig,
     EmbeddingIndexConfig,
     # Enums
     LogLevel,
@@ -85,6 +86,7 @@ __all__ = [
     "ChunkingMarkdownConfig",
     "ProcessingConfig",
     "APIConfig",
+    "WikiConfig",
     "EmbeddingIndexConfig",
     # Enums
     "LogLevel",

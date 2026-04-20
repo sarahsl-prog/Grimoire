@@ -15,7 +15,7 @@ from __future__ import annotations
 import enum
 import os
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Optional, Self
 
 import yaml
 from loguru import logger
@@ -689,6 +689,42 @@ class APIConfig(BaseModel):
     )
 
 
+class WikiConfig(BaseModel):
+    """Wiki compilation configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(default=True, description="Enable wiki features")
+    compile_on_ingest: bool = Field(
+        default=False,
+        description="Auto-flag documents as wiki-pending on ingest",
+    )
+    source_priorities: dict[str, int] = Field(
+        default_factory=dict,
+        description="Source priority mapping (higher = more authoritative)",
+    )
+    default_entity_types: list[str] = Field(
+        default_factory=lambda: ["concept", "component", "process", "entity"],
+        description="Entity types the LLM extracts from documents",
+    )
+    max_sections_per_page: int = Field(
+        default=10, ge=1, le=50,
+        description="Maximum sections per wiki page",
+    )
+    max_compile_batch_size: int = Field(
+        default=20, ge=1, le=100,
+        description="Documents per compile batch",
+    )
+    compile_model: Optional[str] = Field(
+        default=None,
+        description="Override LLM model for wiki compilation",
+    )
+    wiki_pages_dir: str = Field(
+        default="wiki/",
+        description="Directory for exported wiki markdown files",
+    )
+
+
 # =============================================================================
 # Main Settings Class
 # =============================================================================
@@ -765,6 +801,7 @@ class GrimoireSettings(BaseSettings):
         chunking: Document chunking configuration.
         processing: Document processing configuration.
         api: API server configuration.
+        wiki: Wiki configuration.
         debug: Debug mode flag.
     """
 
@@ -819,6 +856,7 @@ class GrimoireSettings(BaseSettings):
         default_factory=ProcessingConfig, description="Processing settings"
     )
     api: APIConfig = Field(default_factory=APIConfig, description="API settings")
+    wiki: WikiConfig = Field(default_factory=WikiConfig, description="Wiki settings")
 
     # Top-level settings
     debug: bool = Field(default=False, description="Debug mode")
