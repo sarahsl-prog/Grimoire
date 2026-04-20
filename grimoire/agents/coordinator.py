@@ -59,6 +59,7 @@ class IntentType(str, Enum):
         GENERATE: Generate derived content (summary, flashcards, etc.).
         WATCH: Start monitoring a directory for new files.
         UNWATCH: Stop monitoring a directory.
+        WIKI: Compile, list, or manage wiki pages.
         UNKNOWN: Could not determine intent; defaults to QUERY.
     """
 
@@ -68,6 +69,7 @@ class IntentType(str, Enum):
     GENERATE = "generate"
     WATCH = "watch"
     UNWATCH = "unwatch"
+    WIKI = "wiki"
     UNKNOWN = "unknown"
 
 
@@ -76,6 +78,10 @@ _INTENT_KEYWORDS: list[tuple[IntentType, frozenset[str]]] = [
     (
         IntentType.UNWATCH,
         frozenset({"unwatch", "stop watching", "stop monitor", "remove watch"}),
+    ),
+    (
+        IntentType.WIKI,
+        frozenset({"wiki", "compile", "wikipage"}),
     ),
     (
         IntentType.WATCH,
@@ -201,6 +207,7 @@ class CoordinatorContext(BaseModel):
         watch_id: Watch ID for UNWATCH.
         watch_backend: Storage backend for WATCH.
         use_cache: Whether to use the query/generation cache.
+        wiki_action: Action for WIKI intent (compile, list, show, export, status).
     """
 
     intent: Optional[IntentType] = None
@@ -215,6 +222,7 @@ class CoordinatorContext(BaseModel):
     watch_id: Optional[str] = None
     watch_backend: str = "local"
     use_cache: bool = True
+    wiki_action: Optional[str] = None  # compile, list, show, export, status
 
 
 class CoordinatorResult(BaseModel):
@@ -283,6 +291,7 @@ class CoordinatorAgent:
         query_agent: Optional[QueryAgent] = None,
         content_gen_agent: Optional[ContentGenerationAgent] = None,
         watcher_agent: Optional[WatcherAgent] = None,
+        wiki_agent: Optional[Any] = None,
         llm_url: str = "http://localhost:11434",
         llm_model: str = "llama3:8b",
         use_llm_fallback: bool = False,
@@ -292,6 +301,7 @@ class CoordinatorAgent:
         self._query_agent = query_agent
         self._content_gen_agent = content_gen_agent
         self._watcher_agent = watcher_agent
+        self._wiki_agent = wiki_agent
         self._llm_url = llm_url.rstrip("/")
         self._llm_model = llm_model
         self._use_llm_fallback = use_llm_fallback
@@ -304,6 +314,7 @@ class CoordinatorAgent:
                 ("query", query_agent),
                 ("content_gen", content_gen_agent),
                 ("watcher", watcher_agent),
+                ("wiki", wiki_agent),
             ]
             if agent is not None
         ]
@@ -536,6 +547,9 @@ class CoordinatorAgent:
         if intent == IntentType.UNWATCH:
             return await self._handle_unwatch(ctx)
 
+        if intent == IntentType.WIKI:
+            return await self._handle_wiki(db, user_input, ctx)
+
         # Should never reach here given UNKNOWN → QUERY above
         raise ValueError(f"Unhandled intent: {intent}")
 
@@ -687,20 +701,43 @@ class CoordinatorAgent:
             "stopped": stopped,
         }, "WatcherAgent"
 
+    async def _handle_wiki(
+        self, db: AsyncSession, user_input: str, ctx: CoordinatorContext,
+    ) -> tuple[Any, str]:
+        """Handle wiki-related requests."""
+        if self._wiki_agent is None:
+            raise RuntimeError("WikiAgent is not configured in this coordinator.")
+
+        action = ctx.wiki_action or "compile"
+        if action == "compile":
+            results = await self._wiki_agent.compile_pending(db)
+            return results, "WikiAgent"
+        elif action == "list":
+            from grimoire.db.models import WikiPage
+            from sqlalchemy import select
+            stmt = select(WikiPage).order_by(WikiPage.title)
+            result = await db.execute(stmt)
+            pages = result.scalars().all()
+            return pages, "WikiAgent"
+        else:
+            results = await self._wiki_agent.compile_pending(db)
+            return results, "WikiAgent"
+
     # -------------------------------------------------------------------------
     # LLM-assisted classification (optional)
     # -------------------------------------------------------------------------
 
     _LLM_CLASSIFY_PROMPT = (
         "Classify the intent of the following user input into exactly one of these categories: "
-        "ingest, query, search, generate, watch, unwatch.\n\n"
+        "ingest, query, search, generate, watch, unwatch, wiki.\n\n"
         "Definitions:\n"
         "  ingest  - the user wants to add/process/scan files or directories\n"
         "  query   - the user is asking a question expecting an AI-generated answer\n"
         "  search  - the user wants to find/list documents without an AI answer\n"
         "  generate - the user wants to create a summary, flashcards, outline, or cliff notes\n"
         "  watch   - the user wants to monitor a directory for new files\n"
-        "  unwatch - the user wants to stop monitoring a directory\n\n"
+        "  unwatch - the user wants to stop monitoring a directory\n"
+        "  wiki    - the user wants to compile, list, or manage wiki pages\n\n"
         "Respond with only the single category word, nothing else.\n\n"
         "Input: {input}\n"
         "Category:"
