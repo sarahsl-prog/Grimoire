@@ -239,3 +239,184 @@ class TestSourcePriority:
     def test_path_based_matching(self, agent: WikiAgent) -> None:
         """Source path containing priority key should match."""
         assert agent._resolve_source_priority("docs/architecture-dec/auth.md") == 10
+
+
+# ============================================================================
+# Test compile_document
+# ============================================================================
+
+
+class TestCompileDocument:
+    """Test compile_document end-to-end flow."""
+
+    @pytest.mark.asyncio
+    async def test_creates_new_page(
+        self, agent: WikiAgent, mock_db: AsyncMock
+    ) -> None:
+        """Compiling a document with new entities creates wiki pages."""
+        mock_db.get = AsyncMock(return_value=make_mock_document())
+        mock_db.flush = AsyncMock()
+        mock_db.add = MagicMock()
+
+        # Mock the database query for _get_or_create_job
+        mock_job = MagicMock()
+        mock_job.status = CompileStatus.PENDING
+        mock_job.document_id = "doc-1"
+        mock_scalars = MagicMock()
+        mock_scalars.first.return_value = mock_job
+        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+        # Mock _fetch_chunks to return content
+        mock_chunk = MagicMock()
+        mock_chunk.content = "Auth pipeline uses JWT tokens"
+        with patch.object(
+            agent, "_fetch_chunks", new_callable=AsyncMock,
+            return_value=[mock_chunk],
+        ), patch.object(
+            agent, "_identify_entities", new_callable=AsyncMock,
+            return_value=[EntityExtraction(
+                name="Auth Pipeline", entity_type="process",
+                summary="Handles auth", confidence=0.9,
+            )],
+        ), patch.object(
+            agent, "_match_existing_page", new_callable=AsyncMock,
+            return_value=None,
+        ), patch.object(
+            agent, "_generate_page", new_callable=AsyncMock,
+            return_value=MagicMock(id="page-1", sections=[MagicMock()]),
+        ), patch.object(
+            agent, "_assemble_page_content", new_callable=AsyncMock,
+        ), patch.object(
+            agent, "_discover_cross_references", new_callable=AsyncMock,
+            return_value=0,
+        ):
+            result = await agent.compile_document(mock_db, "doc-1")
+
+        assert result.pages_created == 1
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_no_chunks_returns_empty(
+        self, agent: WikiAgent, mock_db: AsyncMock
+    ) -> None:
+        """Document with no chunks produces empty result."""
+        # Mock _get_or_create_job
+        mock_job = MagicMock()
+        mock_job.status = CompileStatus.PENDING
+        mock_job.document_id = "doc-1"
+        mock_scalars = MagicMock()
+        mock_scalars.first.return_value = mock_job
+        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+        mock_db.flush = AsyncMock()
+
+        with patch.object(
+            agent, "_fetch_chunks", new_callable=AsyncMock, return_value=[],
+        ):
+            result = await agent.compile_document(mock_db, "doc-1")
+
+        assert result.pages_created == 0
+        assert result.pages_updated == 0
+
+    @pytest.mark.asyncio
+    async def test_no_entities_returns_empty(
+        self, agent: WikiAgent, mock_db: AsyncMock
+    ) -> None:
+        """Document with chunks but no entities produces empty result."""
+        mock_db.get = AsyncMock(return_value=make_mock_document())
+        mock_db.flush = AsyncMock()
+
+        # Mock _get_or_create_job
+        mock_job = MagicMock()
+        mock_job.status = CompileStatus.PENDING
+        mock_job.document_id = "doc-1"
+        mock_scalars = MagicMock()
+        mock_scalars.first.return_value = mock_job
+        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+        mock_chunk = MagicMock()
+        mock_chunk.content = "some text"
+
+        with patch.object(
+            agent, "_fetch_chunks", new_callable=AsyncMock,
+            return_value=[mock_chunk],
+        ), patch.object(
+            agent, "_identify_entities", new_callable=AsyncMock, return_value=[],
+        ):
+            result = await agent.compile_document(mock_db, "doc-1")
+
+        assert result.pages_created == 0
+        assert result.pages_updated == 0
+
+    @pytest.mark.asyncio
+    async def test_already_compiled_skips(
+        self, agent: WikiAgent, mock_db: AsyncMock
+    ) -> None:
+        """Document already compiled returns empty result without processing."""
+        mock_job = MagicMock()
+        mock_job.status = CompileStatus.COMPLETED
+        mock_job.document_id = "doc-1"
+        mock_scalars = MagicMock()
+        mock_scalars.first.return_value = mock_job
+        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+        result = await agent.compile_document(mock_db, "doc-1")
+
+        assert result.pages_created == 0
+        assert result.pages_updated == 0
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_marks_failed(
+        self, agent: WikiAgent, mock_db: AsyncMock
+    ) -> None:
+        """LLM failure during compilation marks job as FAILED."""
+        mock_db.get = AsyncMock(return_value=make_mock_document())
+        mock_db.flush = AsyncMock()
+
+        # Mock _get_or_create_job
+        mock_job = MagicMock()
+        mock_job.status = CompileStatus.PENDING
+        mock_job.document_id = "doc-1"
+        mock_scalars = MagicMock()
+        mock_scalars.first.return_value = mock_job
+        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+        mock_chunk = MagicMock()
+        mock_chunk.content = "some text"
+
+        # Make _identify_entities raise an exception
+        with patch.object(
+            agent, "_fetch_chunks", new_callable=AsyncMock,
+            return_value=[mock_chunk],
+        ), patch.object(
+            agent, "_identify_entities", new_callable=AsyncMock,
+            side_effect=RuntimeError("LLM unavailable"),
+        ):
+            result = await agent.compile_document(mock_db, "doc-1")
+
+        assert result.error is not None
+        assert "LLM unavailable" in result.error
+
+
+class TestCompilePending:
+    """Test compile_pending batch processing."""
+
+    @pytest.mark.asyncio
+    async def test_compile_pending_processes_jobs(
+        self, agent: WikiAgent, mock_db: AsyncMock
+    ) -> None:
+        """compile_pending processes all pending jobs."""
+        with patch.object(
+            agent, "compile_document", new_callable=AsyncMock,
+            return_value=CompileResult(document_id="doc-1"),
+        ):
+            # Mock the query for pending jobs
+            mock_job = MagicMock()
+            mock_job.document_id = "doc-1"
+            mock_scalars = MagicMock()
+            mock_scalars.all.return_value = [mock_job]
+            mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+            results = await agent.compile_pending(mock_db)
+
+        assert len(results) == 1
+        assert results[0].document_id == "doc-1"

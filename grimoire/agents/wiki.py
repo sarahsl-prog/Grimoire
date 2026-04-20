@@ -121,7 +121,7 @@ class WikiAgent:
         result = CompileResult(document_id=document_id)
 
         job = await self._get_or_create_job(db, document_id)
-        if job.status == CompileStatus.COMPILED:
+        if job.status == CompileStatus.COMPLETED:
             logger.info(f"Document {document_id} already compiled, skipping")
             return result
         job.status = CompileStatus.COMPILING
