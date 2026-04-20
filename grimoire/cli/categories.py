@@ -128,15 +128,18 @@ async def category_list(ctx: click.Context, tree: bool) -> None:
 async def category_remove(ctx: click.Context, slug: str, force: bool) -> None:
     """Remove a category by slug.
 
+    Refuses to delete if documents are tagged with this category
+    unless --force is given.
+
     Examples:
 
         grimoire category remove old-category --force
     """
     await setup_db()
     try:
-        from grimoire.db.models import Category
+        from grimoire.db.models import Category, DocumentTag
 
-        from sqlalchemy import select
+        from sqlalchemy import func, select
 
         async with get_db_context() as db:
             stmt = select(Category).where(Category.slug == slug)
@@ -145,6 +148,20 @@ async def category_remove(ctx: click.Context, slug: str, force: bool) -> None:
 
             if not cat:
                 echo_error(f"Category '{slug}' not found.")
+                return
+
+            # Check if any documents are tagged with this category
+            tag_count_stmt = select(func.count()).where(
+                DocumentTag.category_id == cat.id
+            )
+            tag_count_result = await db.execute(tag_count_stmt)
+            tag_count = tag_count_result.scalar() or 0
+
+            if tag_count > 0 and not force:
+                echo_error(
+                    f"Category '{cat.name}' has {tag_count} tagged document(s). "
+                    f"Use --force to remove anyway."
+                )
                 return
 
             await db.delete(cat)

@@ -57,9 +57,9 @@ class UUIDMixin:
 class TimestampMixin:
     """Mixin that adds created_at timestamp."""
 
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     created_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )

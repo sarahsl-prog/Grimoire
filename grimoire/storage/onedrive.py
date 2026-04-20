@@ -144,6 +144,7 @@ class OneDriveAdapter(StorageAdapter):
             token_path.parent.mkdir(parents=True, exist_ok=True)
             with open(token_path, "w", encoding="utf-8") as f:
                 json.dump(self.token_data.to_dict(), f, indent=2)
+            os.chmod(token_path, 0o600)
             logger.debug(f"Saved OneDrive tokens to {token_path}")
         except OSError as e:
             logger.error(f"Failed to save OneDrive tokens: {e}")
