@@ -1062,6 +1062,7 @@ class WikiCompileJob(Base):
     document: Mapped["Document"] = relationship(
         "Document",
         foreign_keys=[document_id],
+        back_populates="wiki_compile_jobs",
     )
 
     __table_args__ = (
