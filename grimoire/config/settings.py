@@ -950,3 +950,24 @@ def reload_settings() -> GrimoireSettings:
     return get_settings()
 
 
+class _SettingsProxy:
+    """Lazy proxy that delegates attribute access to the settings singleton.
+
+    Allows ``from grimoire.config import settings`` to work without
+    triggering module-level instantiation that could crash on missing env vars.
+    The actual GrimoireSettings instance is created on first attribute access.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_settings(), name)
+
+    def __repr__(self) -> str:
+        return repr(get_settings())
+
+    def __bool__(self) -> bool:
+        return True
+
+
+settings = _SettingsProxy()
+
+

@@ -10,6 +10,7 @@ import click
 from grimoire.cli.helpers import (
     async_command,
     build_ingestion_agent,
+    echo_error,
     echo_success,
     setup_db,
     teardown_db,
@@ -85,15 +86,15 @@ async def watch_start(
 
 @watch.command("list")
 @click.pass_context
-@async_command
-async def watch_list(ctx: click.Context) -> None:
+def watch_list(ctx: click.Context) -> None:
     """List active watches.
 
-    [STUB] watches only persist for the lifetime of a 'watch start' process.
-    This command shows watches from the current process context.
+    Lists watches from the current process context.
+    Watches only persist for the lifetime of a running 'watch start' process.
     """
-    click.echo("[STUB] Active watches are only visible within a running 'watch start' process.")
-    click.echo("Use 'grimoire status' for general system status.")
+    click.echo("Watches are scoped to a running 'watch start' process.")
+    click.echo("To see active watches, run 'grimoire status' or check the watch start process output.")
+    click.echo("Use 'grimoire watch unwatch <watch_id>' to stop a specific watch.")
 
 
 @watch.command("unwatch")
@@ -103,7 +104,33 @@ async def watch_list(ctx: click.Context) -> None:
 async def watch_unwatch(ctx: click.Context, watch_id: str) -> None:
     """Stop watching by WATCH_ID.
 
-    [STUB] watches are scoped to a running 'watch start' process.
-    Use Ctrl+C in the watch process to stop it.
+    Stops the specified watch and removes it from the active watchers.
+    Use 'grimoire watch start' output to find the watch ID.
+
+    Examples:
+
+        grimoire watch unwatch abc123
     """
-    click.echo(f"[STUB] Watch {watch_id}: use Ctrl+C in the running watch process to stop.")
+    await setup_db()
+    try:
+        from grimoire.db.session import get_db_manager
+        from grimoire.storage.watch_manager import WatchManager
+        from grimoire.agents.watcher import WatcherAgent
+
+        agent_ingest = build_ingestion_agent()
+        manager = WatchManager()
+        db_manager = get_db_manager()
+
+        watcher = WatcherAgent(
+            watch_manager=manager,
+            ingestion_agent=agent_ingest,
+            db_session_factory=db_manager.session,
+        )
+
+        stopped = await watcher.unwatch(watch_id)
+        if stopped:
+            echo_success(f"Stopped watch {watch_id}")
+        else:
+            echo_error(f"Watch {watch_id} not found or already stopped")
+    finally:
+        await teardown_db()

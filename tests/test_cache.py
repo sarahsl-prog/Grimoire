@@ -197,24 +197,28 @@ class TestCacheHappyPath:
 
     @pytest.mark.asyncio
     async def test_clear_with_keys(self, cache_instance: RedisCache) -> None:
-        """Clear removes all keys in namespace."""
+        """Clear removes all keys in namespace using SCAN."""
         cache = cache_instance
         keys = [
             b"test:cache:key1",
             b"test:cache:key2",
             b"test:cache:key3",
         ]
-        cache._client.keys = AsyncMock(return_value=keys)
+        # SCAN returns (cursor, keys) — first call returns keys + cursor 0 to stop
+        cache._client.scan = AsyncMock(return_value=(0, keys))
         cache._client.delete = AsyncMock(return_value=len(keys))
 
         await cache.clear()
-        cache._client.keys.assert_called_once_with("test:cache:*")
+        cache._client.scan.assert_called_once_with(
+            cursor=0, match="test:cache:*", count=100
+        )
+        cache._client.delete.assert_called_once_with(*keys)
 
     @pytest.mark.asyncio
     async def test_clear_empty_namespace(self, cache_instance: RedisCache) -> None:
         """Clear with no keys does not error."""
         cache = cache_instance
-        cache._client.keys = AsyncMock(return_value=[])
+        cache._client.scan = AsyncMock(return_value=(0, []))
 
         # Should not raise
         await cache.clear()
@@ -427,12 +431,15 @@ class TestCacheNamespacing:
 
     @pytest.mark.asyncio
     async def test_clear_respects_namespace(self, cache_instance: RedisCache) -> None:
-        """Clear only affects keys in the namespace."""
+        """Clear only affects keys in the namespace using SCAN."""
         cache = cache_instance
-        cache._client.keys = AsyncMock(return_value=[b"test:cache:key1"])
+        cache._client.scan = AsyncMock(return_value=(0, [b"test:cache:key1"]))
+        cache._client.delete = AsyncMock(return_value=1)
 
         await cache.clear()
-        cache._client.keys.assert_called_once_with("test:cache:*")
+        cache._client.scan.assert_called_once_with(
+            cursor=0, match="test:cache:*", count=100
+        )
 
 
 # =============================================================================

@@ -18,14 +18,20 @@ from pydantic import BaseModel, ConfigDict, Field
 # Docling imports
 try:
     from docling.datamodel.base_models import ConversionStatus
+    from docling.datamodel.base_models import InputFormat
     from docling.datamodel.document import ConversionResult
-    from docling.document_converter import DocumentConverter
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import DocumentConverter, PdfFormatOption, ImageFormatOption
     from docling.datamodel.document import InputDocument
     DOCLEY_AVAILABLE = True
 except ImportError:
     DOCLEY_AVAILABLE = False
     ConversionStatus = None  # type: ignore[assignment, misc]
     DocumentConverter = None  # type: ignore[assignment, misc]
+    InputFormat = None  # type: ignore[assignment, misc]
+    PdfPipelineOptions = None  # type: ignore[assignment, misc]
+    PdfFormatOption = None  # type: ignore[assignment, misc]
+    ImageFormatOption = None  # type: ignore[assignment, misc]
     logger.warning("Docling not available. Parser will be non-functional.")
 
 
@@ -142,12 +148,30 @@ class DocumentParser:
     
     def _get_converter(self) -> DocumentConverter:
         """Get or create the Docling converter.
-        
+
+        Forwards ParserConfig options (ocr_enabled, enable_tables,
+        enable_figures) to Docling's pipeline configuration.
+
         Returns:
             DocumentConverter instance
         """
         if self._converter is None:
-            self._converter = DocumentConverter()
+            pipeline_options = PdfPipelineOptions(
+                do_ocr=self.config.ocr_enabled,
+                do_table_structure=self.config.enable_tables,
+                generate_picture_images=self.config.enable_figures,
+            )
+
+            format_options = {
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pipeline_options,
+                ),
+                InputFormat.IMAGE: ImageFormatOption(
+                    pipeline_options=pipeline_options,
+                ),
+            }
+
+            self._converter = DocumentConverter(format_options=format_options)
         return self._converter
     
     def _compute_file_hash(self, file_path: Path) -> str:

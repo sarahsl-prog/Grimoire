@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Generator
 from unittest.mock import MagicMock, patch
@@ -616,8 +616,8 @@ class TestUtilityFunctions:
         mtime = get_file_mtime(temp_file)
 
         assert isinstance(mtime, datetime)
-        # Should be recent
-        assert datetime.now() - mtime < timedelta(minutes=1)
+        # Should be recent (mtime is timezone-aware, so compare with UTC)
+        assert datetime.now(timezone.utc) - mtime < timedelta(minutes=1)
 
     def test_get_file_mtime_nonexistent(self) -> None:
         """None returned for non-existent file."""

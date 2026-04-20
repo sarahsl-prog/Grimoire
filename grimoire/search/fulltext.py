@@ -376,7 +376,10 @@ class FulltextSearch:
         if not fts_query.parsed:
             return []
 
-        tsquery_expr = func.to_tsquery(self.language, fts_query.parsed)
+        # Use parameterized binding to prevent SQL injection
+        tsquery_expr = text("to_tsquery(:lang, :q)").bindparams(
+            lang=self.language, q=fts_query.parsed
+        )
         content_vector = func.to_tsvector(self.language, Chunk.content)
 
         stmt = (
@@ -445,17 +448,24 @@ class FulltextSearch:
         if not ftq.parsed:
             return content
 
-        tsquery_expr = func.to_tsquery(self.language, ftq.parsed)
+        # Use parameterized binding to prevent SQL injection
+        tsquery_expr = text("to_tsquery(:lang, :q)").bindparams(
+            lang=self.language, q=ftq.parsed
+        )
         func.to_tsvector(self.language, Chunk.content)
 
-        # Build ts_headline call
+        # Build ts_headline call — use parameterized fragment delimiter
+        # to prevent SQL injection via f-string interpolation
         headline_expr = func.ts_headline(
             self.language,
             Chunk.content,
             tsquery_expr,
-            text(f"MaxFragments={max_fragments}, "
-                 f"FragmentDelimiter='{fragment_delimiter}', "
-                 "StartSel=<mark>, StopSel=</mark>"),
+            text("MaxFragments=:max_fragments, "
+                 "FragmentDelimiter=:delimiter, "
+                 "StartSel=<mark>, StopSel=</mark>").bindparams(
+                max_fragments=max_fragments,
+                delimiter=fragment_delimiter,
+            ),
         )
 
         stmt = select(headline_expr).where(Chunk.id == chunk_id)

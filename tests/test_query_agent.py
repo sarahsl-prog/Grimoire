@@ -296,7 +296,7 @@ class TestQueryAgentHappyPath:
             with patch.object(
                 query_agent, "_generate_answer",
                 new_callable=AsyncMock,
-                return_value="Machine learning is a subset of AI [Source 1].",
+                return_value=("Machine learning is a subset of AI [Source 1].", False),
             ):
                 result = await query_agent.query(
                     mock_db, "What is machine learning?",
@@ -401,7 +401,7 @@ class TestQueryCaching:
             with patch.object(
                 query_agent, "_generate_answer",
                 new_callable=AsyncMock,
-                return_value="Generated answer",
+                return_value=("Generated answer", False),
             ):
                 await query_agent.query(mock_db, "uncached question")
 

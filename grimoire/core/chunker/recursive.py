@@ -209,12 +209,16 @@ class RecursiveCharacterTextSplitter(Chunker):
     def _recursive_split(self, text: str, separators: List[str]) -> List[str]:
         """Recursively split text using hierarchical separators.
 
+        Processes splits in their original order to preserve document sequence.
+        Small splits are accumulated into a current chunk; large splits are
+        recursed immediately in place, maintaining insertion order.
+
         Args:
             text: Text to split.
             separators: List of separators to try.
 
         Returns:
-            List of text chunks.
+            List of text chunks in original order.
         """
         if not text.strip():
             return []
@@ -233,31 +237,43 @@ class RecursiveCharacterTextSplitter(Chunker):
         target_chars = self.config.chunk_size * chars_per_token
 
         result: List[str] = []
-        merged: List[str] = []
+        current_chunk: List[str] = []
+        current_chars = 0
 
         for s in splits:
             if len(s) <= target_chars:
-                if merged:
-                    sub = self._merge_splits_with_overlap(merged + [s], separator="")
-                    merged = []
-                    result.extend(sub[:-1] if len(sub) > 1 else sub)
-                chunk = self._merge_splits_with_overlap([s], separator="")
-                result.extend(chunk)
+                # If adding this split would exceed target, flush current chunk first
+                if current_chunk and current_chars + len(s) > target_chars:
+                    merged = separator.join(current_chunk)
+                    if merged.strip():
+                        result.append(merged)
+                    current_chunk = []
+                    current_chars = 0
+
+                current_chunk.append(s)
+                current_chars += len(s)
             else:
-                if merged:
-                    sub = self._merge_splits_with_overlap(merged, separator="")
-                    result.extend(sub)
-                    merged = []
+                # Split is too large — flush any accumulated content first
+                if current_chunk:
+                    merged = separator.join(current_chunk)
+                    if merged.strip():
+                        result.append(merged)
+                    current_chunk = []
+                    current_chars = 0
+
+                # Recurse in place to preserve order
                 if remaining_separators:
                     sub_splits = self._recursive_split(s, remaining_separators)
-                    sub = self._merge_splits_with_overlap(sub_splits, separator="")
-                    result.extend(sub)
+                    result.extend(sub_splits)
                 else:
-                    sub = self._merge_splits_with_overlap([s], separator="")
-                    result.extend(sub)
+                    # No more separators — add as-is
+                    result.append(s)
 
-        if merged:
-            result.extend(self._merge_splits_with_overlap(merged, separator=""))
+        # Flush remaining content
+        if current_chunk:
+            merged = separator.join(current_chunk)
+            if merged.strip():
+                result.append(merged)
 
         return result
 
