@@ -10,6 +10,10 @@ All tables from DESIGN.md Section 3:
 - watch_paths: Monitored directories
 - processing_log: Audit trail
 - cache_entries: Result caching
+- wiki_pages: LLM-generated wiki pages
+- wiki_page_sections: Sections within wiki pages
+- wiki_cross_references: Cross-reference links between wiki pages
+- wiki_compile_jobs: Wiki compilation tracking
 """
 
 from __future__ import annotations
@@ -162,6 +166,32 @@ class CacheType(str, Enum):
     GENERATED = "generated"
 
 
+class WikiPageStatus(str, Enum):
+    """Wiki page lifecycle status."""
+
+    DRAFT = "draft"
+    COMPILED = "compiled"
+    FLAGGED = "flagged"
+
+
+class WikiRefType(str, Enum):
+    """Cross-reference types between wiki pages."""
+
+    REFERENCES = "references"
+    DEPENDS_ON = "depends_on"
+    RELATED_TO = "related_to"
+    CONTRADICTS = "contradicts"
+
+
+class CompileStatus(str, Enum):
+    """Wiki compile job status."""
+
+    PENDING = "pending"
+    COMPILING = "compiling"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 # ============================================================================
 # Models
 # ============================================================================
@@ -284,6 +314,11 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
         lazy="selectin",
+    )
+    wiki_compile_jobs: Mapped[List["WikiCompileJob"]] = relationship(
+        "WikiCompileJob",
+        back_populates="document",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (
@@ -821,4 +856,214 @@ class CacheEntry(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+    )
+
+
+class WikiPage(Base):
+    """LLM-generated wiki page for a discovered entity or concept."""
+
+    __tablename__ = "wiki_pages"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    slug: Mapped[str] = mapped_column(String(512), nullable=False, unique=True, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[WikiPageStatus] = mapped_column(
+        SQLEnum(WikiPageStatus, name="wiki_page_status_enum"),
+        default=WikiPageStatus.DRAFT,
+        nullable=False,
+    )
+    entity_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relationships
+    sections: Mapped[List["WikiPageSection"]] = relationship(
+        "WikiPageSection",
+        back_populates="wiki_page",
+        cascade="all, delete-orphan",
+        order_by="WikiPageSection.section_index",
+    )
+    source_refs: Mapped[List["WikiCrossReference"]] = relationship(
+        "WikiCrossReference",
+        back_populates="source_page",
+        foreign_keys="WikiCrossReference.source_page_id",
+        cascade="all, delete-orphan",
+    )
+    target_refs: Mapped[List["WikiCrossReference"]] = relationship(
+        "WikiCrossReference",
+        back_populates="target_page",
+        foreign_keys="WikiCrossReference.target_page_id",
+    )
+
+    __table_args__ = (
+        Index("ix_wiki_pages_slug_status", "slug", "status"),
+    )
+
+
+class WikiPageSection(Base):
+    """Section within a wiki page, tracking source attribution and contradictions."""
+
+    __tablename__ = "wiki_page_sections"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    wiki_page_id: Mapped[str] = mapped_column(
+        ForeignKey("wiki_pages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    heading: Mapped[str] = mapped_column(String(512), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    section_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_document_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    source_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    contradiction_flag: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    superseded_by_section_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("wiki_page_sections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relationships
+    wiki_page: Mapped["WikiPage"] = relationship(
+        "WikiPage",
+        back_populates="sections",
+    )
+    source_document: Mapped[Optional["Document"]] = relationship(
+        "Document",
+        foreign_keys=[source_document_id],
+    )
+    superseded_by: Mapped[Optional["WikiPageSection"]] = relationship(
+        "WikiPageSection",
+        remote_side="WikiPageSection.id",
+        foreign_keys=[superseded_by_section_id],
+    )
+
+    __table_args__ = (
+        Index("ix_wiki_sections_page_index", "wiki_page_id", "section_index"),
+    )
+
+
+class WikiCrossReference(Base):
+    """Cross-reference link between two wiki pages."""
+
+    __tablename__ = "wiki_cross_references"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    source_page_id: Mapped[str] = mapped_column(
+        ForeignKey("wiki_pages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    target_page_id: Mapped[str] = mapped_column(
+        ForeignKey("wiki_pages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ref_type: Mapped[WikiRefType] = mapped_column(
+        SQLEnum(WikiRefType, name="wiki_ref_type_enum"),
+        nullable=False,
+    )
+    context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    source_page: Mapped["WikiPage"] = relationship(
+        "WikiPage",
+        back_populates="source_refs",
+        foreign_keys=[source_page_id],
+    )
+    target_page: Mapped["WikiPage"] = relationship(
+        "WikiPage",
+        back_populates="target_refs",
+        foreign_keys=[target_page_id],
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_page_id", "target_page_id", "ref_type",
+            name="uq_wiki_cross_ref_unique",
+        ),
+    )
+
+
+class WikiCompileJob(Base):
+    """Tracks documents pending or completed wiki compilation."""
+
+    __tablename__ = "wiki_compile_jobs"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[CompileStatus] = mapped_column(
+        SQLEnum(CompileStatus, name="compile_status_enum"),
+        default=CompileStatus.PENDING,
+        nullable=False,
+    )
+    compiled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    document: Mapped["Document"] = relationship(
+        "Document",
+        foreign_keys=[document_id],
+    )
+
+    __table_args__ = (
+        Index("ix_wiki_compile_jobs_status", "status"),
     )
