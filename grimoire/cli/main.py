@@ -62,6 +62,7 @@ from grimoire.cli.ingest import ingest
 from grimoire.cli.query import ask, search
 from grimoire.cli.status import cache_group, status
 from grimoire.cli.watch import watch
+from grimoire.cli.wiki import wiki
 
 cli.add_command(ingest)
 cli.add_command(watch)
@@ -75,7 +76,7 @@ cli.add_command(config_cmd)
 cli.add_command(status)
 cli.add_command(cache_group)
 cli.add_command(docs)
-
+cli.add_command(wiki)
 
 def main() -> None:
     """Entry point for the Grimoire CLI."""

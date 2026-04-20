@@ -150,6 +150,21 @@ def build_content_gen_agent() -> Any:
     )
 
 
+def build_wiki_agent() -> Any:
+    """Build a WikiAgent from current settings."""
+    from grimoire.agents.wiki import WikiAgent
+
+    settings = get_settings()
+    compile_model = settings.wiki.compile_model or settings.llm.model
+    return WikiAgent(
+        llm_url=settings.llm.url,
+        llm_model=compile_model,
+        source_priorities=settings.wiki.source_priorities,
+        max_sections_per_page=settings.wiki.max_sections_per_page,
+        max_compile_batch_size=settings.wiki.max_compile_batch_size,
+    )
+
+
 def build_coordinator_agent(
     *,
     with_ingestion: bool = True,
