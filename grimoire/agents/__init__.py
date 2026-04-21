@@ -1,10 +1,11 @@
 """Grimoire agents package.
 
-Provides five specialised agents:
+Provides six specialised agents:
 - IngestionAgent: Document processing pipeline orchestration
 - WatcherAgent: Directory monitoring and ingestion triggering
 - QueryAgent: Agentic RAG question answering with hybrid search
 - ContentGenerationAgent: On-demand derived content generation
+- WikiAgent: Wiki compilation from ingested documents
 - CoordinatorAgent: Top-level router that dispatches to the above agents
 """
 
@@ -37,6 +38,13 @@ from grimoire.agents.watcher import (
     WatcherStats,
     WatchStatus,
 )
+from grimoire.agents.wiki import (
+    CompileResult,
+    ContradictionAction,
+    ContradictionResult,
+    EntityExtraction,
+    WikiAgent,
+)
 
 __all__ = [
     # Ingestion Agent
@@ -56,6 +64,12 @@ __all__ = [
     "ContentGenerationAgent",
     "GenerationRequest",
     "GenerationResult",
+    # Wiki Agent
+    "WikiAgent",
+    "CompileResult",
+    "EntityExtraction",
+    "ContradictionResult",
+    "ContradictionAction",
     # Coordinator Agent
     "CoordinatorAgent",
     "CoordinatorContext",

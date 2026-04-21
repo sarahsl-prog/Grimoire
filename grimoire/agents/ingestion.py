@@ -342,6 +342,21 @@ class IngestionAgent:
                 f"tags={tags_applied}, {duration}ms)"
             )
 
+            # Flag document for wiki compilation if configured
+            try:
+                from grimoire.config import get_settings
+                settings = get_settings()
+                if settings.wiki.enabled and settings.wiki.compile_on_ingest:
+                    from grimoire.db.models import WikiCompileJob, CompileStatus
+                    compile_job = WikiCompileJob(
+                        document_id=doc.id,
+                        status=CompileStatus.PENDING,
+                    )
+                    db.add(compile_job)
+                    logger.debug(f"Flagged document {doc.id} for wiki compilation")
+            except Exception as e:
+                logger.debug(f"Wiki flag skipped: {e}")
+
             return IngestionResult(
                 file_path=str(file_path),
                 document_id=doc.id,

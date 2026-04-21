@@ -22,6 +22,10 @@ from grimoire.db.models import (  # noqa: F401 - imported for side effects
     ProcessingLog,
     Relationship,
     WatchPath,
+    WikiPage,
+    WikiPageSection,
+    WikiCrossReference,
+    WikiCompileJob,
 )
 
 # this is the Alembic Config object
