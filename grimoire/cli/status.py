@@ -40,13 +40,17 @@ async def status(ctx: click.Context, detailed: bool) -> None:
             # By status
             status_counts = {}
             for ps in ProcessingStatus:
-                stmt = select(func.count(Document.id)).where(Document.processing_status == ps)
+                stmt = select(func.count(Document.id)).where(
+                    Document.processing_status == ps
+                )
                 count = (await db.execute(stmt)).scalar() or 0
                 if count > 0:
                     status_counts[ps.value] = count
 
             # Categories
-            cat_count = (await db.execute(select(func.count(Category.id)))).scalar() or 0
+            cat_count = (
+                await db.execute(select(func.count(Category.id)))
+            ).scalar() or 0
 
         click.echo(click.style("Grimoire Status", bold=True))
         click.echo(f"  Documents:  {total}")
@@ -59,9 +63,14 @@ async def status(ctx: click.Context, detailed: bool) -> None:
 
         if detailed:
             from grimoire.db.models import Chunk, GeneratedContent
+
             async with get_db_context() as db:
-                chunk_count = (await db.execute(select(func.count(Chunk.id)))).scalar() or 0
-                gen_count = (await db.execute(select(func.count(GeneratedContent.id)))).scalar() or 0
+                chunk_count = (
+                    await db.execute(select(func.count(Chunk.id)))
+                ).scalar() or 0
+                gen_count = (
+                    await db.execute(select(func.count(GeneratedContent.id)))
+                ).scalar() or 0
 
             click.echo(f"\n  Chunks:     {chunk_count}")
             click.echo(f"  Generated:  {gen_count}")
@@ -69,7 +78,9 @@ async def status(ctx: click.Context, detailed: bool) -> None:
             # Cache stats
             try:
                 settings = get_settings()
-                cache = CacheFactory.create(backend=settings.cache.storage, path=settings.cache.path)
+                cache = CacheFactory.create(
+                    backend=settings.cache.storage, path=settings.cache.path
+                )
                 if isinstance(cache, DiskCache):
                     stats = cache.get_stats()
                     click.echo("\n  Cache:")
@@ -103,14 +114,17 @@ async def cache_clear(ctx: click.Context, confirm: bool) -> None:
         return
 
     settings = get_settings()
-    cache = CacheFactory.create(backend=settings.cache.storage, path=settings.cache.path)
+    cache = CacheFactory.create(
+        backend=settings.cache.storage, path=settings.cache.path
+    )
     await cache.clear()
     echo_success("Cache cleared.")
 
 
 @cache_group.command("stats")
 @click.pass_context
-def cache_stats(ctx: click.Context) -> None:
+@async_command
+async def cache_stats(ctx: click.Context) -> None:
     """Show cache statistics.
 
     Examples:
@@ -118,13 +132,28 @@ def cache_stats(ctx: click.Context) -> None:
         grimoire cache stats
     """
     settings = get_settings()
-    cache = CacheFactory.create(backend=settings.cache.storage, path=settings.cache.path)
+    cache = CacheFactory.create(
+        backend=settings.cache.storage, path=settings.cache.path
+    )
+
+    click.echo(click.style("Cache Statistics", bold=True))
+    click.echo(f"  Backend: {settings.cache.storage}")
 
     if isinstance(cache, DiskCache):
         stats = cache.get_stats()
-        click.echo(click.style("Cache Statistics", bold=True))
-        for key, val in stats.items():
-            click.echo(f"  {key:<15} {val}")
+        click.echo(f"  Size:    {stats.get('size', 0)} items")
+        click.echo(f"  Volume:  {stats.get('volume', 0)} bytes")
+        click.echo(f"  Hits:    {stats.get('hits', 0)}")
+        click.echo(f"  Misses:  {stats.get('misses', 0)}")
+        click.echo(f"  Hit Rate: {stats.get('hit_rate', 0):.2%}")
     else:
-        click.echo(f"Cache backend: {settings.cache.storage}")
-        click.echo("  Detailed stats available for disk cache only.")
+        # For Redis cache, we can try to get some basic info
+        try:
+            # Try to get basic Redis info
+            info = await cache.client.info() if hasattr(cache, "client") else {}
+            click.echo(f"  Redis version: {info.get('redis_version', 'Unknown')}")
+            click.echo(
+                f"  Connected clients: {info.get('connected_clients', 'Unknown')}"
+            )
+        except Exception:
+            click.echo("  Unable to retrieve detailed statistics for this backend")
