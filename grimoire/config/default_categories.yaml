@@ -1,0 +1,61 @@
+# Default category taxonomy for Grimoire
+#
+# This file defines the initial category hierarchy that will be created
+# when initializing a new Grimoire instance.
+#
+# Format:
+# - name: Category name
+#   slug: URL-friendly category identifier
+#   description: Brief description of the category
+#   color: Color for UI display (hex)
+#   children: Sub-categories (optional)
+
+- name: Research
+  slug: research
+  description: Research papers, studies, and academic work
+  color: "#3498db"
+  children:
+    - name: Artificial Intelligence
+      slug: ai
+      description: Machine learning, deep learning, neural networks
+      color: "#9b59b6"
+      
+    - name: Computer Science
+      slug: cs
+      description: Programming, algorithms, systems
+      color: "#2ecc71"
+      
+    - name: Mathematics
+      slug: math
+      description: Mathematical papers and proofs
+      color: "#e67e22"
+
+- name: Business
+  slug: business
+  description: Business documents, reports, and plans
+  color: "#f1c40f"
+  children:
+    - name: Finance
+      slug: finance
+      description: Financial reports, budgets, forecasts
+      color: "#f39c12"
+      
+    - name: Marketing
+      slug: marketing
+      description: Marketing materials and campaigns
+      color: "#e74c3c"
+
+- name: Personal
+  slug: personal
+  description: Personal documents and notes
+  color: "#95a5a6"
+  children:
+    - name: Notes
+      slug: notes
+      description: Personal notes and thoughts
+      color: "#bdc3c7"
+      
+    - name: Reading
+      slug: reading
+      description: Books, articles, and reading lists
+      color: "#1abc9c"

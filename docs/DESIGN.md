@@ -252,6 +252,54 @@ All contributors and coding agents must follow these conventions:
     "hit_count": "integer",
     "created_at": "timestamp"
 }
+
+# wiki_pages — LLM-generated wiki pages
+{
+    "id": "uuid",
+    "title": "string",
+    "slug": "string (URL-safe, unique)",
+    "content": "text",
+    "version": "integer",
+    "status": "enum: draft/compiled/flagged",
+    "entity_type": "string (optional)",
+    "created_at": "timestamp",
+    "updated_at": "timestamp"
+}
+
+# wiki_page_sections — Sections within wiki pages
+{
+    "id": "uuid",
+    "wiki_page_id": "FK → wiki_pages",
+    "heading": "string",
+    "content": "text",
+    "section_index": "integer",
+    "source_document_id": "FK → documents (nullable)",
+    "source_priority": "integer",
+    "contradiction_flag": "text (nullable)",
+    "superseded_by_section_id": "FK self-referential (nullable)",
+    "created_at": "timestamp",
+    "updated_at": "timestamp"
+}
+
+# wiki_cross_references — Cross-reference links between wiki pages
+{
+    "id": "uuid",
+    "source_page_id": "FK → wiki_pages",
+    "target_page_id": "FK → wiki_pages",
+    "ref_type": "enum: references/depends_on/related_to/contradicts",
+    "context": "text (nullable)",
+    "created_at": "timestamp"
+}
+
+# wiki_compile_jobs — Wiki compilation tracking
+{
+    "id": "uuid",
+    "document_id": "FK → documents",
+    "status": "enum: pending/compiling/completed/failed",
+    "compiled_at": "timestamp (nullable)",
+    "error_message": "text (nullable)",
+    "created_at": "timestamp"
+}
 ```
 
 ---
