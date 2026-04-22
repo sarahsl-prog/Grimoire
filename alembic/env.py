@@ -1,7 +1,6 @@
 """Alembic environment configuration for async PostgreSQL migrations."""
 
 import asyncio
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -44,19 +43,9 @@ target_metadata = Base.metadata
 
 
 def get_database_url() -> str:
-    """Get database URL from environment or config."""
-    # Check for DATABASE_URL environment variable first
-    database_url = os.environ.get("DATABASE_URL")
-    if database_url:
-        return database_url
-
-    # Fallback to config
-    url = config.get_main_option("sqlalchemy.url")
-    if url:
-        return url
-
-    # Default for local development
-    return "postgresql+asyncpg://user:pass@localhost:5432/grimoire"
+    """Get database URL from grimoire settings (reads GRIMOIRE_DATABASE__URL or .env)."""
+    from grimoire.config.settings import get_settings
+    return get_settings().database.url
 
 
 def run_migrations_offline() -> None:
