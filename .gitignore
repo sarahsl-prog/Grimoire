@@ -181,6 +181,7 @@ $RECYCLE.BIN/
 /logs/
 *.log
 log/
+.remember/tmp/
 
 # Model download cache
 /models/
