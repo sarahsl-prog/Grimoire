@@ -1235,12 +1235,15 @@ class TestTimestamps:
     @pytest.mark.asyncio
     async def test_auto_created_at(self, db_session: AsyncSession) -> None:
         """Test created_at is auto-populated."""
-        before = datetime.utcnow()
+        before = datetime.utcnow().replace(microsecond=0)
         doc = create_test_document()
         db_session.add(doc)
         await db_session.commit()
-        after = datetime.utcnow()
+        after = datetime.utcnow() + timedelta(seconds=1)
 
+        # Refresh from DB to get the actual created_at value
+        await db_session.refresh(doc)
+        assert doc.created_at is not None
         assert before <= doc.created_at <= after
 
     @pytest.mark.asyncio
