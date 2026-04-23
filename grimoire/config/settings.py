@@ -808,7 +808,7 @@ class GrimoireSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="GRIMOIRE_",
         env_nested_delimiter="__",
-        env_file=".env",
+        env_file=Path(__file__).parent.parent.parent / ".env",
         env_file_encoding="utf-8",
         extra="ignore",  # Ignore extra fields for forward compatibility
         validate_default=True,
