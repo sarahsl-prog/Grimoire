@@ -169,7 +169,7 @@ grimoire wiki export <slug>                                 # export a single pa
 grimoire wiki status                                        # show compile queue status
 ```
 
-Wiki pages are stored in the database and written to disk only when you run `grimoire wiki export`. The export directory defaults to `wiki/` but can be pointed at an [Obsidian](https://obsidian.md) vault folder — cross-references are written as `[[Page Title]]` wiki-links, which Obsidian resolves natively:
+Wiki pages are stored in the database and written to disk only when you run `grimoire wiki export`. Each export writes **all** compiled pages, overwriting any existing files — it is a full snapshot, not incremental. The export directory defaults to `wiki/` but can be pointed at an [Obsidian](https://obsidian.md) vault folder — cross-references are written as `[[Page Title]]` wiki-links, which Obsidian resolves natively:
 
 ```yaml
 # grimoire.yaml
