@@ -93,6 +93,8 @@ class WikiAgent:
         self,
         llm_url: str = "http://localhost:11434",
         llm_model: str = "llama3:8b",
+        fallback_llm_url: str | None = None,
+        fallback_llm_model: str | None = None,
         source_priorities: dict[str, int] | None = None,
         max_sections_per_page: int = 10,
         max_compile_batch_size: int = 20,
@@ -101,12 +103,14 @@ class WikiAgent:
     ) -> None:
         self._llm_url = llm_url.rstrip("/")
         self._llm_model = llm_model
+        self._fallback_llm_url = fallback_llm_url.rstrip("/") if fallback_llm_url else None
+        self._fallback_llm_model = fallback_llm_model or llm_model
         self._source_priorities = source_priorities or {}
         self._max_sections_per_page = max_sections_per_page
         self._max_compile_batch_size = max_compile_batch_size
         self._temperature = temperature
         self._max_tokens = max_tokens
-        logger.debug(f"WikiAgent initialized (model={llm_model})")
+        logger.debug(f"WikiAgent initialized (model={llm_model}, fallback_url={fallback_llm_url})")
 
     # ------------------------------------------------------------------
     # Public API
@@ -119,6 +123,7 @@ class WikiAgent:
     ) -> CompileResult:
         """Compile a single document into wiki pages."""
         result = CompileResult(document_id=document_id)
+        logger.info(f"Starting wiki compile for document {document_id}")
 
         job = await self._get_or_create_job(db, document_id)
         if job.status == CompileStatus.COMPLETED:
@@ -130,7 +135,7 @@ class WikiAgent:
         try:
             chunks = await self._fetch_chunks(db, document_id)
             if not chunks:
-                logger.info(f"No chunks found for document {document_id}")
+                logger.warning(f"No chunks found for document {document_id} — was it ingested?")
                 job.status = CompileStatus.COMPLETED
                 job.compiled_at = datetime.now(timezone.utc)
                 await db.flush()
@@ -140,26 +145,34 @@ class WikiAgent:
             source_priority = self._resolve_source_priority(
                 doc.source_path if doc else ""
             )
+            logger.debug(f"Document {document_id}: {len(chunks)} chunks, source_priority={source_priority}")
 
             chunk_texts = [c.content for c in chunks if c.content]
             entities = await self._identify_entities(chunk_texts)
             if not entities:
-                logger.info(f"No entities found in document {document_id}")
+                logger.warning(
+                    f"No entities extracted from document {document_id} — "
+                    "LLM may have failed or returned unparseable output"
+                )
                 job.status = CompileStatus.COMPLETED
                 job.compiled_at = datetime.now(timezone.utc)
                 await db.flush()
                 return result
 
+            logger.info(f"Document {document_id}: extracted {len(entities)} entities")
+
             for entity in entities:
                 existing_page = await self._match_existing_page(db, entity.name)
 
                 if existing_page is None:
+                    logger.debug(f"Creating new wiki page: '{entity.name}' ({entity.entity_type})")
                     page = await self._generate_page(
                         db, entity, document_id, source_priority, chunk_texts
                     )
                     result.pages_created += 1
                     result.sections_added += len(page.sections)
                 else:
+                    logger.debug(f"Updating existing wiki page: '{entity.name}'")
                     updated = await self._update_page(
                         db, existing_page, entity, document_id,
                         source_priority, chunk_texts,
@@ -667,13 +680,39 @@ class WikiAgent:
     # ------------------------------------------------------------------
 
     async def _call_llm(self, prompt: str) -> str:
-        """Call Ollama LLM API."""
+        """Call Ollama LLM API, falling back to the configured fallback URL on failure."""
+        result = await self._call_llm_endpoint(
+            self._llm_url, self._llm_model, prompt, primary=True
+        )
+        if result is not None:
+            return result
+
+        if self._fallback_llm_url:
+            logger.warning(
+                f"Primary LLM unreachable, trying fallback at {self._fallback_llm_url} "
+                f"(model={self._fallback_llm_model})"
+            )
+            result = await self._call_llm_endpoint(
+                self._fallback_llm_url, self._fallback_llm_model, prompt, primary=False
+            )
+            if result is not None:
+                return result
+
+        logger.error("All LLM endpoints failed — wiki compilation will produce empty results")
+        return "Error: LLM service unavailable"
+
+    async def _call_llm_endpoint(
+        self, url: str, model: str, prompt: str, *, primary: bool
+    ) -> str | None:
+        """Attempt a single LLM endpoint. Returns the response string or None on failure."""
+        label = "primary" if primary else "fallback"
         try:
+            logger.debug(f"LLM request ({label}): url={url} model={model}")
             async with httpx.AsyncClient(timeout=180.0) as client:
                 response = await client.post(
-                    f"{self._llm_url}/api/generate",
+                    f"{url}/api/generate",
                     json={
-                        "model": self._llm_model,
+                        "model": model,
                         "prompt": prompt,
                         "stream": False,
                         "options": {
@@ -684,13 +723,18 @@ class WikiAgent:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data.get("response", "").strip()
+                text = data.get("response", "").strip()
+                logger.debug(f"LLM response ({label}): {len(text)} chars")
+                return text
         except httpx.ConnectError:
-            logger.error(f"Cannot connect to LLM at {self._llm_url}")
-            return "Error: LLM service unavailable"
+            logger.warning(f"Cannot connect to {label} LLM at {url}")
+            return None
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"{label} LLM returned HTTP {e.response.status_code} from {url}")
+            return None
         except Exception as e:
-            logger.error(f"LLM call failed: {e}")
-            return f"Error: {e}"
+            logger.error(f"{label} LLM call failed unexpectedly: {e}")
+            return None
 
     # ------------------------------------------------------------------
     # Response Parsing
