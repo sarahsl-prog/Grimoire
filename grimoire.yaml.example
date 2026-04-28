@@ -80,4 +80,11 @@ grimoire:
     port: 8001
     workers: 4
 
+  wiki:
+    wiki_pages_dir: "wiki/"
+    # To use with Obsidian, point this at a folder inside your vault:
+    # wiki_pages_dir: "/path/to/your/obsidian/vault/Grimoire/"
+    compile_on_ingest: false
+    max_sections_per_page: 10
+
   debug: false

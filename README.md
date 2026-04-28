@@ -167,8 +167,20 @@ grimoire wiki show <slug>                                   # display a page
 grimoire wiki export                                        # export all pages to markdown
 grimoire wiki export <slug>                                 # export a single page
 grimoire wiki status                                        # show compile queue status
+```
 
+Wiki pages are stored in the database and written to disk only when you run `grimoire wiki export`. The export directory defaults to `wiki/` but can be pointed at an [Obsidian](https://obsidian.md) vault folder — cross-references are written as `[[Page Title]]` wiki-links, which Obsidian resolves natively:
+
+```yaml
+# grimoire.yaml
+grimoire:
+  wiki:
+    wiki_pages_dir: "/path/to/your/obsidian/vault/Grimoire/"
+```
+
+```bash
 # Tag/untag documents
+
 grimoire tag doc-id biology science
 grimoire untag doc-id science
 
