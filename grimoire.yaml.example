@@ -4,6 +4,8 @@ grimoire:
     url: "http://localhost:11434"
     temperature: 0.8
     max_tokens: 4096
+    # fallback_url: "http://backup-host:11434"   # tried when primary is unreachable
+    # fallback_model: "llama3:8b"                # defaults to primary model if unset
 
   embeddings:
     model: "sentence-transformers/all-mpnet-base-v2"

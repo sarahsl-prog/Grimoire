@@ -137,17 +137,17 @@ def _output_text(documents: list) -> None:
         return
 
     click.echo(
-        f"{'ID':<10}{'Title':<34}{'Type':<6}{'Status':<12}{'Created'}"
+        f"{'ID':<38}{'Title':<34}{'Type':<6}{'Status':<12}{'Created'}"
     )
     click.echo(
-        f"{'─' * 8:<10}{'─' * 32:<34}{'─' * 4:<6}{'─' * 9:<12}{'─' * 10}"
+        f"{'─' * 36:<38}{'─' * 32:<34}{'─' * 4:<6}{'─' * 9:<12}{'─' * 10}"
     )
     for doc in documents:
         title = (doc.title or "Untitled")[:32]
         file_type = doc.file_type.value if hasattr(doc.file_type, "value") else str(doc.file_type)
         status = doc.processing_status.value if hasattr(doc.processing_status, "value") else str(doc.processing_status)
         created = doc.created_at.strftime("%Y-%m-%d") if doc.created_at else ""
-        click.echo(f"{doc.id[:8]:<10}{title:<34}{file_type:<6}{status:<12}{created}")
+        click.echo(f"{doc.id:<38}{title:<34}{file_type:<6}{status:<12}{created}")
 
     click.echo(f"\n{len(documents)} document(s) found.")
 
@@ -158,14 +158,14 @@ def _output_markdown(documents: list) -> None:
         click.echo("No documents found.")
         return
 
-    click.echo("| ID       | Title                            | Type | Status    | Created    |")
-    click.echo("|----------|----------------------------------|------|-----------|------------|")
+    click.echo("| ID                                   | Title                            | Type | Status    | Created    |")
+    click.echo("|--------------------------------------|----------------------------------|------|-----------|------------|")
     for doc in documents:
         title = (doc.title or "Untitled")[:32]
         file_type = doc.file_type.value if hasattr(doc.file_type, "value") else str(doc.file_type)
         status = doc.processing_status.value if hasattr(doc.processing_status, "value") else str(doc.processing_status)
         created = doc.created_at.strftime("%Y-%m-%d") if doc.created_at else ""
-        click.echo(f"| {doc.id[:8]:<8} | {title:<32} | {file_type:<4} | {status:<9} | {created:<10} |")
+        click.echo(f"| {doc.id:<36} | {title:<32} | {file_type:<4} | {status:<9} | {created:<10} |")
 
     click.echo(f"\n{len(documents)} document(s) found.")
 
