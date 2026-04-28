@@ -156,6 +156,18 @@ grimoire category add "Deep Learning" --parent ai-ml
 grimoire category list --tree
 grimoire category remove "research"
 
+# Compile wiki pages from ingested documents
+grimoire wiki compile                                       # compile all pending
+grimoire wiki compile -d <full-uuid>                        # compile one document
+grimoire wiki compile --category "machine-learning"         # compile by category
+
+# Browse and export wiki pages
+grimoire wiki list                                          # list all pages
+grimoire wiki show <slug>                                   # display a page
+grimoire wiki export                                        # export all pages to markdown
+grimoire wiki export <slug>                                 # export a single page
+grimoire wiki status                                        # show compile queue status
+
 # Tag/untag documents
 grimoire tag doc-id biology science
 grimoire untag doc-id science
