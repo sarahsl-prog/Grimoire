@@ -698,8 +698,11 @@ class WikiAgent:
             if result is not None:
                 return result
 
-        logger.error("All LLM endpoints failed — wiki compilation will produce empty results")
-        return "Error: LLM service unavailable"
+        raise RuntimeError(
+            f"All LLM endpoints failed (primary={self._llm_url}"
+            + (f", fallback={self._fallback_llm_url}" if self._fallback_llm_url else "")
+            + ")"
+        )
 
     async def _call_llm_endpoint(
         self, url: str, model: str, prompt: str, *, primary: bool
