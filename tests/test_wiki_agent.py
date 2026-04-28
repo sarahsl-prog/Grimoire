@@ -283,7 +283,7 @@ class TestCompileDocument:
             return_value=None,
         ), patch.object(
             agent, "_generate_page", new_callable=AsyncMock,
-            return_value=MagicMock(id="page-1", sections=[MagicMock()]),
+            return_value=(MagicMock(id="page-1"), 1),
         ), patch.object(
             agent, "_assemble_page_content", new_callable=AsyncMock,
         ), patch.object(
