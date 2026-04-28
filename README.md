@@ -162,12 +162,14 @@ grimoire wiki compile -d <full-uuid>                        # compile one docume
 grimoire wiki compile --category "machine-learning"         # compile by category
 
 # Browse and export wiki pages
-grimoire wiki list                                          # list all pages
+grimoire wiki list                                          # list all pages (shows slugs)
 grimoire wiki show <slug>                                   # display a page
 grimoire wiki export                                        # export all pages to markdown
 grimoire wiki export <slug>                                 # export a single page
 grimoire wiki status                                        # show compile queue status
 ```
+
+A **slug** is the URL-friendly identifier Grimoire generates from a page title (e.g. "Neural Networks" → `neural-networks`). Use `grimoire wiki list` to see the slug for each page.
 
 Wiki pages are stored in the database and written to disk only when you run `grimoire wiki export`. Each export writes **all** compiled pages, overwriting any existing files — it is a full snapshot, not incremental. The export directory defaults to `wiki/` but can be pointed at an [Obsidian](https://obsidian.md) vault folder — cross-references are written as `[[Page Title]]` wiki-links, which Obsidian resolves natively:
 
