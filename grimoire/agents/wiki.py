@@ -201,6 +201,7 @@ class WikiAgent:
 
         except Exception as e:
             logger.error(f"Wiki compile failed for {document_id}: {e}")
+            await db.rollback()
             job.status = CompileStatus.FAILED
             job.error_message = str(e)
             result.error = str(e)
@@ -329,8 +330,8 @@ class WikiAgent:
         for i, sec in enumerate(capped):
             section = WikiPageSection(
                 wiki_page_id=page.id,
-                heading=sec.get("heading", f"Section {i + 1}"),
-                content=sec.get("content", ""),
+                heading=sec.get("heading") or f"Section {i + 1}",
+                content=sec.get("content") or "",
                 section_index=i,
                 source_document_id=document_id,
                 source_priority=source_priority,
@@ -397,8 +398,8 @@ class WikiAgent:
         updates = self._parse_updates_response(response)
 
         for update in updates:
-            heading = update.get("heading", "New Section")
-            content = update.get("content", "")
+            heading = update.get("heading") or "New Section"
+            content = update.get("content") or ""
             action = update.get("action", "add")
             conflict_type = update.get("conflict_type")
             conflict_desc = update.get("conflict_description")
