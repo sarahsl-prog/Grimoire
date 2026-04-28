@@ -51,8 +51,9 @@ from grimoire.config import (
 class TestConfigHappyPath:
     """Standard configuration loading scenarios."""
 
-    def test_default_settings_load(self) -> None:
+    def test_default_settings_load(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that default settings load without errors."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", "/nonexistent/grimoire.yaml")
         settings = GrimoireSettings()
         assert settings.llm.model == "llama3.2"
         assert settings.database.pool_size == 10
@@ -317,8 +318,9 @@ class TestConfigAsyncBehavior:
     """Async and concurrent configuration access."""
 
     @pytest.mark.asyncio
-    async def test_async_config_access(self) -> None:
+    async def test_async_config_access(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that configuration can be accessed from async code."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", "/nonexistent/grimoire.yaml")
         settings = GrimoireSettings()
 
         # Simulate async access
@@ -329,8 +331,9 @@ class TestConfigAsyncBehavior:
         assert result == "llama3.2"
 
     @pytest.mark.asyncio
-    async def test_concurrent_reads(self) -> None:
+    async def test_concurrent_reads(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test concurrent read access to settings."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", "/nonexistent/grimoire.yaml")
         settings = GrimoireSettings()
 
         async def read_config() -> dict[str, Any]:

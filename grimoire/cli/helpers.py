@@ -159,6 +159,8 @@ def build_wiki_agent() -> Any:
     return WikiAgent(
         llm_url=settings.llm.url,
         llm_model=compile_model,
+        fallback_llm_url=settings.llm.fallback_url,
+        fallback_llm_model=settings.llm.fallback_model,
         source_priorities=settings.wiki.source_priorities,
         max_sections_per_page=settings.wiki.max_sections_per_page,
         max_compile_batch_size=settings.wiki.max_compile_batch_size,
