@@ -12,6 +12,7 @@ Tests cover:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,6 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from grimoire.api.main import create_app
+from grimoire.db.models import ApiKey, ApiKeyTier
 
 _DEPS = "grimoire.api.dependencies"
 _ROUTES_INGEST = "grimoire.api.routes.ingest"
@@ -27,6 +29,19 @@ _ROUTES_GENERATE = "grimoire.api.routes.generate"
 _ROUTES_DOCUMENTS = "grimoire.api.routes.documents"
 _ROUTES_CATEGORIES = "grimoire.api.routes.categories"
 _ROUTES_WATCH = "grimoire.api.routes.watch"
+
+
+def _make_test_api_key() -> ApiKey:
+    """Create a mock ApiKey for testing."""
+    key = ApiKey(
+        id="test-key-12345678",
+        name="test-key",
+        tier=ApiKeyTier.AGENT,
+        key_prefix="grim_agt_tst",
+        key_hash="$2b$12$fakehash",
+        created_at=datetime.now(timezone.utc),
+    )
+    return key
 
 
 @pytest.fixture
@@ -38,15 +53,22 @@ def app():
 
 @pytest.fixture
 def client(app):
-    """Test client with mocked DB dependency."""
+    """Test client with mocked DB and auth dependencies."""
     mock_session = AsyncMock()
 
     async def override_db():
         yield mock_session
 
+    from grimoire.api.auth import get_api_key
     from grimoire.api.dependencies import get_db_session
 
+    test_key = _make_test_api_key()
+
+    async def override_api_key():
+        return test_key
+
     app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_api_key] = override_api_key
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
     app.dependency_overrides.clear()
@@ -204,9 +226,16 @@ class TestDocumentsAPI:
         async def override_db():
             yield mock_session
 
+        from grimoire.api.auth import get_api_key
         from grimoire.api.dependencies import get_db_session
 
+        test_key = _make_test_api_key()
+
+        async def override_api_key():
+            return test_key
+
         app.dependency_overrides[get_db_session] = override_db
+        app.dependency_overrides[get_api_key] = override_api_key
 
         with TestClient(app, raise_server_exceptions=False) as c:
             resp = c.get("/api/v1/documents")
@@ -225,9 +254,16 @@ class TestDocumentsAPI:
         async def override_db():
             yield mock_session
 
+        from grimoire.api.auth import get_api_key
         from grimoire.api.dependencies import get_db_session
 
+        test_key = _make_test_api_key()
+
+        async def override_api_key():
+            return test_key
+
         app.dependency_overrides[get_db_session] = override_db
+        app.dependency_overrides[get_api_key] = override_api_key
 
         with TestClient(app, raise_server_exceptions=False) as c:
             resp = c.get("/api/v1/documents/nonexistent")
@@ -242,9 +278,16 @@ class TestDocumentsAPI:
         async def override_db():
             yield mock_session
 
+        from grimoire.api.auth import get_api_key
         from grimoire.api.dependencies import get_db_session
 
+        test_key = _make_test_api_key()
+
+        async def override_api_key():
+            return test_key
+
         app.dependency_overrides[get_db_session] = override_db
+        app.dependency_overrides[get_api_key] = override_api_key
 
         with TestClient(app, raise_server_exceptions=False) as c:
             resp = c.delete("/api/v1/documents/nonexistent")
@@ -273,9 +316,16 @@ class TestCategoriesAPI:
         async def override_db():
             yield mock_session
 
+        from grimoire.api.auth import get_api_key
         from grimoire.api.dependencies import get_db_session
 
+        test_key = _make_test_api_key()
+
+        async def override_api_key():
+            return test_key
+
         app.dependency_overrides[get_db_session] = override_db
+        app.dependency_overrides[get_api_key] = override_api_key
 
         with TestClient(app, raise_server_exceptions=False) as c:
             resp = c.get("/api/v1/categories")
@@ -293,9 +343,16 @@ class TestCategoriesAPI:
         async def override_db():
             yield mock_session
 
+        from grimoire.api.auth import get_api_key
         from grimoire.api.dependencies import get_db_session
 
+        test_key = _make_test_api_key()
+
+        async def override_api_key():
+            return test_key
+
         app.dependency_overrides[get_db_session] = override_db
+        app.dependency_overrides[get_api_key] = override_api_key
 
         with TestClient(app, raise_server_exceptions=False) as c:
             resp = c.delete("/api/v1/categories/nonexistent")

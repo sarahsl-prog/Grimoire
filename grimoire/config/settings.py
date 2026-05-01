@@ -398,6 +398,9 @@ class RedisConfig(BaseModel):
     db_cache: int = Field(
         default=2, ge=0, le=15, description="Redis database for cache"
     )
+    db_rate_limit: int = Field(
+        default=3, ge=0, le=15, description="Redis database for rate limiting"
+    )
     url: str | None = Field(default=None, description="Full Redis URL")
 
     @field_validator("port")
@@ -695,6 +698,25 @@ class APIConfig(BaseModel):
     )
 
 
+class AuthConfig(BaseModel):
+    """API key authentication and rate limiting configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rate_limits: dict[str, str] = Field(
+        default_factory=lambda: {
+            "agt": "600/minute",
+            "dvl": "120/minute",
+            "rdl": "30/minute",
+        },
+        description="Rate limits per tier code (slowapi format)",
+    )
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["*"],
+        description="Allowed CORS origins",
+    )
+
+
 class WikiConfig(BaseModel):
     """Wiki compilation configuration."""
 
@@ -862,6 +884,7 @@ class GrimoireSettings(BaseSettings):
         default_factory=ProcessingConfig, description="Processing settings"
     )
     api: APIConfig = Field(default_factory=APIConfig, description="API settings")
+    auth: AuthConfig = Field(default_factory=AuthConfig, description="Auth settings")
     wiki: WikiConfig = Field(default_factory=WikiConfig, description="Wiki settings")
 
     # Top-level settings

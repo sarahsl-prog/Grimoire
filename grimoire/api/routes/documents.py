@@ -2,27 +2,30 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from grimoire.api.auth import get_api_key
 from grimoire.api.dependencies import get_db_session
 from grimoire.api.schemas import (
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentResponse,
 )
-from grimoire.db.models import Document
+from grimoire.db.models import ApiKey, Document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 @router.get("", response_model=DocumentListResponse)
 async def list_documents(
+    request: Request,
     offset: int = 0,
     limit: int = 50,
     status: str | None = None,
     file_type: str | None = None,
+    api_key: ApiKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentListResponse:
     """List documents with optional filtering and pagination."""
@@ -70,6 +73,8 @@ async def list_documents(
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
 async def get_document(
     document_id: str,
+    request: Request,
+    api_key: ApiKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentDetailResponse:
     """Get detailed information about a document."""
@@ -94,6 +99,8 @@ async def get_document(
 @router.delete("/{document_id}", status_code=204)
 async def delete_document(
     document_id: str,
+    request: Request,
+    api_key: ApiKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """Delete a document and its associated data."""
