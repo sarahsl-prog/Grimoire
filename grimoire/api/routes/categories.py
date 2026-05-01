@@ -4,23 +4,26 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from grimoire.api.auth import get_api_key
 from grimoire.api.dependencies import get_db_session
 from grimoire.api.schemas import (
     CategoryCreateRequest,
     CategoryListResponse,
     CategoryResponse,
 )
-from grimoire.db.models import Category
+from grimoire.db.models import ApiKey, Category
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
 @router.get("", response_model=CategoryListResponse)
 async def list_categories(
+    request: Request,
+    api_key: ApiKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db_session),
 ) -> CategoryListResponse:
     """List all categories."""
@@ -47,28 +50,30 @@ async def list_categories(
 
 @router.post("", response_model=CategoryResponse, status_code=201)
 async def create_category(
-    request: CategoryCreateRequest,
+    request: Request,
+    body: CategoryCreateRequest,
+    api_key: ApiKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db_session),
 ) -> CategoryResponse:
     """Create a new category."""
-    slug = request.name.lower().replace(" ", "-")
+    slug = body.name.lower().replace(" ", "-")
 
     parent_id = None
-    if request.parent_slug:
+    if body.parent_slug:
         parent = (
-            await db.execute(select(Category).where(Category.slug == request.parent_slug))
+            await db.execute(select(Category).where(Category.slug == body.parent_slug))
         ).scalars().first()
         if not parent:
-            raise HTTPException(status_code=404, detail=f"Parent category '{request.parent_slug}' not found")
+            raise HTTPException(status_code=404, detail=f"Parent category '{body.parent_slug}' not found")
         parent_id = parent.id
 
     cat = Category(
         id=str(uuid4()),
-        name=request.name,
+        name=body.name,
         slug=slug,
-        description=request.description,
+        description=body.description,
         parent_id=parent_id,
-        color=request.color,
+        color=body.color,
     )
     db.add(cat)
     await db.commit()
@@ -86,6 +91,8 @@ async def create_category(
 @router.delete("/{category_id}", status_code=204)
 async def delete_category(
     category_id: str,
+    request: Request,
+    api_key: ApiKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """Delete a category."""

@@ -264,3 +264,30 @@ class ErrorResponse(BaseModel):
     """Standard error response."""
 
     detail: str
+
+
+# =============================================================================
+# API Key Schemas
+# =============================================================================
+
+
+class ApiKeyInfoResponse(BaseModel):
+    """Info about the currently authenticated API key."""
+
+    id: str
+    name: str
+    tier: str
+    prefix: str
+    expires_at: str | None = None
+    created_at: str
+
+
+class ApiKeyCreateResponse(BaseModel):
+    """Response when creating an API key (includes the raw key once)."""
+
+    id: str
+    name: str
+    tier: str
+    prefix: str
+    key: str
+    expires_at: str | None = None

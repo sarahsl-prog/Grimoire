@@ -192,6 +192,14 @@ class CompileStatus(str, Enum):
     FAILED = "failed"
 
 
+class ApiKeyTier(str, Enum):
+    """API key tier controlling rate limits."""
+
+    AGENT = "agt"
+    DEV = "dvl"
+    READ = "rdl"
+
+
 # ============================================================================
 # Models
 # ============================================================================
@@ -1083,4 +1091,59 @@ class WikiCompileJob(Base):
 
     __table_args__ = (
         Index("ix_wiki_compile_jobs_status", "status"),
+    )
+
+
+class ApiKey(Base):
+    """API key for tiered authentication and rate limiting."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    tier: Mapped[ApiKeyTier] = mapped_column(
+        SQLEnum(ApiKeyTier, name="api_key_tier_enum"),
+        nullable=False,
+        index=True,
+    )
+    key_prefix: Mapped[str] = mapped_column(
+        String(12),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="First 12 chars of the raw key for identification",
+    )
+    key_hash: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        unique=True,
+        comment="bcrypt hash of the full API key",
+    )
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    __table_args__ = (
+        Index("ix_api_keys_tier_created", "tier", "created_at"),
     )

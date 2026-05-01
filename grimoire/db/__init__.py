@@ -6,6 +6,8 @@ Provides SQLAlchemy models, async session management, and Alembic migrations.
 from grimoire.db.base import Base
 from grimoire.db.models import (
     ActionType,
+    ApiKey,
+    ApiKeyTier,
     CacheEntry,
     CacheType,
     Category,
@@ -46,6 +48,7 @@ __all__ = [
     "WatchPath",
     "ProcessingLog",
     "CacheEntry",
+    "ApiKey",
     # Enums
     "StorageBackend",
     "FileType",
@@ -57,6 +60,7 @@ __all__ = [
     "ActionType",
     "StatusType",
     "CacheType",
+    "ApiKeyTier",
     # Session management
     "initialize_db",
     "close_db",

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from grimoire.api.auth import get_api_key
 from grimoire.api.schemas import WatchResponse, WatchStartRequest, WatcherStatsResponse
+from grimoire.db.models import ApiKey
 
 router = APIRouter(prefix="/watch", tags=["watch"])
 
@@ -25,25 +27,33 @@ def _get_watcher():
 
 
 @router.post("/start", response_model=WatchResponse, status_code=201)
-async def start_watch(request: WatchStartRequest) -> WatchResponse:
+async def start_watch(
+    request: Request,
+    body: WatchStartRequest,
+    api_key: ApiKey = Depends(get_api_key),
+) -> WatchResponse:
     """Start watching a path for changes."""
     watcher = _get_watcher()
     watch_id = await watcher.watch(
-        request.path,
-        backend=request.backend,
-        recursive=request.recursive,
-        poll_interval=request.poll_interval,
+        body.path,
+        backend=body.backend,
+        recursive=body.recursive,
+        poll_interval=body.poll_interval,
     )
     return WatchResponse(
         watch_id=watch_id,
-        path=request.path,
-        backend=request.backend,
+        path=body.path,
+        backend=body.backend,
         is_running=True,
     )
 
 
 @router.delete("/{watch_id}", status_code=204)
-async def stop_watch(watch_id: str) -> None:
+async def stop_watch(
+    watch_id: str,
+    request: Request,
+    api_key: ApiKey = Depends(get_api_key),
+) -> None:
     """Stop a specific watch."""
     watcher = _get_watcher()
     success = await watcher.unwatch(watch_id)
@@ -52,7 +62,10 @@ async def stop_watch(watch_id: str) -> None:
 
 
 @router.get("/status", response_model=WatcherStatsResponse)
-async def get_watch_status() -> WatcherStatsResponse:
+async def get_watch_status(
+    request: Request,
+    api_key: ApiKey = Depends(get_api_key),
+) -> WatcherStatsResponse:
     """Get watcher statistics."""
     watcher = _get_watcher()
     stats = watcher.get_status()
