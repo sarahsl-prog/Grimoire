@@ -30,7 +30,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     app = FastAPI(
         title="Grimoire",
         description="Knowledge management and content generation API.",
-        version="0.1.0",
+        version="2.0.0",
         lifespan=lifespan if use_lifespan else None,
     )
 

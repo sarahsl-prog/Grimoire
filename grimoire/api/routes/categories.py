@@ -56,7 +56,23 @@ async def create_category(
     db: AsyncSession = Depends(get_db_session),
 ) -> CategoryResponse:
     """Create a new category."""
-    slug = body.name.lower().replace(" ", "-")
+    from slugify import slugify
+    
+    slug = slugify(body.name)
+    
+    # Check for existing slug and handle collision
+    existing = (
+        await db.execute(select(Category).where(Category.slug == slug))
+    ).scalars().first()
+    if existing:
+        counter = 1
+        new_slug = f"{slug}-{counter}"
+        while (
+            await db.execute(select(Category).where(Category.slug == new_slug))
+        ).scalars().first():
+            counter += 1
+            new_slug = f"{slug}-{counter}"
+        slug = new_slug
 
     parent_id = None
     if body.parent_slug:
@@ -76,7 +92,12 @@ async def create_category(
         color=body.color,
     )
     db.add(cat)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to create category")
+    await db.refresh(cat)
 
     return CategoryResponse(
         id=cat.id,

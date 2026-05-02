@@ -108,5 +108,33 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
 
+    # Clean up vector store entries before deleting document
+    # This prevents orphaned vectors in ChromaDB/Qdrant
+    # Gracefully handle case where vector store service doesn't exist yet
+    try:
+        try:
+            from grimoire.services.vector_store import get_vector_store_service
+            from grimoire.config.settings import get_settings
+            
+            settings = get_settings()
+            vector_store = get_vector_store_service(settings)
+            
+            # Delete vectors for all chunks
+            vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
+            if vector_ids:
+                await vector_store.delete_vectors(vector_ids)
+        except ImportError:
+            # Vector store service not implemented yet - just log and continue
+            from loguru import logger
+            logger.debug(f"Vector store service not available, skipping vector cleanup for {document_id}")
+    except Exception as e:
+        from loguru import logger
+        logger.warning(f"Failed to delete vectors for document {document_id}: {e}")
+        # Continue with document deletion even if vector cleanup fails
+
     await db.delete(doc)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete document")
