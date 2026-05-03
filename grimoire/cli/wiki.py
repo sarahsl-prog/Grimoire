@@ -23,17 +23,18 @@ def wiki() -> None:
 @wiki.command("compile")
 @click.option("--doc-id", "-d", type=str, default=None, help="Compile a specific document.")
 @click.option("--category", type=str, default=None, help="Compile all docs in a category.")
+@click.option("--all", "compile_all", is_flag=True, default=False, help="Compile all completed documents.")
 @click.pass_context
 @async_command
 async def wiki_compile(
-    ctx: click.Context, doc_id: str | None, category: str | None
+    ctx: click.Context, doc_id: str | None, category: str | None, compile_all: bool
 ) -> None:
     """Compile wiki-pending documents into wiki pages."""
     await setup_db()
     try:
         from sqlalchemy import select
 
-        from grimoire.db.models import Document, WikiCompileJob
+        from grimoire.db.models import Document, ProcessingStatus, WikiCompileJob
 
         agent = build_wiki_agent()
 
@@ -54,6 +55,20 @@ async def wiki_compile(
                 if not doc_ids:
                     echo_error(f"No documents found in category '{category}'")
                     return
+                results = []
+                for did in doc_ids:
+                    r = await agent.compile_document(db, did)
+                    results.append(r)
+            elif compile_all:
+                stmt = select(Document.id).where(
+                    Document.processing_status == ProcessingStatus.COMPLETED
+                )
+                result = await db.execute(stmt)
+                doc_ids = [row[0] for row in result.all()]
+                if not doc_ids:
+                    echo_error("No completed documents found.")
+                    return
+                click.echo(f"Compiling {len(doc_ids)} document(s)...")
                 results = []
                 for did in doc_ids:
                     r = await agent.compile_document(db, did)

@@ -300,6 +300,7 @@ class Document(Base):
         "DocumentTag",
         back_populates="document",
         cascade="all, delete-orphan",
+        lazy="selectin",
     )
     generated_content: Mapped[List["GeneratedContent"]] = relationship(
         "GeneratedContent",
@@ -493,6 +494,7 @@ class Category(Base):
         "DocumentTag",
         back_populates="category",
         cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
 
