@@ -1,6 +1,5 @@
 """Structured logging configuration using loguru."""
 
-import os
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -14,30 +13,12 @@ DEFAULT_LOG_FORMAT = (
     "{message}"
 )
 
-
-def _get_log_directory() -> Path:
-    """Determine the appropriate log directory.
-
-    Returns:
-        Path to use for log files.
-    """
-    # Check for production environment
-    production_logs = Path("/var/log/grimoire")
-
-    # Use production path if writable or if running as root/system service
-    try:
-        if production_logs.parent.exists() and os.access(
-            production_logs.parent, os.W_OK
-        ):
-            production_logs.mkdir(parents=True, exist_ok=True)
-            return production_logs
-    except (OSError, PermissionError):
-        pass
-
-    # Fall back to development path
-    dev_logs = Path("./log")
-    dev_logs.mkdir(parents=True, exist_ok=True)
-    return dev_logs.absolute()
+CLI_LOG_FORMAT = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+    "<level>{level:<8}</level> | "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+    "<level>{message}</level>"
+)
 
 
 def setup_logger(
@@ -45,41 +26,45 @@ def setup_logger(
     log_dir: Optional[Path] = None,
     rotation: str = "1 week",
     retention: str = "1 month",
+    console_format: str = DEFAULT_LOG_FORMAT,
 ) -> None:
-    """Configure loguru with structured logging and rotation.
+    """Configure loguru with console + file sinks.
+
+    Always writes to file. Console sink is also added.
 
     Args:
         level: Minimum log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-        log_dir: Directory for log files. Auto-detected if not specified.
+        log_dir: Directory for log files. Reads from settings if not given.
         rotation: Log rotation interval (e.g., "1 week", "500 MB", "00:00").
         retention: Log retention period (e.g., "1 month", "10 days").
-
-    Note:
-        Never log API keys, tokens, passwords, or other secrets.
+        console_format: Format string for the console sink.
     """
-    # Remove default handler
     logger.remove()
 
-    # Determine log directory
     if log_dir is None:
-        log_dir = _get_log_directory()
+        try:
+            from grimoire.config import get_settings
+            settings = get_settings()
+            log_dir = Path(settings.logging.log_dir)
+            rotation = settings.logging.rotation
+            retention = settings.logging.retention
+        except Exception:
+            log_dir = Path("./logs")
 
     log_dir_path = Path(log_dir)
     log_dir_path.mkdir(parents=True, exist_ok=True)
 
-    # Console handler (always enabled)
+    # Console sink
     logger.add(
-        sys.stdout,
+        sys.stderr,
         level=level,
-        format=DEFAULT_LOG_FORMAT,
-        colorize=sys.stdout.isatty(),
+        format=console_format,
+        colorize=sys.stderr.isatty(),
     )
 
-    # File handler with rotation
-    log_file = log_dir_path / "grimoire.log"
-
+    # File sink — always enabled
     logger.add(
-        str(log_file),
+        str(log_dir_path / "grimoire.log"),
         level=level,
         format=DEFAULT_LOG_FORMAT,
         rotation=rotation,
@@ -92,16 +77,10 @@ def setup_logger(
 
 
 def get_logger(name: str) -> Any:
-    """Get a logger instance with the given name.
-
-    Args:
-        name: Logger name (typically __name__).
-
-    Returns:
-        Configured logger instance.
-    """
+    """Get a named logger instance."""
     return logger.bind(name=name)
 
 
-# Configure default logger on import
+# Default setup on import — CLI and agents call setup_logger() again to
+# override level and pick up the correct log_dir from settings.
 setup_logger()

@@ -100,6 +100,7 @@ class WikiAgent:
         max_compile_batch_size: int = 20,
         temperature: float = 0.3,
         max_tokens: int = 4096,
+        llm_timeout: int = 300,
     ) -> None:
         self._llm_url = llm_url.rstrip("/")
         self._llm_model = llm_model
@@ -110,6 +111,7 @@ class WikiAgent:
         self._max_compile_batch_size = max_compile_batch_size
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._llm_timeout = llm_timeout
         logger.debug(f"WikiAgent initialized (model={llm_model}, fallback_url={fallback_llm_url})")
 
     # ------------------------------------------------------------------
@@ -183,10 +185,10 @@ class WikiAgent:
                     result.contradictions_found += updated.contradictions_found
 
             for entity in entities:
-                page = await self._match_existing_page(db, entity.name)
-                if page:
+                matched_page = await self._match_existing_page(db, entity.name)
+                if matched_page is not None:
                     refs = await self._discover_cross_references(
-                        db, page, [e.name for e in entities]
+                        db, matched_page, [e.name for e in entities]
                     )
                     result.cross_references_added += refs
 
@@ -713,7 +715,7 @@ class WikiAgent:
         label = "primary" if primary else "fallback"
         try:
             logger.debug(f"LLM request ({label}): url={url} model={model}")
-            async with httpx.AsyncClient(timeout=180.0) as client:
+            async with httpx.AsyncClient(timeout=self._llm_timeout) as client:
                 response = await client.post(
                     f"{url}/api/generate",
                     json={
@@ -728,9 +730,15 @@ class WikiAgent:
                 )
                 response.raise_for_status()
                 data = response.json()
-                text = data.get("response", "").strip()
+                text = str(data.get("response", "")).strip()
                 logger.debug(f"LLM response ({label}): {len(text)} chars")
                 return text
+        except httpx.TimeoutException:
+            logger.warning(
+                f"{label} LLM timed out after {self._llm_timeout}s at {url} "
+                f"(model={model}, prompt_len={len(prompt)})"
+            )
+            return None
         except httpx.ConnectError:
             logger.warning(f"Cannot connect to {label} LLM at {url}")
             return None
@@ -738,33 +746,33 @@ class WikiAgent:
             logger.warning(f"{label} LLM returned HTTP {e.response.status_code} from {url}")
             return None
         except Exception as e:
-            logger.error(f"{label} LLM call failed unexpectedly: {e}")
+            logger.exception(f"{label} LLM call failed unexpectedly ({type(e).__name__})")
             return None
 
     # ------------------------------------------------------------------
     # Response Parsing
     # ------------------------------------------------------------------
 
-    def _parse_sections_response(self, response: str) -> list[dict]:
+    def _parse_sections_response(self, response: str) -> list[dict[str, Any]]:
         """Parse LLM sections response."""
         try:
             match = re.search(r"\{.*\}", response, re.DOTALL)
             if not match:
                 return []
-            data = json.loads(match.group())
-            return data.get("sections", [])
+            data: dict[str, Any] = json.loads(match.group())
+            return list(data.get("sections", []))
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning(f"Failed to parse sections response: {e}")
             return []
 
-    def _parse_updates_response(self, response: str) -> list[dict]:
+    def _parse_updates_response(self, response: str) -> list[dict[str, Any]]:
         """Parse LLM updates response."""
         try:
             match = re.search(r"\{.*\}", response, re.DOTALL)
             if not match:
                 return []
-            data = json.loads(match.group())
-            return data.get("updates", [])
+            data: dict[str, Any] = json.loads(match.group())
+            return list(data.get("updates", []))
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning(f"Failed to parse updates response: {e}")
             return []

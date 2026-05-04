@@ -164,6 +164,7 @@ def build_wiki_agent() -> Any:
         source_priorities=settings.wiki.source_priorities,
         max_sections_per_page=settings.wiki.max_sections_per_page,
         max_compile_batch_size=settings.wiki.max_compile_batch_size,
+        llm_timeout=settings.llm.timeout,
     )
 
 
