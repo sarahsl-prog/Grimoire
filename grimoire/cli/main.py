@@ -4,7 +4,6 @@ This module provides the main Click CLI entry point for the Grimoire
 knowledge management system.
 """
 
-import sys
 from pathlib import Path
 
 import click
@@ -40,17 +39,10 @@ def cli(ctx: click.Context, config: Path | None, verbose: bool) -> None:
     ctx.obj["config_path"] = config
     ctx.obj["verbose"] = verbose
 
-    # Configure logging
+    # Configure logging — always includes file sink via setup_logger()
+    from grimoire.utils.logger import CLI_LOG_FORMAT, setup_logger
     log_level = "DEBUG" if verbose else "INFO"
-    logger.remove()  # Remove default handler
-    logger.add(
-        sys.stderr,
-        level=log_level,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-        "<level>{level: <8}</level> | "
-        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
-        "<level>{message}</level>",
-    )
+    setup_logger(level=log_level, console_format=CLI_LOG_FORMAT)
 
 
 # Register subcommands

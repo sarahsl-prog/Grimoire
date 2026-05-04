@@ -123,30 +123,9 @@ def setup_agent_logging(
     rotation: str = "10 MB",
     retention: str = "1 week",
 ) -> None:
-    """
-    Setup logging for agents.
-
-    Args:
-        log_level: The logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_file: Optional path to log file
-        rotation: Log rotation setting
-        retention: Log retention setting
-    """
-    # Remove default handler
-    logger.remove()
-
-    # Add file logger if specified
-    if log_file:
-        logger.add(
-            log_file,
-            level=log_level,
-            rotation=rotation,
-            retention=retention,
-            enqueue=True,  # Thread safe
-        )
-
-    # Add console logger
-    logger.add(lambda msg: print(msg, end=""), level=log_level, colorize=True)
+    """Setup logging for agents — delegates to setup_logger() for consistent file+console output."""
+    from grimoire.utils.logger import setup_logger
+    setup_logger(level=log_level)
 
 
 # Common utility functions
