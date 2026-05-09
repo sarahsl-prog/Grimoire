@@ -34,6 +34,11 @@ class Chunk(BaseModel):
         prev_chunk_id: ID of the previous chunk, if any.
         next_chunk_id: ID of the next chunk, if any.
         metadata: Additional metadata (source doc, headers, etc.).
+        chunk_type: Optional chunk shape category (e.g. ``"prose"``,
+            ``"sigma_rule"``, ``"cve_block"``). ``None`` for legacy/default
+            chunks; populated by domain-specific chunkers.
+        source_type: Optional origin source type (e.g. ``"sigma"``,
+            ``"nvd_cve"``, ``"mitre_attack"``). ``None`` for general docs.
 
     Example:
         ```python

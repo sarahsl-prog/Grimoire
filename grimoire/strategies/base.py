@@ -27,12 +27,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from grimoire.core.chunker.base import Chunker as BaseChunker
-from grimoire.search.hybrid import HybridResult
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from grimoire.search.hybrid import HybridResult
 
 __all__ = [
     "BaseChunker",
