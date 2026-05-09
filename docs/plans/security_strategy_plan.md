@@ -1,6 +1,10 @@
-# Grimoire Security Strategy — Implementation Plan
+# Implementation Plan: Grimoire Security Strategy
 
-Branch: `claude/plan-grimoire-implementation-eHgYp`
+**Date**: 2026-05-09
+**Status**: Planned
+**Related Issues**: None yet — create issues when starting individual phases.
+
+---
 
 ## Decisions locked in
 
