@@ -298,6 +298,7 @@ grimoire/
 ├── storage/          # Storage adapters (local, cloud)
 ├── vectorstore/      # Vector store abstraction
 ├── search/           # Full-text and hybrid search
+├── strategies/       # Domain-specific chunking + retrieval strategies (general / security)
 ├── db/               # Database models and migrations
 ├── config/           # Configuration management
 └── utils/            # Shared utilities
