@@ -214,19 +214,100 @@ class TestProsePath:
 
 
 # ---------------------------------------------------------------------------
-# 4. Not-yet-implemented source types
+# 4. MITRE ATT&CK path
 # ---------------------------------------------------------------------------
 
 
+MITRE_FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "security" / "mitre"
+MITRE_STIX = MITRE_FIXTURE_DIR / "attack-pattern.json"
+MITRE_MD = MITRE_FIXTURE_DIR / "T1059.md"
+
+
+def _load_mitre_stix() -> str:
+    return MITRE_STIX.read_text(encoding="utf-8")
+
+
+def _load_mitre_md() -> str:
+    return MITRE_MD.read_text(encoding="utf-8")
+
+
 @pytest.mark.asyncio
-class TestUnimplementedPaths:
-    async def test_mitre_attack_raises_not_implemented(self) -> None:
+class TestMitrePath:
+    async def test_stix_bundle_chunks(self) -> None:
+        """Two techniques × 3 sections each = 6 chunks."""
+        text = _load_mitre_stix()
         chunker = SecurityChunker()
-        with pytest.raises(NotImplementedError, match="Phase 5"):
-            await chunker.chunk(
-                "---\nkind: attack-pattern\n---\nDescription here.",
-                source_metadata={"path": "/corpus/mitre-attack/T1059.md"},
-            )
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/corpus/mitre-attack/stix.json"},
+        )
+        assert len(chunks) == 6
+
+    async def test_each_chunk_is_mitre_technique(self) -> None:
+        text = _load_mitre_stix()
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/corpus/mitre-attack/stix.json"},
+        )
+        for c in chunks:
+            assert c.chunk_type == "mitre_technique"
+            assert c.source_type == "mitre_attack"
+
+    async def test_metadata_has_security_metadata(self) -> None:
+        text = _load_mitre_stix()
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/corpus/mitre-attack/stix.json"},
+        )
+        for c in chunks:
+            sec_meta = c.metadata.get("security_metadata")
+            assert isinstance(sec_meta, dict)
+            assert sec_meta["source_type"] == "mitre_attack"
+            assert "mitre_technique_id" in sec_meta
+
+    async def test_no_field_bleed_across_techniques(self) -> None:
+        text = _load_mitre_stix()
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/corpus/mitre-attack/stix.json"},
+        )
+        ids = [c.metadata["security_metadata"]["mitre_technique_id"] for c in chunks]
+        # Fixture has T1059.001 and T1218 (the .001 subtechnique is optional).
+        assert any("T1059" in i for i in ids)
+        assert "T1218" in ids
+
+    async def test_continuity_links_set(self) -> None:
+        text = _load_mitre_stix()
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/corpus/mitre-attack/stix.json"},
+        )
+        assert chunks[0].prev_chunk_id is None
+        assert chunks[-1].next_chunk_id is None
+        for i in range(1, len(chunks)):
+            assert chunks[i].prev_chunk_id == chunks[i - 1].metadata["chunk_id"]
+
+    async def test_markdown_chunks(self) -> None:
+        """Markdown fixture: Description lead + Description + Detection + Mitigations = 4 chunks."""
+        text = _load_mitre_md()
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/corpus/mitre-attack/T1059.md"},
+        )
+        assert len(chunks) == 4
+        for c in chunks:
+            assert c.chunk_type == "mitre_technique"
 
 
 # ---------------------------------------------------------------------------

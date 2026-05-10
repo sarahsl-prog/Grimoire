@@ -75,10 +75,6 @@ class SecurityChunker(Chunker):
 
         Returns:
             List of :class:`Chunk` objects with continuity links.
-
-        Raises:
-            NotImplementedError: If the detected source type is ``mitre_attack``
-                (handled in Phase 5).
         """
 
         if not text or not text.strip():
@@ -91,9 +87,7 @@ class SecurityChunker(Chunker):
         if source_type is SourceType.NVD_CVE:
             return await self._chunk_nvd(text, doc_id)
         if source_type is SourceType.MITRE_ATTACK:
-            raise NotImplementedError(
-                "MITRE ATT&CK chunking not yet implemented (Phase 5)"
-            )
+            return await self._chunk_mitre(text, doc_id)
 
         # PROSE, UNKNOWN, IOC_LIST → prose fallback.
         return await self._chunk_prose(text, doc_id)
@@ -202,6 +196,46 @@ class SecurityChunker(Chunker):
                     },
                 )
                 chunks.append(refs_chunk)
+
+        if chunks:
+            self._set_continuity_links(chunks, doc_id or "doc")
+        return chunks
+
+    # ------------------------------------------------------------------ #
+    # MITRE ATT&CK
+    # ------------------------------------------------------------------ #
+
+    async def _chunk_mitre(
+        self, text: str, doc_id: Optional[str] = None
+    ) -> List[Chunk]:
+        """Chunk MITRE ATT&CK content: one chunk per section.
+
+        Each section (Description, Detection, Mitigations) becomes its own
+        :class:`Chunk` with ``chunk_type`` set to ``"mitre_technique"``.
+        All chunks for a single technique share the same
+        ``mitre_technique_id`` so downstream re-rankers can group them.
+        """
+
+        from grimoire.strategies.security.parsers.mitre import parse_mitre
+
+        parsed = await asyncio.to_thread(parse_mitre, text)
+        if not parsed:
+            return []
+
+        chunks: List[Chunk] = []
+        for section_text, sec_meta in parsed:
+            chunk = Chunk(
+                content=section_text,
+                token_count=self._count_tokens(section_text),
+                index=len(chunks),
+                chunk_type="mitre_technique",
+                source_type=sec_meta.source_type.value,
+                metadata={
+                    "security_metadata": sec_meta.to_chromadb_metadata(),
+                    "strategy": "mitre_technique",
+                },
+            )
+            chunks.append(chunk)
 
         if chunks:
             self._set_continuity_links(chunks, doc_id or "doc")
