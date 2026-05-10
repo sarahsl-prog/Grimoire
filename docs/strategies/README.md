@@ -4,12 +4,15 @@
 
 ## Current status
 
-Phase 0 of the [security strategy plan](../plans/security_strategy_plan.md) — **scaffolding only**. The package is importable and the abstract types exist, but no concrete domain logic has landed yet. Domain selection is **not yet wired** into ingestion or query; that arrives in Phase 8.
+Phases 0–2 of the [security strategy plan](../plans/security_strategy_plan.md) have landed. The strategy scaffolding, source-type detector, and security-metadata schema (with matching DB columns + Chroma writer hook) are merged. Domain selection is **not yet wired** into ingestion or query; that arrives in Phase 8.
 
 Follow-on phases (one-line each — see the plan for full detail):
 
-- **Phase 1** — Source-type detection (`security/corpus.py`).
-- **Phase 2** — Metadata schema additions (DB columns + JSONB blob, vector-store metadata).
+- **Phase 1 — done** — Source-type detection (`security/corpus.py`).
+- **Phase 2 — done** — Metadata schema additions (`security/metadata.py`,
+  `documents` columns + JSONB blob, ChromaDB metadata merge in
+  `agents/ingestion.py::_embed_and_store`). See
+  [`metadata.md`](metadata.md).
 - **Phase 3** — Deterministic source parsers (Sigma, NVD CVE, MITRE ATT&CK).
 - **Phase 4** — LLM metadata extractor for prose / unrecognized content.
 - **Phase 5** — Security chunker dispatch.

@@ -187,13 +187,7 @@ class TestFrontmatter:
         assert detect_source_type(body) is SourceType.MITRE_ATTACK
 
     def test_attack_id_field(self) -> None:
-        body = (
-            "---\n"
-            "title: Demo\n"
-            "attack_id: T1059\n"
-            "---\n"
-            "Body content here.\n"
-        )
+        body = "---\ntitle: Demo\nattack_id: T1059\n---\nBody content here.\n"
         assert detect_source_type(body) is SourceType.MITRE_ATTACK
 
     def test_frontmatter_without_attack_keys(self) -> None:

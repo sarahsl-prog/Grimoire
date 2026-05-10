@@ -199,6 +199,58 @@ class TestDocumentHappyPath:
         result = await db_session.execute(select(Document).where(Document.id == doc.id))
         assert result.scalar_one_or_none() is None
 
+    @pytest.mark.asyncio
+    async def test_security_metadata_columns_round_trip(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Phase 2 columns persist and reload as expected."""
+
+        from grimoire.strategies.security.metadata import Severity, TLPLevel
+
+        now = datetime.now()
+        doc = create_test_document(
+            source_type="nvd_cve",
+            cve_id="CVE-2024-1",
+            severity=Severity.CRITICAL,
+            mitre_technique_id="T1059.001",
+            content_date=now,
+            tlp_level=TLPLevel.AMBER,
+            security_metadata={"foo": "bar", "cwe_ids": ["CWE-79"]},
+        )
+        db_session.add(doc)
+        await db_session.commit()
+
+        result = await db_session.execute(select(Document).where(Document.id == doc.id))
+        found = result.scalar_one()
+        assert found.source_type == "nvd_cve"
+        assert found.cve_id == "CVE-2024-1"
+        assert found.severity is Severity.CRITICAL
+        assert found.mitre_technique_id == "T1059.001"
+        assert found.tlp_level is TLPLevel.AMBER
+        # SQLite returns the raw datetime; just check round-trip equality.
+        assert found.content_date == now
+        assert found.security_metadata == {"foo": "bar", "cwe_ids": ["CWE-79"]}
+
+    @pytest.mark.asyncio
+    async def test_security_metadata_columns_default_to_null(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Documents without security metadata leave the new columns NULL."""
+
+        doc = create_test_document()
+        db_session.add(doc)
+        await db_session.commit()
+
+        result = await db_session.execute(select(Document).where(Document.id == doc.id))
+        found = result.scalar_one()
+        assert found.source_type is None
+        assert found.cve_id is None
+        assert found.severity is None
+        assert found.mitre_technique_id is None
+        assert found.tlp_level is None
+        assert found.content_date is None
+        assert found.security_metadata is None
+
 
 class TestChunkHappyPath:
     """Test basic CRUD operations on Chunk model."""
