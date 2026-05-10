@@ -154,14 +154,25 @@ def _check_path_hints(path: Optional[str]) -> Optional[SourceType]:
 
 
 def _check_extension_hints(path: Optional[str], text: str) -> Optional[SourceType]:
-    """Combined extension + content sniff for Sigma YAML rules."""
+    """Combined extension + content sniff for Sigma YAML rules.
 
-    if not path:
-        return None
-    if not path.lower().endswith(_YAML_EXTENSIONS):
-        return None
-    if _RE_YAML_DETECTION.search(text) and _RE_YAML_LOGSOURCE.search(text):
+    If the text contains both ``detection:`` and ``logsource:`` we treat it
+    as a Sigma rule regardless of file extension — those two keys together
+    are a strong enough fingerprint. When a path is present and ends with
+    ``.yml``/``.yaml`` we also accept a single-key match as Sigma.
+    """
+
+    has_detection = _RE_YAML_DETECTION.search(text)
+    has_logsource = _RE_YAML_LOGSOURCE.search(text)
+
+    # Strong content fingerprint — works even without a path.
+    if has_detection and has_logsource:
         return SourceType.SIGMA_RULE
+
+    # Extension-only: must be YAML and have at least detection:
+    if path and path.lower().endswith(_YAML_EXTENSIONS) and has_detection:
+        return SourceType.SIGMA_RULE
+
     return None
 
 

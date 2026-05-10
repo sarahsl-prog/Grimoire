@@ -19,17 +19,31 @@ import from the package root::
     )
 """
 
+from grimoire.strategies.security.chunker import SecurityChunker
 from grimoire.strategies.security.corpus import SourceType, detect_source_type
 from grimoire.strategies.security.metadata import (
     SecurityMetadata,
     Severity,
     TLPLevel,
 )
+from grimoire.strategies.security.parsers import (
+    parse_mitre,
+    parse_nvd_json,
+    parse_sigma,
+    sigma_level_to_severity,
+)
+from grimoire.strategies.security.parsers.nvd import severity_from_cvss_score
 
 __all__ = [
+    "SecurityChunker",
     "SecurityMetadata",
     "Severity",
     "SourceType",
     "TLPLevel",
     "detect_source_type",
+    "parse_mitre",
+    "parse_nvd_json",
+    "parse_sigma",
+    "severity_from_cvss_score",
+    "sigma_level_to_severity",
 ]

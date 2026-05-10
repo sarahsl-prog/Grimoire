@@ -1,0 +1,89 @@
+title: Suspicious PowerShell Download
+id: e71071b4-c276-4e74-8d23-0d7f9b6ca9b1
+status: stable
+description: Detects suspicious PowerShell download commands
+author: Florian Roth
+level: high
+logsource:
+    product: windows
+    service: sysmon
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains:
+            - 'IEX(New-Object Net.WebClient).downloadString'
+            - 'Invoke-Expression'
+            - 'bitsadmin /transfer'
+    condition: selection
+falsepositives:
+    - Legitimate administrative scripts
+    - Software deployment tools
+tags:
+    - attack.execution
+    - attack.t1059.001
+    - attack.t1105
+---
+title: Linux Suspicious Network Connection
+id: b52a66f8-3d8e-4e2a-9c1d-5b7a9f3e8d2c
+status: experimental
+description: Detects suspicious outbound network connections from Linux hosts
+author: Thomas Patzke
+level: medium
+logsource:
+    product: linux
+    category: network_connection
+detection:
+    selection:
+        Initiated: 'true'
+        DestinationPort:
+            - 4444
+            - 5555
+            - 6666
+    condition: selection
+falsepositives:
+    - Legitimate remote administration tools
+tags:
+    - attack.command_and_control
+    - attack.t1095
+---
+title: AWS CloudTrail Root Account Usage
+id: c83a66f9-4d9f-5e3b-0c2e-6c8b0f4f9e3d
+status: stable
+description: Detects usage of the root account in AWS
+author: falcon
+level: critical
+logsource:
+    product: aws
+    service: cloudtrail
+    category: logon
+detection:
+    selection:
+        userIdentity.type: Root
+    condition: selection
+falsepositives:
+    - Emergency access procedures
+tags:
+    - attack.initial_access
+    - attack.t1078.004
+---
+title: macOS Suspicious Installer Package
+id: d94b77a0-5ea0-6f4c-1d3f-7d9c1e5g0f4e
+status: test
+description: Detects suspicious installer package execution on macOS
+author: custom
+date: 2024-01-15
+level: low
+logsource:
+    product: macos
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains:
+            - 'installer -pkg'
+            - 'open -a Installer'
+    condition: selection
+falsepositives:
+    - Legitimate software installations
+tags:
+    - attack.execution
+    - attack.t1059.002
