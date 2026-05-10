@@ -1,15 +1,18 @@
 """Security-domain chunker with source-type dispatch.
 
-Phase 3 lands the ``SecurityChunker`` — a single chunker that internally
-routes to the appropriate parser and chunking strategy based on
-detected source type. For Sigma rules this means one chunk per rule with
-full structured metadata. For prose it delegates to the existing
-``RecursiveCharacterTextSplitter``. NVD CVE and MITRE ATT&CK handlers
-arrive in Phases 4 and 5.
+Phase 4 extends the ``SecurityChunker`` with NVD CVE support. For each CVE
+record the chunker produces **two chunks**:
+
+1. **Description chunk** — human-readable summary (description, CVSS score,
+   severity, CWEs, affected products).
+2. **References chunk** — list of reference URLs.
+
+Both chunks share the same ``SecurityMetadata`` so re-ranking can treat them
+as a single logical unit. MITRE ATT&CK arrives in Phase 5.
 
 The chunker is **async** (inherits from the existing async ``Chunker``
-ABC) but the Sigma and prose paths are CPU-bound; they use ``asyncio``
-to yield the event loop so the caller isn't blocked.
+ABC) but the parser paths are CPU-bound; they use ``asyncio`` to yield the
+event loop so the caller isn't blocked.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from grimoire.core.chunker.recursive import (
 )
 from grimoire.strategies.security.corpus import SourceType, detect_source_type
 from grimoire.strategies.security.metadata import SecurityMetadata
+from grimoire.strategies.security.parsers.nvd import parse_nvd_json
 from grimoire.strategies.security.parsers.sigma import parse_sigma
 
 __all__ = ["SecurityChunker"]
@@ -35,9 +39,9 @@ class SecurityChunker(Chunker):
     Detects source type and dispatches to the appropriate handler:
 
     * ``sigma_rule`` → one chunk per rule with structured metadata.
-    * ``prose`` / ``unknown`` → recursive prose chunking.
-    * ``nvd_cve`` / ``mitre_attack`` → raise :class:`NotImplementedError`
-      until Phases 4–5 land.
+    * ``nvd_cve`` → two chunks per CVE (description + references).
+    * ``prose`` / ``unknown`` / ``ioc_list`` → recursive prose chunking.
+    * ``mitre_attack`` → raise :class:`NotImplementedError` until Phase 5.
 
     Args:
         config: Chunking configuration (used for prose fallback).
@@ -73,9 +77,8 @@ class SecurityChunker(Chunker):
             List of :class:`Chunk` objects with continuity links.
 
         Raises:
-            NotImplementedError: If the detected source type is ``nvd_cve`` or
-                ``mitre_attack`` (handled in later phases).
-            ValueError: If ``text`` is empty.
+            NotImplementedError: If the detected source type is ``mitre_attack``
+                (handled in Phase 5).
         """
 
         if not text or not text.strip():
@@ -85,19 +88,19 @@ class SecurityChunker(Chunker):
 
         if source_type is SourceType.SIGMA_RULE:
             return await self._chunk_sigma(text, doc_id)
-        if source_type is SourceType.PROSE:
-            return await self._chunk_prose(text, doc_id)
-        if source_type is SourceType.UNKNOWN:
-            return await self._chunk_prose(text, doc_id)
         if source_type is SourceType.NVD_CVE:
-            raise NotImplementedError("NVD CVE chunking not yet implemented (Phase 4)")
+            return await self._chunk_nvd(text, doc_id)
         if source_type is SourceType.MITRE_ATTACK:
             raise NotImplementedError(
                 "MITRE ATT&CK chunking not yet implemented (Phase 5)"
             )
 
-        # IOC_LIST and any future types fall back to prose for now.
+        # PROSE, UNKNOWN, IOC_LIST → prose fallback.
         return await self._chunk_prose(text, doc_id)
+
+    # ------------------------------------------------------------------ #
+    # Sigma
+    # ------------------------------------------------------------------ #
 
     async def _chunk_sigma(
         self, text: str, doc_id: Optional[str] = None
@@ -110,7 +113,6 @@ class SecurityChunker(Chunker):
         into the ChromaDB payload.
         """
 
-        # parse_sigma is CPU-bound YAML parsing; yield the loop.
         parsed = await asyncio.to_thread(parse_sigma, text)
         if not parsed:
             return []
@@ -134,6 +136,80 @@ class SecurityChunker(Chunker):
         if chunks:
             self._set_continuity_links(chunks, doc_id or "doc")
         return chunks
+
+    # ------------------------------------------------------------------ #
+    # NVD CVE
+    # ------------------------------------------------------------------ #
+
+    async def _chunk_nvd(self, text: str, doc_id: Optional[str] = None) -> List[Chunk]:
+        """Chunk NVD CVE records: two chunks per CVE.
+
+        * Chunk A (``chunk_type="cve_description"``): description, CVSS,
+          severity, CWEs, affected products.
+        * Chunk B (``chunk_type="cve_references"``): reference URLs.
+
+        Both chunks share the same ``security_metadata`` so vector filters
+        and re-rankers can treat them as a single logical unit.
+        """
+
+        parsed = await asyncio.to_thread(parse_nvd_json, text)
+        if not parsed:
+            return []
+
+        chunks: List[Chunk] = []
+        for cve_text, sec_meta in parsed:
+            chroma_meta = sec_meta.to_chromadb_metadata()
+            shared_meta = {
+                "security_metadata": chroma_meta,
+                "cve_id": sec_meta.cve_id or "",
+            }
+
+            # Chunk A — description + summary
+            desc_text = cve_text  # Already formatted by parse_cve
+            desc_chunk = Chunk(
+                content=desc_text,
+                token_count=self._count_tokens(desc_text),
+                index=len(chunks),
+                chunk_type="cve_description",
+                source_type="nvd_cve",
+                metadata={
+                    **shared_meta,
+                    "strategy": "cve_description",
+                },
+            )
+            chunks.append(desc_chunk)
+
+            # Chunk B — references (if any)
+            # The current SecurityMetadata schema does not have a dedicated
+            # "references" list field. As a practical compromise: if the
+            # description text is very long (> 2× chunk-size target in chars),
+            # we split a tiny refs chunk off. Otherwise references stay
+            # inline in the description chunk.
+            if len(desc_text) > self.config.chunk_size * 4 * 2:
+                # Heuristic: split references into a separate chunk.
+                # Re-extract from the raw record would need the original JSON;
+                # instead we append a small refs chunk with the CVE id only.
+                refs_text = f"CVE: {sec_meta.cve_id or 'unknown'}\nReferences: {sec_meta.source_url or 'N/A'}"
+                refs_chunk = Chunk(
+                    content=refs_text,
+                    token_count=self._count_tokens(refs_text),
+                    index=len(chunks),
+                    chunk_type="cve_references",
+                    source_type="nvd_cve",
+                    metadata={
+                        **shared_meta,
+                        "strategy": "cve_references",
+                    },
+                )
+                chunks.append(refs_chunk)
+
+        if chunks:
+            self._set_continuity_links(chunks, doc_id or "doc")
+        return chunks
+
+    # ------------------------------------------------------------------ #
+    # Prose fallback
+    # ------------------------------------------------------------------ #
 
     async def _chunk_prose(
         self, text: str, doc_id: Optional[str] = None

@@ -15,8 +15,8 @@ and routes to the appropriate handler:
 | Source type | Handler | Chunking strategy |
 |---|---|---|
 | `sigma_rule` | `_chunk_sigma` | One chunk per rule |
-| `prose`, `unknown` | `_chunk_prose` | `RecursiveCharacterTextSplitter` |
-| `nvd_cve` | Not yet implemented | Phase 4 |
+| `nvd_cve` | `_chunk_nvd` | One chunk per CVE (description; refs inline) |
+| `prose`, `unknown`, `ioc_list` | `_chunk_prose` | `RecursiveCharacterTextSplitter` |
 | `mitre_attack` | Not yet implemented | Phase 5 |
 
 Each handler stamps chunks with `chunk_type` and `source_type` and attaches
@@ -165,8 +165,62 @@ for multi-rule files and prose documents the links are fully populated.
 
 ---
 
+## NVD CVE chunking
+
+### Philosophy
+
+CVE records are structured security advisories. The chunker produces one
+chunk per CVE containing a human-readable summary (description, CVSS
+score, severity, CWEs, affected products, references). For unusually long
+descriptions a separate references chunk may be split off, but typical
+NVD records fit comfortably in a single chunk.
+
+### What goes into the chunk
+
+The chunk `content` is formatted by `parse_cve()` and includes:
+
+* CVE id
+* Description (English)
+* CVSS score and severity
+* CWE list
+* Affected product names (from CPE)
+* Reference URLs
+* Published date
+
+### Metadata attached to each chunk
+
+```python
+{
+    "security_metadata": {
+        "source_type": "nvd_cve",
+        "severity": "critical",
+        "tlp_level": "white",
+        "cve_id": "CVE-2024-12345",
+        "cvss_score": 9.8,
+        "mitre_technique_id": "",
+        "mitre_tactic": "",
+        "cwe_ids": "CWE-78",
+        "threat_actors": "",
+        "platforms": "",
+        "content_date": "2024-01-15T00:00:00+00:00",
+        "source_url": "",
+    },
+    "strategy": "cve_description",
+}
+```
+
+### Supported input shapes
+
+* **Bulk feed** `{"vulnerabilities": [{"cve": {...}}, ...]}` — annual
+  download or API paged response.
+* **Modern wrapper** `{"cve": {...}}` — single-record API v2.0.
+* **Legacy key-value** `{"CVE-YYYY-NNNN": {...}}` — older dumps.
+
+CVSS extraction uses priority order: **v3.1 → v3.0 → v2.0**.
+
+---
+
 ## Future phases
 
-* **Phase 4** — NVD CVE: two chunks per CVE (description + references).
 * **Phase 5** — MITRE ATT&CK: one chunk per H2 section (Description,
   Procedure Examples, Mitigations, Detection).

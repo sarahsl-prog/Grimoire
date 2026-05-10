@@ -26,7 +26,12 @@ from grimoire.strategies.security.metadata import (
     Severity,
     TLPLevel,
 )
-from grimoire.strategies.security.parsers import parse_sigma, sigma_level_to_severity
+from grimoire.strategies.security.parsers import (
+    parse_nvd_json,
+    parse_sigma,
+    sigma_level_to_severity,
+)
+from grimoire.strategies.security.parsers.nvd import severity_from_cvss_score
 
 __all__ = [
     "SecurityChunker",
@@ -35,6 +40,8 @@ __all__ = [
     "SourceType",
     "TLPLevel",
     "detect_source_type",
+    "parse_nvd_json",
     "parse_sigma",
+    "severity_from_cvss_score",
     "sigma_level_to_severity",
 ]
