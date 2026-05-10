@@ -1,10 +1,17 @@
-"""Security-domain strategy package (placeholder).
+"""Security-domain strategy package.
 
-Security-specific chunkers, retrievers, and source parsers (Sigma rules,
-NVD CVEs, MITRE ATT&CK, IOC lists, etc.) land in Phases 1-7 of the
-security strategy plan. This module is intentionally empty in Phase 0;
-it exists so downstream imports of ``grimoire.strategies.security`` resolve
-cleanly while the implementation is built out.
+Phase 1 of the security strategy plan adds the deterministic source-type
+detector (:mod:`grimoire.strategies.security.corpus`). Parsers, the
+``SecurityChunker`` dispatch, metadata schema, and the ``SecurityRetriever``
+arrive in subsequent phases — see ``docs/plans/security_strategy_plan.md``
+for the full roadmap.
 
-See ``docs/plans/security_strategy_plan.md`` for the full roadmap.
+Public surface re-exports the detector so callers can import it from the
+package root::
+
+    from grimoire.strategies.security import SourceType, detect_source_type
 """
+
+from grimoire.strategies.security.corpus import SourceType, detect_source_type
+
+__all__ = ["SourceType", "detect_source_type"]
