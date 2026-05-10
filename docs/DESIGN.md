@@ -159,7 +159,16 @@ All contributors and coding agents must follow these conventions:
     "processed_at": "timestamp (system)",
     "processing_status": "enum: pending/processing/completed/failed/stale",
     "error_message": "text",
-    "version": "integer (conflict detection)"
+    "version": "integer (conflict detection)",
+    # Security metadata (Phase 2 of the security strategy plan).
+    # All nullable; non-security ingest leaves these blank.
+    "source_type": "string (e.g. 'nvd_cve', 'sigma_rule')",
+    "cve_id": "string (e.g. 'CVE-2024-12345')",
+    "severity": "enum: critical/high/medium/low/info/unknown",
+    "mitre_technique_id": "string (e.g. 'T1059.001')",
+    "tlp_level": "enum: white/green/amber/red",
+    "content_date": "timestamp (effective date of underlying content)",
+    "security_metadata": "JSONB (wide/sparse SecurityMetadata fields)"
 }
 
 # chunks — Document chunks with embeddings

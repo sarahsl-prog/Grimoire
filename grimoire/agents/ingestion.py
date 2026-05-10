@@ -23,7 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.core.chunker import Chunk, ChunkConfig, ChunkingStrategy, Chunker
 from grimoire.core.chunker.markdown import MarkdownHeaderTextSplitter
-from grimoire.core.chunker.recursive import RecursiveCharacterTextSplitter, RecursiveChunkConfig
+from grimoire.core.chunker.recursive import (
+    RecursiveCharacterTextSplitter,
+    RecursiveChunkConfig,
+)
 from grimoire.core.chunker.semantic import SemanticChunker
 from grimoire.core.dedup import DedupResult, DeduplicationAction, Deduplicator
 from grimoire.core.embedder import Embedder
@@ -40,6 +43,7 @@ from grimoire.db.models import (
     StatusType,
     StorageBackend,
 )
+from grimoire.strategies.security.metadata import SecurityMetadata
 from grimoire.vectorstore.base import VectorStore
 
 
@@ -235,10 +239,15 @@ class IngestionAgent:
         logger.info(f"Ingesting file: {file_path}")
 
         # Ensure vector store is initialized (lazy init)
-        if hasattr(self._vector_store, 'is_initialized') and not self._vector_store.is_initialized:
+        if (
+            hasattr(self._vector_store, "is_initialized")
+            and not self._vector_store.is_initialized
+        ):
             embedding_dim = self._embedder.embedding_dim
             await self._vector_store.initialize(
-                collection_name=getattr(self._vector_store, 'collection_name', 'documents'),
+                collection_name=getattr(
+                    self._vector_store, "collection_name", "documents"
+                ),
                 embedding_dim=embedding_dim,
             )
             logger.debug("Vector store initialized")
@@ -279,7 +288,10 @@ class IngestionAgent:
                     error_msg,
                 )
                 await self._log_processing(
-                    db, doc.id, ActionType.EXTRACTED, StatusType.FAILED,
+                    db,
+                    doc.id,
+                    ActionType.EXTRACTED,
+                    StatusType.FAILED,
                     {"error": error_msg},
                 )
                 return IngestionResult(
@@ -296,19 +308,29 @@ class IngestionAgent:
             if dedup_result.action == DeduplicationAction.UPDATE:
                 doc = dedup_result.existing_document
                 await self._update_document_record(
-                    db, doc, dedup_result.file_hash, parsed,
+                    db,
+                    doc,
+                    dedup_result.file_hash,
+                    parsed,
                 )
             else:
                 doc = await self._create_document_record(
-                    db, file_path, file_type, backend,
-                    dedup_result.file_hash, parsed,
+                    db,
+                    file_path,
+                    file_type,
+                    backend,
+                    dedup_result.file_hash,
+                    parsed,
                     ProcessingStatus.PROCESSING,
                 )
 
             # Step 5: Chunk the document
             chunks = await self._chunk_document(parsed.text, str(file_path), doc.id)
             await self._log_processing(
-                db, doc.id, ActionType.CHUNKED, StatusType.SUCCESS,
+                db,
+                doc.id,
+                ActionType.CHUNKED,
+                StatusType.SUCCESS,
                 {"chunk_count": len(chunks)},
             )
 
@@ -317,7 +339,10 @@ class IngestionAgent:
 
             # Step 7: Embed and store vectors
             vectors_stored = await self._embed_and_store(
-                db, doc.id, chunks, chunk_models,
+                db,
+                doc.id,
+                chunks,
+                chunk_models,
             )
 
             # Step 8: Auto-tag (optional)
@@ -326,7 +351,10 @@ class IngestionAgent:
                 if categories is None:
                     categories = await self._fetch_categories(db)
                 tags_applied = await self._auto_tag(
-                    db, doc, parsed.text, categories,
+                    db,
+                    doc,
+                    parsed.text,
+                    categories,
                 )
 
             # Step 9: Mark as completed
@@ -345,9 +373,11 @@ class IngestionAgent:
             # Flag document for wiki compilation if configured
             try:
                 from grimoire.config import get_settings
+
                 settings = get_settings()
                 if settings.wiki.enabled and settings.wiki.compile_on_ingest:
                     from grimoire.db.models import WikiCompileJob, CompileStatus
+
                     compile_job = WikiCompileJob(
                         document_id=doc.id,
                         status=CompileStatus.PENDING,
@@ -417,7 +447,8 @@ class IngestionAgent:
 
         for file_path in files:
             result = await self.ingest_file(
-                db, file_path,
+                db,
+                file_path,
                 storage_backend=storage_backend,
                 auto_tag=auto_tag,
                 categories=categories,
@@ -444,7 +475,9 @@ class IngestionAgent:
     # -------------------------------------------------------------------------
 
     async def _check_dedup(
-        self, db: AsyncSession, file_path: Path,
+        self,
+        db: AsyncSession,
+        file_path: Path,
     ) -> DedupResult:
         """Check for duplicate documents.
 
@@ -466,7 +499,8 @@ class IngestionAgent:
 
         if existing is not None:
             dedup_result = await self._deduplicator.check_file(
-                file_path, existing_doc=existing,
+                file_path,
+                existing_doc=existing,
             )
         else:
             dedup_result = DedupResult(
@@ -477,7 +511,10 @@ class IngestionAgent:
         return dedup_result
 
     async def _chunk_document(
-        self, text: str, file_path: str, doc_id: str,
+        self,
+        text: str,
+        file_path: str,
+        doc_id: str,
     ) -> List[Chunk]:
         """Chunk document text using the appropriate strategy.
 
@@ -509,11 +546,13 @@ class IngestionAgent:
         overlap = self._chunk_config.chunk_overlap
         if strategy == ChunkingStrategy.MARKDOWN:
             from grimoire.core.chunker.markdown import MarkdownChunkConfig
+
             return MarkdownHeaderTextSplitter(
                 MarkdownChunkConfig(chunk_size=size, chunk_overlap=overlap)
             )
         elif strategy == ChunkingStrategy.SEMANTIC:
             from grimoire.core.chunker.semantic import SemanticChunkConfig
+
             return SemanticChunker(
                 SemanticChunkConfig(chunk_size=size, chunk_overlap=overlap)
             )
@@ -523,7 +562,10 @@ class IngestionAgent:
             )
 
     async def _store_chunks_in_db(
-        self, db: AsyncSession, doc_id: str, chunks: List[Chunk],
+        self,
+        db: AsyncSession,
+        doc_id: str,
+        chunks: List[Chunk],
     ) -> List[ChunkModel]:
         """Persist chunks to the database.
 
@@ -585,14 +627,22 @@ class IngestionAgent:
         embeddings = await self._embedder.embed(texts)
 
         ids = [cm.id for cm in chunk_models]
-        metadatas = [
-            {
+        metadatas: List[dict[str, Any]] = []
+        for c in chunks:
+            base: dict[str, Any] = {
                 "document_id": doc_id,
                 "chunk_index": c.index,
                 "token_count": c.token_count,
             }
-            for c in chunks
-        ]
+            # If the chunker (Phase 3+) attached SecurityMetadata to the
+            # chunk, merge its ChromaDB-friendly dict on top so vector
+            # queries can post-filter on security fields. Security keys
+            # win on collision but base keys are reserved (document_id,
+            # chunk_index, token_count) and never overlap with metadata.
+            sec_meta = c.metadata.get("security_metadata") if c.metadata else None
+            if isinstance(sec_meta, dict) and sec_meta:
+                base.update(sec_meta)
+            metadatas.append(base)
 
         await self._vector_store.add_documents(
             ids=ids,
@@ -641,14 +691,20 @@ class IngestionAgent:
             tags_applied = len(result.applied_tags) if result.applied_tags else 0
             if tags_applied > 0:
                 await self._log_processing(
-                    db, doc.id, ActionType.TAGGED, StatusType.SUCCESS,
+                    db,
+                    doc.id,
+                    ActionType.TAGGED,
+                    StatusType.SUCCESS,
                     {"tags_applied": tags_applied, "model": result.model_used},
                 )
             return tags_applied
         except Exception as e:
             logger.warning(f"Auto-tagging failed for document {doc.id}: {e}")
             await self._log_processing(
-                db, doc.id, ActionType.TAGGED, StatusType.FAILED,
+                db,
+                doc.id,
+                ActionType.TAGGED,
+                StatusType.FAILED,
                 {"error": str(e)},
             )
             return 0
@@ -667,6 +723,7 @@ class IngestionAgent:
         parsed: ParsedDocument,
         status: ProcessingStatus = ProcessingStatus.PROCESSING,
         error_message: Optional[str] = None,
+        security_metadata: Optional[SecurityMetadata] = None,
     ) -> Document:
         """Create a new document record in the database.
 
@@ -679,6 +736,9 @@ class IngestionAgent:
             parsed: Parsed document result.
             status: Initial processing status.
             error_message: Optional error message.
+            security_metadata: Optional :class:`SecurityMetadata` to persist
+                onto the document's indexed columns + JSONB blob. Phase 2
+                callers always pass ``None``; Phase 3+ parsers populate it.
 
         Returns:
             Created Document instance.
@@ -693,6 +753,7 @@ class IngestionAgent:
             processing_status=status,
             error_message=error_message,
         )
+        self._apply_security_metadata(doc, security_metadata)
         db.add(doc)
         await db.flush()
         logger.debug(f"Created document record: {doc.id}")
@@ -704,6 +765,7 @@ class IngestionAgent:
         doc: Document,
         file_hash: str,
         parsed: ParsedDocument,
+        security_metadata: Optional[SecurityMetadata] = None,
     ) -> None:
         """Update an existing document record.
 
@@ -714,6 +776,9 @@ class IngestionAgent:
             doc: Existing document to update.
             file_hash: New file hash.
             parsed: New parsed result.
+            security_metadata: Optional :class:`SecurityMetadata` to persist.
+                Phase 2 callers always pass ``None``; Phase 3+ parsers
+                populate it.
         """
         # Delete old vectors from vector store
         old_chunk_ids = [c.id for c in doc.chunks]
@@ -732,8 +797,33 @@ class IngestionAgent:
         doc.processing_status = ProcessingStatus.PROCESSING
         doc.version += 1
         doc.updated_at = datetime.now(tz=timezone.utc)
+        self._apply_security_metadata(doc, security_metadata)
         await db.flush()
         logger.debug(f"Updated document record: {doc.id} (v{doc.version})")
+
+    @staticmethod
+    def _apply_security_metadata(
+        doc: Document,
+        sec: Optional[SecurityMetadata],
+    ) -> None:
+        """Persist ``SecurityMetadata`` onto the indexed columns + JSON blob.
+
+        Wired in Phase 2 but effectively dead until Phase 3 because no
+        caller currently supplies ``sec``. This is intentional: it lets
+        the parsers and chunkers added in later phases plug in without
+        touching the ingestion agent again.
+
+        Args:
+            doc: The :class:`Document` row to mutate.
+            sec: Security metadata to persist. ``None`` is a no-op.
+        """
+
+        if sec is None:
+            return
+        for column, value in sec.to_db_columns().items():
+            setattr(doc, column, value)
+        # Use ``mode="json"`` so datetimes / enums become JSON-friendly.
+        doc.security_metadata = sec.model_dump(mode="json")
 
     async def _log_processing(
         self,
@@ -790,7 +880,9 @@ class IngestionAgent:
         return list(result.scalars().all())
 
     def _discover_files(
-        self, directory: Path, recursive: bool,
+        self,
+        directory: Path,
+        recursive: bool,
     ) -> List[Path]:
         """Discover supported files in a directory.
 

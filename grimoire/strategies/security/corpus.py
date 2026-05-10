@@ -124,7 +124,9 @@ def _extract_path(source_metadata: Optional[Mapping[str, Any]]) -> Optional[str]
     if not source_metadata:
         return None
     for key in ("path", "source_path"):
-        value = source_metadata.get(key) if isinstance(source_metadata, Mapping) else None
+        value = (
+            source_metadata.get(key) if isinstance(source_metadata, Mapping) else None
+        )
         if isinstance(value, str) and value:
             return value
     return None

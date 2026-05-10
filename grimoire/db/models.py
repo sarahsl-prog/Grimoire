@@ -42,11 +42,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from grimoire.db.base import Base
+from grimoire.strategies.security.metadata import Severity, TLPLevel
 
 
 def SQLEnum(enum_class, **kwargs):
     """Wrapper around SQLAlchemy Enum that uses enum values (lowercase) instead of names."""
-    return _SQLEnum(enum_class, values_callable=lambda x: [e.value for e in x], **kwargs)
+    return _SQLEnum(
+        enum_class, values_callable=lambda x: [e.value for e in x], **kwargs
+    )
 
 
 # Portable JSON type that works with both PostgreSQL (JSONB) and SQLite (JSON)
@@ -289,6 +292,54 @@ class Document(Base):
         comment="Conflict detection version",
     )
 
+    # ------------------------------------------------------------------ #
+    # Security metadata (Phase 2 of the security strategy plan).
+    # Indexed scalar columns mirror the most-filtered fields on
+    # :class:`grimoire.strategies.security.metadata.SecurityMetadata`; the
+    # wide-but-sparse JSONB blob carries the rest. All columns are
+    # nullable so general (non-security) ingest is unchanged.
+    # ------------------------------------------------------------------ #
+    source_type: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="Detected source type, e.g. 'sigma_rule', 'nvd_cve'",
+    )
+    cve_id: Mapped[Optional[str]] = mapped_column(
+        String(32),
+        nullable=True,
+        index=True,
+        comment="CVE identifier when source_type=='nvd_cve'",
+    )
+    severity: Mapped[Optional[Severity]] = mapped_column(
+        SQLEnum(Severity, name="severity_enum"),
+        nullable=True,
+        index=True,
+    )
+    mitre_technique_id: Mapped[Optional[str]] = mapped_column(
+        String(16),
+        nullable=True,
+        index=True,
+        comment="ATT&CK technique ID, e.g. 'T1059.001'",
+    )
+    tlp_level: Mapped[Optional[TLPLevel]] = mapped_column(
+        SQLEnum(TLPLevel, name="tlp_level_enum"),
+        nullable=True,
+        default=None,
+        comment="Traffic Light Protocol level",
+    )
+    content_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Date of the underlying content (not ingest date)",
+    )
+    security_metadata: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        PortableJSON,
+        nullable=True,
+        comment="Wide/sparse SecurityMetadata fields (lists, CVSS, etc.)",
+    )
+
     # Relationships
     chunks: Mapped[List["Chunk"]] = relationship(
         "Chunk",
@@ -334,6 +385,16 @@ class Document(Base):
 
     __table_args__ = (
         Index("ix_documents_status_created", "processing_status", "created_at"),
+        Index(
+            "ix_documents_severity_content_date",
+            "severity",
+            "content_date",
+        ),
+        Index(
+            "ix_documents_source_type_severity",
+            "source_type",
+            "severity",
+        ),
     )
 
 
@@ -890,7 +951,9 @@ class WikiPage(Base):
         default=lambda: str(uuid4()),
     )
     title: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
-    slug: Mapped[str] = mapped_column(String(512), nullable=False, unique=True, index=True)
+    slug: Mapped[str] = mapped_column(
+        String(512), nullable=False, unique=True, index=True
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[WikiPageStatus] = mapped_column(
@@ -932,9 +995,7 @@ class WikiPage(Base):
         foreign_keys="WikiCrossReference.target_page_id",
     )
 
-    __table_args__ = (
-        Index("ix_wiki_pages_slug_status", "slug", "status"),
-    )
+    __table_args__ = (Index("ix_wiki_pages_slug_status", "slug", "status"),)
 
 
 class WikiPageSection(Base):
@@ -1046,7 +1107,9 @@ class WikiCrossReference(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "source_page_id", "target_page_id", "ref_type",
+            "source_page_id",
+            "target_page_id",
+            "ref_type",
             name="uq_wiki_cross_ref_unique",
         ),
     )
@@ -1091,9 +1154,7 @@ class WikiCompileJob(Base):
         back_populates="wiki_compile_jobs",
     )
 
-    __table_args__ = (
-        Index("ix_wiki_compile_jobs_status", "status"),
-    )
+    __table_args__ = (Index("ix_wiki_compile_jobs_status", "status"),)
 
 
 class ApiKey(Base):
@@ -1146,6 +1207,4 @@ class ApiKey(Base):
         index=True,
     )
 
-    __table_args__ = (
-        Index("ix_api_keys_tier_created", "tier", "created_at"),
-    )
+    __table_args__ = (Index("ix_api_keys_tier_created", "tier", "created_at"),)

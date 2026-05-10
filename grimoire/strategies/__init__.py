@@ -1,25 +1,35 @@
-"""Domain-specific chunking and retrieval strategies.
+"""Strategy abstraction layer for domain-specific ingestion and retrieval.
 
-This package houses pluggable strategy implementations that adapt Grimoire's
-ingestion and query pipelines to specialized content domains. Phase 0 wires
-in only the abstract scaffolding; concrete general-purpose and security
-strategies arrive in subsequent phases (see
-``docs/plans/security_strategy_plan.md``).
+This package houses the abstract types (in :mod:`grimoire.strategies.base`)
+and the concrete domain implementations (currently
+:mod:`grimoire.strategies.security`).
 
-Public surface:
-
-* :class:`BaseChunker` — alias for the existing :class:`grimoire.core.chunker.base.Chunker`
-  ABC, exposed here so callers can import strategy types from a single place.
-* :class:`BaseRetriever` — abstract retriever interface that concrete
-  implementations satisfy by composing :class:`grimoire.search.hybrid.HybridSearch`.
-* :func:`get_chunker_for` — registry stub for chunker dispatch by file path
-  and source type.
+Public re-exports (``BaseChunker``, ``BaseRetriever``, ``get_chunker_for``)
+are loaded lazily via :pep:`562` ``__getattr__`` to avoid a circular import:
+``grimoire.db.models`` imports the security enums from
+:mod:`grimoire.strategies.security.metadata`, and Python's package-import
+order would otherwise pull :mod:`grimoire.strategies.base` (and through it
+``grimoire.core.dedup`` → ``grimoire.db.models``) before ``models`` finishes
+defining its names.
 """
 
-from grimoire.strategies.base import BaseChunker, BaseRetriever, get_chunker_for
+from typing import TYPE_CHECKING, Any
 
-__all__ = [
-    "BaseChunker",
-    "BaseRetriever",
-    "get_chunker_for",
-]
+__all__ = ["BaseChunker", "BaseRetriever", "get_chunker_for"]
+
+if TYPE_CHECKING:
+    from grimoire.strategies.base import BaseChunker, BaseRetriever, get_chunker_for
+
+
+def __getattr__(name: str) -> Any:
+    if name in __all__:
+        from grimoire.strategies import base as _base
+
+        value = getattr(_base, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *__all__})
