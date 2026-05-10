@@ -34,6 +34,11 @@ class Chunk(BaseModel):
         prev_chunk_id: ID of the previous chunk, if any.
         next_chunk_id: ID of the next chunk, if any.
         metadata: Additional metadata (source doc, headers, etc.).
+        chunk_type: Optional chunk shape category (e.g. ``"prose"``,
+            ``"sigma_rule"``, ``"cve_block"``). ``None`` for legacy/default
+            chunks; populated by domain-specific chunkers.
+        source_type: Optional origin source type (e.g. ``"sigma"``,
+            ``"nvd_cve"``, ``"mitre_attack"``). ``None`` for general docs.
 
     Example:
         ```python
@@ -54,9 +59,7 @@ class Chunk(BaseModel):
     token_count: int = Field(
         ..., ge=0, description="Approximate token count for context planning"
     )
-    index: int = Field(
-        ..., ge=0, description="Position in document sequence (0-based)"
-    )
+    index: int = Field(..., ge=0, description="Position in document sequence (0-based)")
     prev_chunk_id: Optional[str] = Field(
         default=None, description="ID of previous chunk for continuity"
     )
@@ -65,6 +68,14 @@ class Chunk(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata (headers, source, etc.)"
+    )
+    chunk_type: Optional[str] = Field(
+        default=None,
+        description="Chunk shape category, e.g. 'prose', 'sigma_rule', 'cve_block'. None for legacy/default chunks.",
+    )
+    source_type: Optional[str] = Field(
+        default=None,
+        description="Origin source type, e.g. 'sigma', 'nvd_cve', 'mitre_attack'. None for general docs.",
     )
 
     @field_validator("content")
