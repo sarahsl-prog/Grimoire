@@ -20,6 +20,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
+
+from grimoire.config.settings import SecurityConfig
 from grimoire.core.chunker.base import Chunk, ChunkConfig, Chunker
 from grimoire.core.chunker.recursive import (
     RecursiveCharacterTextSplitter,
@@ -47,16 +50,25 @@ class SecurityChunker(Chunker):
         config: Chunking configuration (used for prose fallback).
     """
 
-    def __init__(self, config: Optional[ChunkConfig] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[ChunkConfig] = None,
+        *,
+        settings: Optional[SecurityConfig] = None,
+    ) -> None:
         """Initialize the security chunker.
 
         Args:
             config: Base chunk config. Used only by the prose fallback.
+            settings: Optional Grimoire settings (required for LLM metadata
+                extraction on prose documents).
         """
         super().__init__(config)
         self._prose_chunker = RecursiveCharacterTextSplitter(
             config or RecursiveChunkConfig()
         )
+        self._settings = settings
+        self._extractor: Optional[Any] = None
 
     async def chunk(
         self,
@@ -90,7 +102,19 @@ class SecurityChunker(Chunker):
             return await self._chunk_mitre(text, doc_id)
 
         # PROSE, UNKNOWN, IOC_LIST → prose fallback.
-        return await self._chunk_prose(text, doc_id)
+        # If settings.security.llm_extract_enabled, try LLM extraction first.
+        sec_meta: Optional[SecurityMetadata] = None
+        if self._settings is not None and self._settings.security.llm_extract_enabled:
+            from grimoire.strategies.security.extractor import SecurityMetadataExtractor
+
+            if self._extractor is None:
+                self._extractor = SecurityMetadataExtractor(self._settings)
+            try:
+                sec_meta = await self._extractor.extract(text)
+            except Exception as exc:
+                logger.warning("SecurityChunker LLM extraction failed: {}", exc)
+
+        return await self._chunk_prose(text, doc_id, sec_meta=sec_meta)
 
     # ------------------------------------------------------------------ #
     # Sigma
@@ -246,21 +270,28 @@ class SecurityChunker(Chunker):
     # ------------------------------------------------------------------ #
 
     async def _chunk_prose(
-        self, text: str, doc_id: Optional[str] = None
+        self,
+        text: str,
+        doc_id: Optional[str] = None,
+        *,
+        sec_meta: Optional[SecurityMetadata] = None,
     ) -> List[Chunk]:
         """Chunk prose content via ``RecursiveCharacterTextSplitter``.
 
         Stamps each chunk with ``chunk_type="prose"`` and
-        ``source_type="prose"`` and an empty security metadata dict so
-        downstream code has a consistent metadata shape.
+        ``source_type="prose"``.  If ``sec_meta`` is provided it is used
+        directly; otherwise an empty
+        ``SecurityMetadata(source_type=PROSE)`` is created so downstream
+        code always sees a consistent metadata shape.
         """
 
         prose_chunks = await self._prose_chunker.chunk(text, doc_id=doc_id)
+        default_meta = sec_meta or SecurityMetadata(source_type=SourceType.PROSE)
         for chunk in prose_chunks:
             chunk.chunk_type = "prose"
             chunk.source_type = "prose"
             if "security_metadata" not in chunk.metadata:
-                chunk.metadata["security_metadata"] = SecurityMetadata(
-                    source_type=SourceType.PROSE
-                ).to_chromadb_metadata()
+                chunk.metadata["security_metadata"] = (
+                    default_meta.to_chromadb_metadata()
+                )
         return prose_chunks

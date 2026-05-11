@@ -21,6 +21,7 @@ import from the package root::
 
 from grimoire.strategies.security.chunker import SecurityChunker
 from grimoire.strategies.security.corpus import SourceType, detect_source_type
+from grimoire.strategies.security.extractor import SecurityMetadataExtractor
 from grimoire.strategies.security.metadata import (
     SecurityMetadata,
     Severity,
@@ -37,6 +38,7 @@ from grimoire.strategies.security.parsers.nvd import severity_from_cvss_score
 __all__ = [
     "SecurityChunker",
     "SecurityMetadata",
+    "SecurityMetadataExtractor",
     "Severity",
     "SourceType",
     "TLPLevel",
