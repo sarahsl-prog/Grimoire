@@ -291,10 +291,9 @@ def parse_mitre(text: str) -> List[Tuple[str, SecurityMetadata]]:
     Returns:
         List of ``(section_text, SecurityMetadata)`` tuples. Each tuple
         represents one logical section of the technique (Description,
-        Detection, Mitigations, etc.).
-
-    Raises:
-        ValueError: If the text is not recognisable as MITRE ATT&CK content.
+        Detection, Mitigations, etc.). Empty text / whitespace returns ``[]``.
+        Non-MITRE content that cannot be parsed as STIX or Markdown raises
+        ``ValueError``.
     """
 
     if not text or not text.strip():
