@@ -15,7 +15,7 @@ from __future__ import annotations
 import enum
 import os
 from pathlib import Path
-from typing import Any, Optional, Self
+from typing import Any, Literal, Optional, Self
 
 import yaml
 from loguru import logger
@@ -114,10 +114,12 @@ class LLMConfig(BaseModel):
     )
     timeout: int = Field(default=300, ge=1, description="Request timeout in seconds")
     fallback_url: Optional[str] = Field(
-        default=None, description="Fallback Ollama base URL (tried when primary is unreachable)"
+        default=None,
+        description="Fallback Ollama base URL (tried when primary is unreachable)",
     )
     fallback_model: Optional[str] = Field(
-        default=None, description="Fallback model name (defaults to primary model if unset)"
+        default=None,
+        description="Fallback model name (defaults to primary model if unset)",
     )
 
     @field_validator("url", "fallback_url")
@@ -736,11 +738,15 @@ class WikiConfig(BaseModel):
         description="Entity types the LLM extracts from documents",
     )
     max_sections_per_page: int = Field(
-        default=10, ge=1, le=50,
+        default=10,
+        ge=1,
+        le=50,
         description="Maximum sections per wiki page",
     )
     max_compile_batch_size: int = Field(
-        default=20, ge=1, le=100,
+        default=20,
+        ge=1,
+        le=100,
         description="Documents per compile batch",
     )
     compile_model: Optional[str] = Field(
@@ -798,6 +804,81 @@ class YamlConfigSource(PydanticBaseSettingsSource):
         except OSError as e:
             logger.warning(f"Failed to read config file: {e}")
             return {}
+
+
+class SecurityConfig(BaseModel):
+    """Security-domain ingestion and retrieval configuration.
+
+    Attributes:
+        domain: Strategy domain. ``security`` enables security-specific
+            chunking, parsing, and retrieval. ``general`` (default) preserves
+            legacy behaviour.
+        llm_extract_enabled: If ``True``, prose/unknown documents are sent to the
+            LLM for security metadata extraction during ingest.
+        severity_weights: Multiplier for each severity level in re-ranking.
+            Keys must match :attr:`Severity` values.
+        recency_half_life_days: Number of days before content score decays
+            by 50 %. Set to ``0`` to disable recency boosting.
+        intent_source_matrix: Maps query intent to source-type boost.
+            Keys are intent names (``cve_lookup``, ``technique_lookup``,
+            ``ioc_lookup``, ``general_security``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    domain: Literal["general", "security"] = Field(
+        default="general",
+        description="Domain switch: general (default) or security",
+    )
+    llm_extract_enabled: bool = Field(
+        default=False,
+        description="Run LLM extractor on prose/unknown documents",
+    )
+    severity_weights: dict[str, float] = Field(
+        default_factory=lambda: {
+            "critical": 3.0,
+            "high": 2.0,
+            "medium": 1.0,
+            "low": 0.5,
+            "info": 0.2,
+            "unknown": 0.0,
+        },
+        description="Severity boost weights for re-ranking",
+    )
+    recency_half_life_days: int = Field(
+        default=365,
+        ge=0,
+        description="Days for 50% recency score decay (0 to disable)",
+    )
+    intent_source_matrix: dict[str, dict[str, float]] = Field(
+        default_factory=lambda: {
+            "cve_lookup": {
+                "nvd_cve": 2.0,
+                "sigma_rule": 1.0,
+                "mitre_attack": 0.5,
+                "prose": 0.2,
+            },
+            "technique_lookup": {
+                "mitre_attack": 2.0,
+                "sigma_rule": 1.0,
+                "nvd_cve": 0.5,
+                "prose": 0.2,
+            },
+            "ioc_lookup": {
+                "sigma_rule": 1.5,
+                "prose": 0.5,
+                "nvd_cve": 0.5,
+                "mitre_attack": 0.3,
+            },
+            "general_security": {
+                "sigma_rule": 1.0,
+                "nvd_cve": 1.0,
+                "mitre_attack": 1.0,
+                "prose": 1.0,
+            },
+        },
+        description="Intent → source_type boost matrix for re-ranking",
+    )
 
 
 class GrimoireSettings(BaseSettings):
@@ -886,6 +967,9 @@ class GrimoireSettings(BaseSettings):
     api: APIConfig = Field(default_factory=APIConfig, description="API settings")
     auth: AuthConfig = Field(default_factory=AuthConfig, description="Auth settings")
     wiki: WikiConfig = Field(default_factory=WikiConfig, description="Wiki settings")
+    security: SecurityConfig = Field(
+        default_factory=SecurityConfig, description="Security domain settings"
+    )
 
     # Top-level settings
     debug: bool = Field(default=False, description="Debug mode")
@@ -1036,5 +1120,3 @@ class _SettingsProxy:
 
 
 settings = _SettingsProxy()
-
-

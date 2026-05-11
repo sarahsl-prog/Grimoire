@@ -337,3 +337,123 @@ class TestEdgeCases:
         # prose fallback produces at least one chunk
         assert len(chunks) >= 1
         assert all(c.chunk_type == "prose" for c in chunks)
+
+
+# ---------------------------------------------------------------------------
+# 6. Phase 6 — LLM metadata extraction (prose)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestExtractorPath:
+    async def test_extractor_disabled_by_default(self) -> None:
+        """Without settings, prose chunks get plain PROSE metadata."""
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            "Some prose text here. " * 50,
+            doc_id="test-doc",
+            source_metadata={"path": "/notes/random.md"},
+        )
+        assert all(c.chunk_type == "prose" for c in chunks)
+        for c in chunks:
+            assert c.metadata["security_metadata"]["source_type"] == "prose"
+            assert c.metadata["security_metadata"]["severity"] == "unknown"
+
+    async def test_extractor_enabled_success(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When llm_extract_enabled=True and LLM succeeds, chunks get enriched metadata."""
+
+        class _LLM:
+            url = "http://localhost:11434"
+            model = "llama3.2:latest"
+            timeout = 30
+            temperature = 0.7
+            max_tokens = 4096
+
+        class _Security:
+            llm_extract_enabled = True
+            domain = "security"
+            severity_weights = {}
+            recency_half_life_days = 365
+            intent_source_matrix = {}
+
+        class _Settings:
+            llm = _LLM()
+            security = _Security()
+
+        from grimoire.strategies.security.extractor import SecurityMetadataExtractor
+
+        chunker = SecurityChunker(settings=_Settings())
+        # Force lazy init
+        chunker._extractor = SecurityMetadataExtractor(_Settings())
+
+        async def _fake_extract(text: str):
+            from grimoire.strategies.security.corpus import SourceType
+            from grimoire.strategies.security.metadata import SecurityMetadata, Severity
+
+            return SecurityMetadata(
+                source_type=SourceType.PROSE,
+                severity=Severity.HIGH,
+                threat_actors=["APT42"],
+                platforms=["windows"],
+            )
+
+        monkeypatch.setattr(chunker._extractor, "extract", _fake_extract)
+
+        chunks = await chunker.chunk(
+            "APT42 targets Windows extensively. " * 30,
+            doc_id="test-doc",
+            source_metadata={"path": "/notes/random.md"},
+        )
+        assert all(c.chunk_type == "prose" for c in chunks)
+        for c in chunks:
+            meta = c.metadata["security_metadata"]
+            assert meta["severity"] == "high"
+            assert meta["threat_actors"] == "APT42"
+            assert meta["platforms"] == "windows"
+
+    async def test_extractor_failure_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When LLM fails, prose chunks still get default PROSE metadata."""
+
+        class _LLM:
+            url = "http://localhost:11434"
+            model = "llama3.2:latest"
+            timeout = 30
+            temperature = 0.7
+            max_tokens = 4096
+
+        class _Security:
+            llm_extract_enabled = True
+            domain = "security"
+            severity_weights = {}
+            recency_half_life_days = 365
+            intent_source_matrix = {}
+
+        class _Settings:
+            llm = _LLM()
+            security = _Security()
+
+        from grimoire.strategies.security.extractor import SecurityMetadataExtractor
+
+        chunker = SecurityChunker(settings=_Settings())
+        # Force lazy init
+        chunker._extractor = SecurityMetadataExtractor(_Settings())
+
+        async def _fake_extract(text: str):
+            raise ConnectionError("Ollama unreachable")
+
+        monkeypatch.setattr(chunker._extractor, "extract", _fake_extract)
+
+        chunks = await chunker.chunk(
+            "Some prose text here. " * 50,
+            doc_id="test-doc",
+            source_metadata={"path": "/notes/random.md"},
+        )
+        assert all(c.chunk_type == "prose" for c in chunks)
+        for c in chunks:
+            meta = c.metadata["security_metadata"]
+            assert meta["source_type"] == "prose"
+            assert meta["severity"] == "unknown"
