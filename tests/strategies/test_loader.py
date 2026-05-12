@@ -123,3 +123,43 @@ def test_load_chunker_never_raises(domain: str) -> None:
 @pytest.mark.parametrize("domain", ["security", "general", "", "homelab"])
 def test_load_retriever_never_raises(domain: str) -> None:
     load_retriever(_settings(domain), MagicMock())
+
+
+def test_loader_forwards_full_settings_to_security_chunker() -> None:
+    """Regression: ``SecurityChunker`` reads ``settings.security.llm_extract_enabled``
+    and constructs ``SecurityMetadataExtractor(settings)`` which needs
+    ``settings.llm``. The loader must therefore forward the whole
+    :class:`GrimoireSettings`, not just the ``security`` sub-block.
+    """
+    from grimoire.config.settings import GrimoireSettings, SecurityConfig
+
+    settings = GrimoireSettings()
+    settings.security = SecurityConfig(domain="security", llm_extract_enabled=True)
+    chunker = load_chunker(settings)
+    assert isinstance(chunker, SecurityChunker)
+    # The chunker stores the full settings so the extractor (when triggered)
+    # can read ``settings.llm`` and ``settings.security.llm_extract_enabled``.
+    assert chunker._settings is settings
+    # Sanity-check the two attribute paths the chunker actually uses.
+    assert chunker._settings.security.llm_extract_enabled is True
+    assert chunker._settings.llm is not None
+
+
+def test_loader_promotes_base_chunk_config_to_recursive() -> None:
+    """Regression: ``SecurityChunker``'s prose fallback uses
+    ``RecursiveCharacterTextSplitter`` which needs the recursive-specific
+    fields (``separators``, ``keep_separator``, ``is_separator_regex``).
+    Forwarding a plain :class:`ChunkConfig` must not crash; the chunker
+    promotes it internally."""
+    from grimoire.core.chunker.recursive import RecursiveChunkConfig
+
+    config = ChunkConfig(chunk_size=777, chunk_overlap=33)
+    chunker = load_chunker(_settings("security"), chunk_config=config)
+    assert isinstance(chunker, SecurityChunker)
+    prose_config = chunker._prose_chunker.config
+    assert isinstance(prose_config, RecursiveChunkConfig)
+    assert prose_config.chunk_size == 777
+    assert prose_config.chunk_overlap == 33
+    # Recursive-specific fields default to non-empty sensible values.
+    assert prose_config.separators
+    assert prose_config.keep_separator is True

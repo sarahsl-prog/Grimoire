@@ -136,7 +136,7 @@ class QueryAgent:
         temperature: float = 0.3,
         max_tokens: int = 2048,
         max_context_chunks: int = 5,
-        retriever: Optional["BaseRetriever"] = None,
+        retriever: Optional[BaseRetriever] = None,
     ) -> None:
         self._hybrid_search = hybrid_search
         self._llm_url = llm_url.rstrip("/")

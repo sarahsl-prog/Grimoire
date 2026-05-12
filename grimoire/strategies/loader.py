@@ -67,7 +67,12 @@ def load_chunker(
     from grimoire.strategies.security.chunker import SecurityChunker
 
     logger.debug("Strategy loader: domain=security → SecurityChunker")
-    return SecurityChunker(config=chunk_config, settings=settings.security)
+    # Forward the full GrimoireSettings — SecurityChunker reads
+    # ``settings.security.llm_extract_enabled`` and the optional
+    # SecurityMetadataExtractor inside it needs ``settings.llm``.
+    # SecurityChunker promotes the optional ``chunk_config`` to a
+    # RecursiveChunkConfig internally, so callers don't need to.
+    return SecurityChunker(config=chunk_config, settings=settings)
 
 
 def load_retriever(

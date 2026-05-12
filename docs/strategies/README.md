@@ -6,7 +6,7 @@
 
 **Phases 0–8 of the [security strategy plan](../plans/security_strategy_plan.md) have landed.** All scaffolding, source-type detection, security-metadata schema, Sigma/NVD/MITRE parsers + chunkers, the LLM metadata extractor, the `SecurityRetriever` post-fusion re-rank wrapper, and the strategy loader (`settings.security.domain` switch) are merged.
 
-Domain selection is **not yet wired** into ingestion or query; that arrives in Phase 8.
+Domain selection is wired into both ingestion and query as of Phase 8 — set `settings.security.domain = "security"` (env var `GRIMOIRE_SECURITY__DOMAIN=security`) and the CLI / API factories pick up `SecurityChunker` and `SecurityRetriever` automatically. See [`configuration.md`](configuration.md) for the full settings reference.
 
 Follow-on phases (one-line each — see the plan for full detail):
 
