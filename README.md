@@ -257,10 +257,16 @@ curl http://localhost:8001/api/v1/categories
 └─────────────────────────────────────────────────┘
 ```
 
+## Security mode
+
+Grimoire ships a security-domain pipeline (Sigma / NVD CVE / MITRE ATT&CK chunkers, `SecurityRetriever` intent-aware re-rank, security filter surface) gated behind a single setting: `GRIMOIRE_SECURITY__DOMAIN=security`. The repo includes a ready-to-run Hetzner overlay — copy `.env.security.example`, run `scripts/security/seed_corpus.sh` to pull Sigma + MITRE + a year of NVD CVE, then `docker compose -f docker-compose.yml -f docker-compose.security.yml up -d`. See [docs/deploy/hetzner_security.md](docs/deploy/hetzner_security.md) for the full guide and [docs/strategies/](docs/strategies/) for the configuration / usage reference.
+
 ## Documentation
 
 - [Design Document](docs/DESIGN.md) - Complete system architecture and design decisions
 - [Implementation Plan](docs/IMPLEMENTATION.md) - Phased development roadmap
+- [Security strategy](docs/strategies/README.md) — security-domain ingestion, retrieval, and filter surface
+- [Hetzner security deploy](docs/deploy/hetzner_security.md) — one-shot homelab setup for the security pipeline
 - [Coding Conventions](Claude.md) - Development guidelines and best practices
 
 ## Services (Docker Compose)
