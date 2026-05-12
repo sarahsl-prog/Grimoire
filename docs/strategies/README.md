@@ -4,7 +4,7 @@
 
 ## Current status
 
-**Phases 0–6 of the [security strategy plan](../plans/security_strategy_plan.md) have landed.** All scaffolding, source-type detection, security-metadata schema, Sigma/NVD/MITRE parsers + chunkers, and the LLM metadata extractor are merged.
+**Phases 0–7 of the [security strategy plan](../plans/security_strategy_plan.md) have landed.** All scaffolding, source-type detection, security-metadata schema, Sigma/NVD/MITRE parsers + chunkers, the LLM metadata extractor, and the `SecurityRetriever` post-fusion re-rank wrapper are merged.
 
 Domain selection is **not yet wired** into ingestion or query; that arrives in Phase 8.
 
@@ -17,7 +17,7 @@ Follow-on phases (one-line each — see the plan for full detail):
 - **Phase 4 — done** — NVD CVE chunker + parser (`security/parsers/nvd.py`). See [`chunking.md`](chunking.md).
 - **Phase 5 — done** — MITRE ATT&CK chunker + parser (`security/parsers/mitre.py`). See [`chunking.md`](chunking.md).
 - **Phase 6 — done** — Prose fallback + LLM metadata extractor (`security/extractor.py`). See [`extractor.md`](extractor.md).
-- **Phase 7** — SecurityRetriever (re-rank wrapper).
+- **Phase 7 — done** — `SecurityRetriever` post-fusion re-rank wrapper (`security/retriever.py`). See [`retriever.md`](retriever.md).
 - **Phase 8** — Strategy loader + `settings.security` domain switch.
 - **Phase 9** — Query agent + filter documentation.
 - **Phase 10** — Hetzner deploy: compose tweaks, `.env.security.example`, deploy doc.
