@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from grimoire.config.settings import SecurityConfig
+from grimoire.config.settings import GrimoireSettings
 from grimoire.core.chunker.base import Chunk, ChunkConfig, Chunker
 from grimoire.core.chunker.recursive import (
     RecursiveCharacterTextSplitter,
@@ -34,6 +34,28 @@ from grimoire.strategies.security.parsers.nvd import parse_nvd_json
 from grimoire.strategies.security.parsers.sigma import parse_sigma
 
 __all__ = ["SecurityChunker"]
+
+
+def _as_recursive_chunk_config(
+    config: Optional[ChunkConfig],
+) -> RecursiveChunkConfig:
+    """Promote a generic ``ChunkConfig`` to a ``RecursiveChunkConfig``.
+
+    The prose fallback feeds its config to
+    :class:`RecursiveCharacterTextSplitter`, which reads
+    ``separators`` / ``keep_separator`` / ``is_separator_regex``. A plain
+    :class:`ChunkConfig` lacks those fields and would blow up at chunk
+    time, so we copy ``chunk_size`` / ``chunk_overlap`` into a fresh
+    ``RecursiveChunkConfig`` (defaulting the recursive-specific fields).
+    """
+    if config is None:
+        return RecursiveChunkConfig()
+    if isinstance(config, RecursiveChunkConfig):
+        return config
+    return RecursiveChunkConfig(
+        chunk_size=config.chunk_size,
+        chunk_overlap=config.chunk_overlap,
+    )
 
 
 class SecurityChunker(Chunker):
@@ -54,19 +76,26 @@ class SecurityChunker(Chunker):
         self,
         config: Optional[ChunkConfig] = None,
         *,
-        settings: Optional[SecurityConfig] = None,
+        settings: Optional[GrimoireSettings] = None,
     ) -> None:
         """Initialize the security chunker.
 
         Args:
-            config: Base chunk config. Used only by the prose fallback.
-            settings: Optional Grimoire settings (required for LLM metadata
-                extraction on prose documents).
+            config: Base chunk config. Used only by the prose fallback. If a
+                plain :class:`ChunkConfig` is provided (without recursive
+                fields), it is promoted to a :class:`RecursiveChunkConfig`
+                preserving ``chunk_size`` / ``chunk_overlap`` so the prose
+                fallback's ``RecursiveCharacterTextSplitter`` finds the
+                ``separators`` / ``keep_separator`` fields it needs.
+            settings: Optional full :class:`GrimoireSettings`. Required only
+                when the LLM metadata extractor is enabled — the chunker
+                reads ``settings.security.llm_extract_enabled`` and forwards
+                the whole object to :class:`SecurityMetadataExtractor`,
+                which needs ``settings.llm``.
         """
         super().__init__(config)
-        self._prose_chunker = RecursiveCharacterTextSplitter(
-            config or RecursiveChunkConfig()
-        )
+        recursive_config = _as_recursive_chunk_config(config)
+        self._prose_chunker = RecursiveCharacterTextSplitter(recursive_config)
         self._settings = settings
         self._extractor: Optional[Any] = None
 

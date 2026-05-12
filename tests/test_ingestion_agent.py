@@ -559,3 +559,60 @@ class TestIngestionResultModels:
             total=3, succeeded=1, skipped=1, failed=1, results=results,
         )
         assert len(batch.results) == 3
+
+
+# =============================================================================
+# Phase 8 — Strategy loader / domain switch
+# =============================================================================
+
+
+class TestDomainSwitch:
+    """``settings.security.domain`` drives chunker selection in ingestion."""
+
+    @pytest.mark.parametrize("domain", ["general", "security"])
+    def test_create_chunker_respects_domain(
+        self,
+        mock_parser: MagicMock,
+        mock_embedder: MagicMock,
+        mock_vector_store: MagicMock,
+        mock_tagger: MagicMock,
+        domain: str,
+    ) -> None:
+        from types import SimpleNamespace
+
+        from grimoire.strategies.security.chunker import SecurityChunker
+
+        settings = SimpleNamespace(security=SimpleNamespace(domain=domain))
+        agent = IngestionAgent(
+            parser=mock_parser,
+            embedder=mock_embedder,
+            vector_store=mock_vector_store,
+            tagger=mock_tagger,
+            settings=settings,
+        )
+
+        chunker = agent._create_chunker(ChunkingStrategy.RECURSIVE)
+        if domain == "security":
+            assert isinstance(chunker, SecurityChunker)
+        else:
+            assert not isinstance(chunker, SecurityChunker)
+
+    def test_no_settings_keeps_legacy_chunker_path(
+        self,
+        mock_parser: MagicMock,
+        mock_embedder: MagicMock,
+        mock_vector_store: MagicMock,
+        mock_tagger: MagicMock,
+    ) -> None:
+        """Backward compat: an agent constructed without ``settings`` keeps
+        the pre-Phase-8 per-extension chunker logic."""
+        from grimoire.strategies.security.chunker import SecurityChunker
+
+        agent = IngestionAgent(
+            parser=mock_parser,
+            embedder=mock_embedder,
+            vector_store=mock_vector_store,
+            tagger=mock_tagger,
+        )
+        chunker = agent._create_chunker(ChunkingStrategy.RECURSIVE)
+        assert not isinstance(chunker, SecurityChunker)

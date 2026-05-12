@@ -13,13 +13,16 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 from uuid import uuid4
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from grimoire.config.settings import GrimoireSettings
 
 from grimoire.core.chunker import Chunk, ChunkConfig, ChunkingStrategy, Chunker
 from grimoire.core.chunker.markdown import MarkdownHeaderTextSplitter
@@ -195,6 +198,7 @@ class IngestionAgent:
         chunk_config: Optional[ChunkConfig] = None,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         embedding_model: str = "sentence-transformers/all-mpnet-base-v2",
+        settings: Optional["GrimoireSettings"] = None,
     ) -> None:
         self._parser = parser
         self._embedder = embedder
@@ -204,6 +208,9 @@ class IngestionAgent:
         self._storage_backend = storage_backend
         self._embedding_model = embedding_model
         self._deduplicator = Deduplicator()
+        # Captured for the Phase 8 strategy loader. ``None`` keeps backward
+        # compatibility with callers that have not threaded settings through.
+        self._settings = settings
 
         logger.debug("IngestionAgent initialized")
 
@@ -536,12 +543,27 @@ class IngestionAgent:
     def _create_chunker(self, strategy: ChunkingStrategy) -> Chunker:
         """Create a chunker for the given strategy.
 
+        When ``settings.security.domain == "security"`` and ``settings`` was
+        threaded into the agent, the Phase 8 strategy loader takes over and
+        returns a ``SecurityChunker`` which dispatches per detected source
+        type. The ``strategy`` argument is ignored in that case.
+
         Args:
             strategy: Chunking strategy to use.
 
         Returns:
             Configured Chunker instance.
         """
+        if self._settings is not None:
+            from grimoire.strategies.loader import load_chunker
+
+            domain_chunker = load_chunker(
+                self._settings,
+                chunk_config=self._chunk_config,
+            )
+            if domain_chunker is not None:
+                return domain_chunker
+
         size = self._chunk_config.chunk_size
         overlap = self._chunk_config.chunk_overlap
         if strategy == ChunkingStrategy.MARKDOWN:

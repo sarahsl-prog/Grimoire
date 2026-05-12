@@ -83,6 +83,7 @@ def build_ingestion_agent() -> Any:
         embedder=embedder,
         vector_store=vector_store,
         tagger=tagger,
+        settings=settings,
     )
 
 
@@ -119,6 +120,11 @@ def build_query_agent() -> Any:
         fts_weight=1.0 - settings.query.hybrid_alpha,
     )
 
+    # Phase 8: in security domain, wrap hybrid with the SecurityRetriever.
+    from grimoire.strategies.loader import load_retriever
+
+    retriever = load_retriever(settings, hybrid)
+
     return QueryAgent(
         hybrid_search=hybrid,
         llm_url=settings.llm.url,
@@ -126,6 +132,7 @@ def build_query_agent() -> Any:
         cache=cache,
         temperature=settings.llm.temperature,
         max_tokens=settings.llm.max_tokens,
+        retriever=retriever,
     )
 
 
@@ -229,6 +236,7 @@ def build_coordinator_agent(
 def get_db_context():
     """Get async DB context manager. Import wrapper for testability."""
     from grimoire.db.session import get_db_context as _ctx
+
     return _ctx()
 
 
