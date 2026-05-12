@@ -13,7 +13,8 @@ Covers:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Optional
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -126,7 +127,10 @@ class TestClassifyQuery:
             ("evil.example.com", QueryIntent.IOC_LOOKUP),
             ("d41d8cd98f00b204e9800998ecf8427e", QueryIntent.IOC_LOOKUP),
             ("da39a3ee5e6b4b0d3255bfef95601890afd80709", QueryIntent.IOC_LOOKUP),
-            ("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", QueryIntent.IOC_LOOKUP),
+            (
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                QueryIntent.IOC_LOOKUP,
+            ),
             # Composite queries
             ("CVE-2024-12345 powershell", QueryIntent.CVE_LOOKUP),
             ("T1059.001 execution", QueryIntent.TECHNIQUE_LOOKUP),
@@ -147,7 +151,7 @@ class TestClassifyQuery:
 
     def test_ipv4_octet_ranges(self) -> None:
         assert _classify_query("256.256.256.256") is QueryIntent.GENERAL_SECURITY
-        assert _classify_query("0.0.0.0") is QueryIntent.IOC_LOOKUP
+        assert _classify_query("0.0.0.0") is QueryIntent.IOC_LOOKUP  # noqa: S104
         assert _classify_query("999.999.999.999") is QueryIntent.GENERAL_SECURITY
 
     def test_fragment_mitigation(self) -> None:
@@ -201,9 +205,16 @@ class TestRecencyMultiplier:
 
 
 class TestSecurityRerank:
-    def _rerank(self, results: list[HybridResult], settings: _MockSettings, intent: QueryIntent = QueryIntent.GENERAL_SECURITY) -> list[HybridResult]:
+    def _rerank(
+        self,
+        results: list[HybridResult],
+        settings: _MockSettings,
+        intent: QueryIntent = QueryIntent.GENERAL_SECURITY,
+    ) -> list[HybridResult]:
         retriever = SecurityRetriever(MagicMock(), settings)
-        return retriever._security_rerank(list(results), intent)
+        out = retriever._security_rerank(list(results), intent)
+        out.sort(key=lambda r: r.score, reverse=True)
+        return out
 
     def test_severity_critical_boosts(self) -> None:
         settings = _MockSettings()
@@ -218,10 +229,19 @@ class TestSecurityRerank:
 
     def test_recency_decay_applies(self) -> None:
         settings = _MockSettings(recency_half_life_days=365)
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
         results = [
-            _make_result("old", score=0.5, severity="high", content_date=datetime(2023, 6, 1, tzinfo=timezone.utc)),
-            _make_result("new", score=0.5, severity="high", content_date=datetime(2025, 5, 1, tzinfo=timezone.utc)),
+            _make_result(
+                "old",
+                score=0.5,
+                severity="high",
+                content_date=datetime(2023, 6, 1, tzinfo=timezone.utc),
+            ),
+            _make_result(
+                "new",
+                score=0.5,
+                severity="high",
+                content_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+            ),
         ]
         reranked = self._rerank(results, settings)
         # Both same severity (high=2.0×); old has recency penalty
@@ -231,10 +251,19 @@ class TestSecurityRerank:
     def test_severity_and_recency_combined(self) -> None:
         """critical+old vs low+new — order depends on weight magnitudes."""
         settings = _MockSettings()
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
         results = [
-            _make_result("crit_old", score=1.0, severity="critical", content_date=datetime(2023, 6, 1, tzinfo=timezone.utc)),
-            _make_result("low_new", score=0.5, severity="low", content_date=datetime(2025, 5, 1, tzinfo=timezone.utc)),
+            _make_result(
+                "crit_old",
+                score=1.0,
+                severity="critical",
+                content_date=datetime(2023, 6, 1, tzinfo=timezone.utc),
+            ),
+            _make_result(
+                "low_new",
+                score=0.5,
+                severity="low",
+                content_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+            ),
         ]
         reranked = self._rerank(results, settings)
         # crit_old: 1.0 × 3.0 × 0.25 = 0.75
@@ -266,7 +295,9 @@ class TestSecurityRerank:
     def test_intent_matrix_technique_lookup(self) -> None:
         settings = _MockSettings()
         results = [
-            _make_result("mitre", score=0.5, severity="high", source_type="mitre_attack"),
+            _make_result(
+                "mitre", score=0.5, severity="high", source_type="mitre_attack"
+            ),
             _make_result("cve", score=0.5, severity="high", source_type="nvd_cve"),
         ]
         reranked = self._rerank(results, settings, intent=QueryIntent.TECHNIQUE_LOOKUP)
@@ -277,10 +308,19 @@ class TestSecurityRerank:
 
     def test_recency_disabled_when_half_life_zero(self) -> None:
         settings = _MockSettings(recency_half_life_days=0)
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
         results = [
-            _make_result("old", score=0.5, severity="high", content_date=datetime(2020, 1, 1, tzinfo=timezone.utc)),
-            _make_result("new", score=0.5, severity="high", content_date=datetime(2025, 5, 1, tzinfo=timezone.utc)),
+            _make_result(
+                "old",
+                score=0.5,
+                severity="high",
+                content_date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            ),
+            _make_result(
+                "new",
+                score=0.5,
+                severity="high",
+                content_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+            ),
         ]
         reranked = self._rerank(results, settings)
         # Both get full severity weight × recency=1.0 (disabled)
@@ -309,7 +349,12 @@ class TestSecurityRerank:
     def test_null_content_date_no_penalty(self) -> None:
         settings = _MockSettings()
         results = [
-            _make_result("with_date", score=0.5, severity="high", content_date_str="2020-01-01T00:00:00+00:00"),
+            _make_result(
+                "with_date",
+                score=0.5,
+                severity="high",
+                content_date_str="2020-01-01T00:00:00+00:00",
+            ),
             _make_result("no_date", score=0.5, severity="high"),
         ]
         reranked = self._rerank(results, settings)
@@ -318,7 +363,9 @@ class TestSecurityRerank:
     def test_iso_date_parsing_tolerates_z_suffix(self) -> None:
         settings = _MockSettings()
         results = [
-            _make_result("z", score=0.5, severity="high", content_date_str="2020-01-01T00:00:00Z"),
+            _make_result(
+                "z", score=0.5, severity="high", content_date_str="2020-01-01T00:00:00Z"
+            ),
         ]
         reranked = self._rerank(results, settings)
         # Should parse without error
@@ -349,8 +396,12 @@ class TestRetrieve:
         settings = _MockSettings()
         mock_hybrid = AsyncMock()
         mock_hybrid.search.return_value = [
-            _make_result("chunk-1", score=0.9, severity="high", source_type="sigma_rule"),
-            _make_result("chunk-2", score=0.8, severity="critical", source_type="nvd_cve"),
+            _make_result(
+                "chunk-1", score=0.9, severity="high", source_type="sigma_rule"
+            ),
+            _make_result(
+                "chunk-2", score=0.8, severity="critical", source_type="mitre_attack"
+            ),
         ]
 
         retriever = SecurityRetriever(mock_hybrid, settings)
@@ -358,10 +409,13 @@ class TestRetrieve:
         results = await retriever.retrieve(db, "T1059", top_k=5)
 
         mock_hybrid.search.assert_awaited_once()
-        call_kwargs = mock_hybrid.search.call_args.kwargs
-        assert call_kwargs["query"] == "T1059"
-        assert call_kwargs["top_k"] == 15  # 5 × 3
-        assert results[0].chunk_id == "chunk-2"  # critical boosted above high
+        call_args = mock_hybrid.search.call_args
+        # query is the 2nd positional arg (after db); top_k is a keyword.
+        assert call_args.args[1] == "T1059"
+        assert call_args.kwargs["top_k"] == 15  # 5 × 3
+        # technique_lookup intent: mitre_attack (2.0×) × critical (3.0×) × 0.8 = 4.8
+        # vs sigma_rule (1.0×) × high (2.0×) × 0.9 = 1.8 → chunk-2 wins.
+        assert results[0].chunk_id == "chunk-2"
 
     async def test_empty_results_pass_through(self) -> None:
         mock_hybrid = AsyncMock()
@@ -400,3 +454,115 @@ class TestRetrieve:
         # T1059 query → mitre_attack boosted (but none in results, sigma wins)
         results = await retriever.retrieve(db, "T1059.001", top_k=5)
         assert results[0].chunk_id == "sigma"
+
+
+# ---------------------------------------------------------------------------
+# 5. Settings overrides drive behaviour (regression guards)
+# ---------------------------------------------------------------------------
+
+
+class TestSettingsOverrides:
+    """All re-rank weights are configurable; no hard-coded magic numbers."""
+
+    def test_custom_intent_matrix_reorders_results(self) -> None:
+        """Swapping the intent → source-type matrix flips the ordering."""
+        # Baseline matrix favors nvd_cve for cve_lookup.
+        baseline = _MockSettings()
+        results_baseline = [
+            _make_result("cve", score=0.5, severity="high", source_type="nvd_cve"),
+            _make_result("sigma", score=0.5, severity="high", source_type="sigma_rule"),
+        ]
+        retriever = SecurityRetriever(MagicMock(), baseline)
+        out = retriever._security_rerank(list(results_baseline), QueryIntent.CVE_LOOKUP)
+        out.sort(key=lambda r: r.score, reverse=True)
+        assert out[0].chunk_id == "cve"
+
+        # Override: penalize nvd_cve, boost sigma_rule under CVE intent.
+        overridden = _MockSettings(
+            intent_source_matrix={
+                "cve_lookup": {
+                    "nvd_cve": 0.1,
+                    "sigma_rule": 5.0,
+                    "mitre_attack": 0.1,
+                    "prose": 0.1,
+                },
+                "technique_lookup": {},
+                "ioc_lookup": {},
+                "general_security": {"sigma_rule": 1.0, "nvd_cve": 1.0},
+            }
+        )
+        results_override = [
+            _make_result("cve", score=0.5, severity="high", source_type="nvd_cve"),
+            _make_result("sigma", score=0.5, severity="high", source_type="sigma_rule"),
+        ]
+        retriever = SecurityRetriever(MagicMock(), overridden)
+        out = retriever._security_rerank(list(results_override), QueryIntent.CVE_LOOKUP)
+        out.sort(key=lambda r: r.score, reverse=True)
+        assert out[0].chunk_id == "sigma"
+
+    def test_custom_severity_weights(self) -> None:
+        """Severity multipliers come from settings, not hard-coded."""
+        settings = _MockSettings(
+            severity_weights={
+                "critical": 0.1,  # invert: critical demoted
+                "high": 0.5,
+                "medium": 1.0,
+                "low": 5.0,  # low boosted
+                "info": 1.0,
+                "unknown": 1.0,
+            }
+        )
+        results = [
+            _make_result("crit", score=0.5, severity="critical"),
+            _make_result("low", score=0.5, severity="low"),
+        ]
+        retriever = SecurityRetriever(MagicMock(), settings)
+        out = retriever._security_rerank(list(results), QueryIntent.GENERAL_SECURITY)
+        out.sort(key=lambda r: r.score, reverse=True)
+        assert out[0].chunk_id == "low"
+
+    def test_unknown_intent_falls_back_to_general_security(self) -> None:
+        """An intent missing from the matrix falls back to general_security row."""
+        settings = _MockSettings()
+        # Inject an unrecognized intent string — `_security_rerank` should still work.
+        results = [
+            _make_result("prose", score=0.5, severity="high", source_type="prose"),
+            _make_result("sigma", score=0.5, severity="high", source_type="sigma_rule"),
+        ]
+        retriever = SecurityRetriever(MagicMock(), settings)
+        # general_security treats prose and sigma_rule equally (1.0×).
+        out = retriever._security_rerank(list(results), "no_such_intent")
+        assert out[0].score == out[1].score == 0.5 * 2.0  # severity=high × 1.0 source
+
+    def test_unknown_source_type_defaults_to_one(self) -> None:
+        """A source_type missing from the intent row gets a neutral 1.0 multiplier."""
+        settings = _MockSettings()
+        results = [
+            _make_result(
+                "mystery", score=0.5, severity="high", source_type="weird_unknown_type"
+            ),
+        ]
+        retriever = SecurityRetriever(MagicMock(), settings)
+        out = retriever._security_rerank(list(results), QueryIntent.CVE_LOOKUP)
+        # 0.5 × high(2.0) × 1.0(default for unknown source_type) = 1.0
+        assert out[0].score == 1.0
+
+    def test_malformed_content_date_does_not_raise(self) -> None:
+        """Garbage content_date strings are tolerated as if missing."""
+        settings = _MockSettings()
+        results = [
+            _make_result(
+                "bad", score=0.5, severity="high", content_date_str="not-a-date"
+            ),
+        ]
+        retriever = SecurityRetriever(MagicMock(), settings)
+        out = retriever._security_rerank(list(results), QueryIntent.GENERAL_SECURITY)
+        # Parse fails silently → recency multiplier=1.0; severity high=2.0 → 1.0
+        assert out[0].score == 1.0
+
+
+def test_security_retriever_subclasses_base_retriever() -> None:
+    """Per the Phase 7 plan, SecurityRetriever satisfies the BaseRetriever ABC."""
+    from grimoire.strategies.base import BaseRetriever
+
+    assert issubclass(SecurityRetriever, BaseRetriever)

@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from loguru import logger
 
 from grimoire.search.hybrid import HybridSearch
+from grimoire.strategies.base import BaseRetriever
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -128,7 +129,11 @@ def _classify_query(query: str) -> QueryIntent:
         return QueryIntent.IOC_LOOKUP
     if _RE_DOMAIN.fullmatch(stripped):
         return QueryIntent.IOC_LOOKUP
-    if _RE_MD5.fullmatch(stripped) or _RE_SHA1.fullmatch(stripped) or _RE_SHA256.fullmatch(stripped):
+    if (
+        _RE_MD5.fullmatch(stripped)
+        or _RE_SHA1.fullmatch(stripped)
+        or _RE_SHA256.fullmatch(stripped)
+    ):
         return QueryIntent.IOC_LOOKUP
 
     # Fragment fallback for composite queries — "CVE-2024-12345 powershell"
@@ -185,7 +190,7 @@ def _recency_multiplier(
 # ---------------------------------------------------------------------------
 
 
-class SecurityRetriever:
+class SecurityRetriever(BaseRetriever):
     """Security-domain retriever with intent-aware re-ranking.
 
     Wraps a :class:`HybridSearch` instance and applies three re-rank
@@ -272,7 +277,9 @@ class SecurityRetriever:
         source_matrix = self._security.intent_source_matrix
         # intent is a string (QueryIntent attribute value); use it directly
         intent_key = str(intent)
-        intent_row = source_matrix.get(intent_key, source_matrix.get(QueryIntent.GENERAL_SECURITY, {}))
+        intent_row = source_matrix.get(
+            intent_key, source_matrix.get(QueryIntent.GENERAL_SECURITY, {})
+        )
 
         for result in results:
             base = result.score
@@ -292,7 +299,9 @@ class SecurityRetriever:
                         content_date = content_date_raw
                     else:
                         # String from ChromaDB metadata — parse ISO-8601.
-                        content_date = datetime.fromisoformat(str(content_date_raw).replace("Z", "+00:00"))
+                        content_date = datetime.fromisoformat(
+                            str(content_date_raw).replace("Z", "+00:00")
+                        )
                 except (ValueError, TypeError):
                     pass
             base *= _recency_multiplier(content_date, half_life_days)
