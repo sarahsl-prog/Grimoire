@@ -1,0 +1,73 @@
+# docker-compose.security.yml — Phase 10 security-domain overlay.
+#
+# Usage:
+#   cp .env.security.example .env
+#   docker compose -f docker-compose.yml -f docker-compose.security.yml up -d
+#
+# What this overlay does compared to the base compose file:
+#   * forces GRIMOIRE_SECURITY__DOMAIN=security on every container that runs
+#     the Grimoire app (postgres / redis / chromadb are unaffected — they
+#     don't read app settings),
+#   * isolates the data plane: Postgres on 5433, Chroma on 8002, and a
+#     security-only volume set so an existing general-domain instance can
+#     keep running alongside,
+#   * mounts the security corpus host directory (defaults to
+#     ./security-corpus) into the containers that need to read it,
+#   * disables the dev-tools profile by default (no pgadmin / redis-commander
+#     attack surface on a public Hetzner box).
+#
+# This overlay does NOT include an Ollama container — point
+# ``GRIMOIRE_LLM__URL`` at a remote LLM endpoint (or a host-side daemon).
+
+services:
+  postgres:
+    container_name: grimoire-postgres-security
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-grimoire}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grimoire}
+      POSTGRES_DB: ${POSTGRES_DB:-grimoire_security}
+      GRIMOIRE_SECURITY__DOMAIN: security
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data_security:/var/lib/postgresql/data
+      - ./logs/postgres-security:/var/log/postgresql
+
+  redis:
+    container_name: grimoire-redis-security
+    volumes:
+      - redis_data_security:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+
+  chromadb:
+    container_name: grimoire-chromadb-security
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    ports:
+      - "${CHROMADB_PORT:-8002}:8000"
+    volumes:
+      - chromadb_data_security:/chroma/chroma
+      - ${SECURITY_CORPUS_DIR:-./security-corpus}:/security-corpus:ro
+
+  # The dev tooling (pgadmin / redis-commander) is only activated with
+  # ``--profile tools`` on the base compose file. We don't enable the
+  # profile here so they stay off by default in security deploys.
+
+volumes:
+  postgres_data_security:
+    driver: local
+  redis_data_security:
+    driver: local
+  chromadb_data_security:
+    driver: local
+
+networks:
+  grimoire-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.24.0.0/16
