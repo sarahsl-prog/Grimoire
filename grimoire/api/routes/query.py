@@ -73,10 +73,10 @@ async def ask_question(
         default=None, description="Filter by severity (security domain)."
     ),
     mitre_tactic: str | None = Query(
-        default=None, description="Filter by MITRE tactic."
+        default=None, alias="tactic", description="Filter by MITRE tactic."
     ),
     mitre_technique_id: str | None = Query(
-        default=None, description="Filter by MITRE technique ID."
+        default=None, alias="technique", description="Filter by MITRE technique ID."
     ),
     source_type: str | None = Query(
         default=None,
@@ -97,7 +97,8 @@ async def ask_question(
 
     Security filters are accepted as query parameters and merged into the
     request's ``filter_dict``. The body's ``filter_dict`` takes precedence
-    on key conflicts.
+    on key conflicts. ``tactic`` and ``technique`` are short aliases for
+    the ``mitre_tactic`` / ``mitre_technique_id`` filter keys.
     """
     agent = get_query_agent()
     filter_dict = _merge_security_filters(
@@ -128,10 +129,10 @@ async def search_documents(
         default=None, description="Filter by severity (security domain)."
     ),
     mitre_tactic: str | None = Query(
-        default=None, description="Filter by MITRE tactic."
+        default=None, alias="tactic", description="Filter by MITRE tactic."
     ),
     mitre_technique_id: str | None = Query(
-        default=None, description="Filter by MITRE technique ID."
+        default=None, alias="technique", description="Filter by MITRE technique ID."
     ),
     source_type: str | None = Query(default=None, description="Filter by source type."),
     cve_id: str | None = Query(default=None, description="Filter by CVE ID."),

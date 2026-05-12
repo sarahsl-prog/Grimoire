@@ -866,7 +866,7 @@ filters reuse the retriever's existing `filter_dict` channel.
 | `POST /query/search` | Same query params; same merge. |
 | `GET /documents` | Indexed-column query params (`source_type`, `severity`, `cve_id`, `mitre_technique_id`) translate to SQL WHERE clauses. |
 | `grimoire ask` / `search` | `--severity`, `--tactic`, `--technique`, `--source-type`, `--cve-id`, `--content-date-after`, `--platform` (repeatable). |
-| `grimoire ingest` | `--source-type` overrides Sec­urity­Chunker autodetection (Click `Choice` validator rejects unknown values). |
+| `grimoire ingest` | `--source-type` overrides SecurityChunker autodetection (Click `Choice` validator rejects unknown values). |
 
 ### Example
 

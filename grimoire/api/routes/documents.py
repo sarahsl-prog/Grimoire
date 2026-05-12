@@ -39,27 +39,30 @@ async def list_documents(
     ``severity``, ``cve_id``, ``mitre_technique_id``. All filters compose
     with ``AND`` semantics; unsupplied filters are ignored.
     """
+    # Build the shared WHERE clauses once and apply to both the
+    # paginated select and the count query — keeps the two in sync without
+    # an untyped nested helper.
+    filters = []
+    if status:
+        filters.append(Document.processing_status == status)
+    if file_type:
+        filters.append(Document.file_type == file_type)
+    if source_type:
+        filters.append(Document.source_type == source_type)
+    if severity:
+        filters.append(Document.severity == severity)
+    if cve_id:
+        filters.append(Document.cve_id == cve_id)
+    if mitre_technique_id:
+        filters.append(Document.mitre_technique_id == mitre_technique_id)
+
     query = select(Document).order_by(Document.created_at.desc())
+    if filters:
+        query = query.where(*filters)
 
-    def _apply_filters(q):
-        if status:
-            q = q.where(Document.processing_status == status)
-        if file_type:
-            q = q.where(Document.file_type == file_type)
-        if source_type:
-            q = q.where(Document.source_type == source_type)
-        if severity:
-            q = q.where(Document.severity == severity)
-        if cve_id:
-            q = q.where(Document.cve_id == cve_id)
-        if mitre_technique_id:
-            q = q.where(Document.mitre_technique_id == mitre_technique_id)
-        return q
-
-    query = _apply_filters(query)
-
-    # Total count
-    count_query = _apply_filters(select(func.count(Document.id)))
+    count_query = select(func.count(Document.id))
+    if filters:
+        count_query = count_query.where(*filters)
     total = (await db.execute(count_query)).scalar() or 0
 
     # Paginated results

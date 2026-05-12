@@ -149,6 +149,32 @@ class TestMergeSecurityFilters:
         )
         assert out == {"platforms": ["windows"]}
 
+    def test_tactic_and_technique_aliases_resolve_in_fastapi(self) -> None:
+        """Regression: the public query params are ``?tactic=`` /
+        ``?technique=`` (aliases), but the inner ``filter_dict`` keys remain
+        ``mitre_tactic`` / ``mitre_technique_id``."""
+        from fastapi.routing import APIRoute
+
+        from grimoire.api.routes.query import router
+
+        ask_route = next(
+            r
+            for r in router.routes
+            if isinstance(r, APIRoute) and r.path.endswith("/ask")
+        )
+        params = {p.alias for p in ask_route.dependant.query_params}
+        assert "tactic" in params
+        assert "technique" in params
+
+        search_route = next(
+            r
+            for r in router.routes
+            if isinstance(r, APIRoute) and r.path.endswith("/search")
+        )
+        params = {p.alias for p in search_route.dependant.query_params}
+        assert "tactic" in params
+        assert "technique" in params
+
     def test_all_query_params_compose(self) -> None:
         out = _merge_security_filters(
             None,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 import click
 
@@ -15,6 +15,8 @@ from grimoire.cli.helpers import (
     setup_db,
     teardown_db,
 )
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 def _build_filter_dict(
@@ -89,7 +91,7 @@ _SECURITY_FILTER_OPTIONS = [
 ]
 
 
-def _apply_security_options(fn):
+def _apply_security_options(fn: F) -> F:
     """Stack the shared security filter options onto a Click command."""
     for opt in reversed(_SECURITY_FILTER_OPTIONS):
         fn = opt(fn)

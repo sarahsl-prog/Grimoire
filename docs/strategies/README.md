@@ -20,7 +20,6 @@ Follow-on phases (one-line each — see the plan for full detail):
 - **Phase 7 — done** — `SecurityRetriever` post-fusion re-rank wrapper (`security/retriever.py`). See [`retriever.md`](retriever.md).
 - **Phase 8 — done** — Strategy loader + ingestion/query wiring (`strategies/loader.py`). See [`configuration.md`](configuration.md).
 - **Phase 9 — done** — API + CLI security filter surface. See [`usage.md`](usage.md).
-- **Phase 9** — Query agent + filter documentation.
 - **Phase 10** — Hetzner deploy: compose tweaks, `.env.security.example`, deploy doc.
 
 ## What lives here
