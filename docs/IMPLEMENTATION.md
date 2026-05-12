@@ -844,4 +844,41 @@ default `intent_source_matrix` / `severity_weights`.
 
 ---
 
+## Appendix G: Security filter surface (API + CLI)
+
+Phase 9 added a small fixed filter surface on top of the existing
+`/query/*` endpoints, the `/documents` list endpoint, and the
+`grimoire ask` / `search` / `ingest` commands. No new endpoints; the
+filters reuse the retriever's existing `filter_dict` channel.
+
+### Source of truth
+
+`grimoire.api.schemas.SECURITY_FILTER_KEYS` — frozenset of allowed keys:
+`severity`, `mitre_tactic`, `mitre_technique_id`, `source_type`, `cve_id`,
+`content_date_after`, `platforms`. Unknown keys are *warned*, not rejected
+(forward-compat with future filter additions).
+
+### Surfaces
+
+| Surface | Mechanism |
+|---|---|
+| `POST /query/ask` | Query params (`?severity=high&tactic=execution`) merged into `body.filter_dict`. Body wins on conflict. |
+| `POST /query/search` | Same query params; same merge. |
+| `GET /documents` | Indexed-column query params (`source_type`, `severity`, `cve_id`, `mitre_technique_id`) translate to SQL WHERE clauses. |
+| `grimoire ask` / `search` | `--severity`, `--tactic`, `--technique`, `--source-type`, `--cve-id`, `--content-date-after`, `--platform` (repeatable). |
+| `grimoire ingest` | `--source-type` overrides SecurityChunker autodetection (Click `Choice` validator rejects unknown values). |
+
+### Example
+
+```bash
+curl -X POST 'http://localhost:8000/api/v1/query/ask?severity=critical&technique=T1059' \
+     -H 'content-type: application/json' \
+     -d '{"query": "powershell exec", "top_k": 5}'
+```
+
+See [`docs/strategies/usage.md`](strategies/usage.md) for the full recipe
+set.
+
+---
+
 ---

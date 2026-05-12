@@ -19,12 +19,39 @@ from grimoire.cli.helpers import (
 
 @click.command()
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
-@click.option("--recursive/--no-recursive", "-r", default=True, help="Recurse into subdirectories.")
-@click.option("--strategy", type=click.Choice(["semantic", "markdown", "recursive"]), default=None, help="Chunking strategy.")
-@click.option("--auto-tag/--no-auto-tag", default=True, help="Auto-tag documents with LLM.")
+@click.option(
+    "--recursive/--no-recursive",
+    "-r",
+    default=True,
+    help="Recurse into subdirectories.",
+)
+@click.option(
+    "--strategy",
+    type=click.Choice(["semantic", "markdown", "recursive"]),
+    default=None,
+    help="Chunking strategy.",
+)
+@click.option(
+    "--auto-tag/--no-auto-tag", default=True, help="Auto-tag documents with LLM."
+)
+@click.option(
+    "--source-type",
+    type=click.Choice(
+        ["sigma_rule", "nvd_cve", "mitre_attack", "ioc_list", "prose", "unknown"]
+    ),
+    default=None,
+    help="Override security source-type autodetection (security mode only).",
+)
 @click.pass_context
 @async_command
-async def ingest(ctx: click.Context, path: Path, recursive: bool, strategy: str | None, auto_tag: bool) -> None:
+async def ingest(
+    ctx: click.Context,
+    path: Path,
+    recursive: bool,
+    strategy: str | None,
+    auto_tag: bool,
+    source_type: str | None,
+) -> None:
     """Ingest documents from PATH into the knowledge base.
 
     PATH can be a file or directory. Directories are processed recursively by default.
@@ -36,6 +63,8 @@ async def ingest(ctx: click.Context, path: Path, recursive: bool, strategy: str 
         grimoire ingest ./paper.pdf --no-auto-tag
 
         grimoire ingest /docs --strategy semantic
+
+        grimoire ingest ./rules --source-type sigma_rule
     """
     await setup_db()
     try:
@@ -44,7 +73,9 @@ async def ingest(ctx: click.Context, path: Path, recursive: bool, strategy: str 
         async with get_db_context() as db:
             if path.is_file():
                 click.echo(f"Ingesting file: {path}")
-                result = await agent.ingest_file(db, path, auto_tag=auto_tag)
+                result = await agent.ingest_file(
+                    db, path, auto_tag=auto_tag, source_type=source_type
+                )
                 if result.status == "completed":
                     echo_success(
                         f"Ingested {path.name}: {result.chunks_created} chunks, "
@@ -57,7 +88,11 @@ async def ingest(ctx: click.Context, path: Path, recursive: bool, strategy: str 
             else:
                 click.echo(f"Ingesting directory: {path} (recursive={recursive})")
                 result = await agent.ingest_directory(
-                    db, path, recursive=recursive, auto_tag=auto_tag,
+                    db,
+                    path,
+                    recursive=recursive,
+                    auto_tag=auto_tag,
+                    source_type=source_type,
                 )
                 echo_success(
                     f"Done: {result.succeeded}/{result.total} succeeded, "

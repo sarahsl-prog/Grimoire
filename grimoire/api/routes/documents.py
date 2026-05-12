@@ -25,23 +25,44 @@ async def list_documents(
     limit: int = 50,
     status: str | None = None,
     file_type: str | None = None,
+    source_type: str | None = None,
+    severity: str | None = None,
+    cve_id: str | None = None,
+    mitre_technique_id: str | None = None,
     api_key: ApiKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentListResponse:
-    """List documents with optional filtering and pagination."""
+    """List documents with optional filtering and pagination.
+
+    In addition to the legacy ``status`` / ``file_type`` filters, the
+    indexed Phase-2 security columns are filterable: ``source_type``,
+    ``severity``, ``cve_id``, ``mitre_technique_id``. All filters compose
+    with ``AND`` semantics; unsupplied filters are ignored.
+    """
+    # Build the shared WHERE clauses once and apply to both the
+    # paginated select and the count query — keeps the two in sync without
+    # an untyped nested helper.
+    filters = []
+    if status:
+        filters.append(Document.processing_status == status)
+    if file_type:
+        filters.append(Document.file_type == file_type)
+    if source_type:
+        filters.append(Document.source_type == source_type)
+    if severity:
+        filters.append(Document.severity == severity)
+    if cve_id:
+        filters.append(Document.cve_id == cve_id)
+    if mitre_technique_id:
+        filters.append(Document.mitre_technique_id == mitre_technique_id)
+
     query = select(Document).order_by(Document.created_at.desc())
+    if filters:
+        query = query.where(*filters)
 
-    if status:
-        query = query.where(Document.processing_status == status)
-    if file_type:
-        query = query.where(Document.file_type == file_type)
-
-    # Total count
     count_query = select(func.count(Document.id))
-    if status:
-        count_query = count_query.where(Document.processing_status == status)
-    if file_type:
-        count_query = count_query.where(Document.file_type == file_type)
+    if filters:
+        count_query = count_query.where(*filters)
     total = (await db.execute(count_query)).scalar() or 0
 
     # Paginated results
@@ -55,9 +76,15 @@ async def list_documents(
                 id=doc.id,
                 title=doc.title,
                 source_path=doc.source_path,
-                file_type=doc.file_type.value if hasattr(doc.file_type, "value") else str(doc.file_type),
-                storage_backend=doc.storage_backend.value if hasattr(doc.storage_backend, "value") else str(doc.storage_backend),
-                processing_status=doc.processing_status.value if hasattr(doc.processing_status, "value") else str(doc.processing_status),
+                file_type=doc.file_type.value
+                if hasattr(doc.file_type, "value")
+                else str(doc.file_type),
+                storage_backend=doc.storage_backend.value
+                if hasattr(doc.storage_backend, "value")
+                else str(doc.storage_backend),
+                processing_status=doc.processing_status.value
+                if hasattr(doc.processing_status, "value")
+                else str(doc.processing_status),
                 size_bytes=doc.size_bytes,
                 created_at=doc.created_at.isoformat() if doc.created_at else None,
                 updated_at=doc.updated_at.isoformat() if doc.updated_at else None,
@@ -86,9 +113,15 @@ async def get_document(
         id=doc.id,
         title=doc.title,
         source_path=doc.source_path,
-        file_type=doc.file_type.value if hasattr(doc.file_type, "value") else str(doc.file_type),
-        storage_backend=doc.storage_backend.value if hasattr(doc.storage_backend, "value") else str(doc.storage_backend),
-        processing_status=doc.processing_status.value if hasattr(doc.processing_status, "value") else str(doc.processing_status),
+        file_type=doc.file_type.value
+        if hasattr(doc.file_type, "value")
+        else str(doc.file_type),
+        storage_backend=doc.storage_backend.value
+        if hasattr(doc.storage_backend, "value")
+        else str(doc.storage_backend),
+        processing_status=doc.processing_status.value
+        if hasattr(doc.processing_status, "value")
+        else str(doc.processing_status),
         size_bytes=doc.size_bytes,
         created_at=doc.created_at.isoformat() if doc.created_at else None,
         updated_at=doc.updated_at.isoformat() if doc.updated_at else None,
@@ -115,10 +148,10 @@ async def delete_document(
         try:
             from grimoire.services.vector_store import get_vector_store_service
             from grimoire.config.settings import get_settings
-            
+
             settings = get_settings()
             vector_store = get_vector_store_service(settings)
-            
+
             # Delete vectors for all chunks
             vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
             if vector_ids:
@@ -126,9 +159,13 @@ async def delete_document(
         except ImportError:
             # Vector store service not implemented yet - just log and continue
             from loguru import logger
-            logger.debug(f"Vector store service not available, skipping vector cleanup for {document_id}")
+
+            logger.debug(
+                f"Vector store service not available, skipping vector cleanup for {document_id}"
+            )
     except Exception as e:
         from loguru import logger
+
         logger.warning(f"Failed to delete vectors for document {document_id}: {e}")
         # Continue with document deletion even if vector cleanup fails
 

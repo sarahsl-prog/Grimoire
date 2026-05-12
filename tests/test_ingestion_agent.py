@@ -62,8 +62,17 @@ def mock_parser() -> MagicMock:
         )
     )
     parser.SUPPORTED_EXTENSIONS = {
-        ".pdf", ".docx", ".doc", ".pptx", ".xlsx",
-        ".html", ".htm", ".png", ".jpg", ".md", ".txt",
+        ".pdf",
+        ".docx",
+        ".doc",
+        ".pptx",
+        ".xlsx",
+        ".html",
+        ".htm",
+        ".png",
+        ".jpg",
+        ".md",
+        ".txt",
     }
     return parser
 
@@ -72,9 +81,7 @@ def mock_parser() -> MagicMock:
 def mock_embedder() -> MagicMock:
     """Create a mock Embedder."""
     embedder = MagicMock()
-    embedder.embed = AsyncMock(
-        return_value=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-    )
+    embedder.embed = AsyncMock(return_value=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
     return embedder
 
 
@@ -243,7 +250,9 @@ class TestIngestionHappyPath:
         mock_db.execute.return_value = mock_result
 
         # Mock chunking
-        with patch.object(agent, "_chunk_document", new_callable=AsyncMock) as mock_chunk:
+        with patch.object(
+            agent, "_chunk_document", new_callable=AsyncMock
+        ) as mock_chunk:
             mock_chunk.return_value = sample_chunks
 
             result = await agent.ingest_file(mock_db, test_file)
@@ -275,7 +284,9 @@ class TestIngestionHappyPath:
 
         # Mock deduplicator to return SKIP
         with patch.object(
-            agent._deduplicator, "check_file", new_callable=AsyncMock,
+            agent._deduplicator,
+            "check_file",
+            new_callable=AsyncMock,
         ) as mock_dedup:
             mock_dedup.return_value = DedupResult(
                 action=DeduplicationAction.SKIP,
@@ -307,10 +318,17 @@ class TestIngestionHappyPath:
         mock_db.execute.return_value = mock_result
 
         chunks = [
-            Chunk(content="Test chunk.", token_count=3, index=0, metadata={"chunk_id": "c0"}),
+            Chunk(
+                content="Test chunk.",
+                token_count=3,
+                index=0,
+                metadata={"chunk_id": "c0"},
+            ),
         ]
 
-        with patch.object(agent, "_chunk_document", new_callable=AsyncMock) as mock_chunk:
+        with patch.object(
+            agent, "_chunk_document", new_callable=AsyncMock
+        ) as mock_chunk:
             mock_chunk.return_value = chunks
             agent._embedder.embed = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
 
@@ -377,7 +395,9 @@ class TestIngestionErrorHandling:
         mock_db.execute.return_value = mock_result
 
         # Mock chunking to succeed, embedding to fail
-        with patch.object(agent, "_chunk_document", new_callable=AsyncMock) as mock_chunk:
+        with patch.object(
+            agent, "_chunk_document", new_callable=AsyncMock
+        ) as mock_chunk:
             mock_chunk.return_value = sample_chunks
             agent._embedder.embed = AsyncMock(
                 side_effect=RuntimeError("GPU out of memory")
@@ -409,7 +429,9 @@ class TestIngestionErrorHandling:
         mock_result.scalars.return_value = mock_scalars
         mock_db.execute.return_value = mock_result
 
-        with patch.object(agent, "_chunk_document", new_callable=AsyncMock) as mock_chunk:
+        with patch.object(
+            agent, "_chunk_document", new_callable=AsyncMock
+        ) as mock_chunk:
             mock_chunk.return_value = sample_chunks
 
             # Tagger raises error
@@ -517,7 +539,9 @@ class TestIngestionEdgeCases:
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute.return_value = mock_result
 
-        with patch.object(agent, "_chunk_document", new_callable=AsyncMock) as mock_chunk:
+        with patch.object(
+            agent, "_chunk_document", new_callable=AsyncMock
+        ) as mock_chunk:
             mock_chunk.return_value = sample_chunks
             result = await agent.ingest_file(mock_db, test_file, auto_tag=True)
 
@@ -556,7 +580,11 @@ class TestIngestionResultModels:
             IngestionResult(file_path="/c.pdf", status="failed", error_message="err"),
         ]
         batch = BatchIngestionResult(
-            total=3, succeeded=1, skipped=1, failed=1, results=results,
+            total=3,
+            succeeded=1,
+            skipped=1,
+            failed=1,
+            results=results,
         )
         assert len(batch.results) == 3
 
@@ -616,3 +644,38 @@ class TestDomainSwitch:
         )
         chunker = agent._create_chunker(ChunkingStrategy.RECURSIVE)
         assert not isinstance(chunker, SecurityChunker)
+
+
+# =============================================================================
+# Phase 9 — chunker source_metadata signature inspection
+# =============================================================================
+
+
+class TestChunkerSignatureInspection:
+    """``_chunker_accepts_source_metadata`` must not let us pass an unsupported
+    kwarg to a legacy chunker (which would raise ``TypeError`` and previously
+    forced a broad ``except`` retry)."""
+
+    def test_security_chunker_accepts_source_metadata(self) -> None:
+        from grimoire.agents.ingestion import _chunker_accepts_source_metadata
+        from grimoire.strategies.security.chunker import SecurityChunker
+
+        assert _chunker_accepts_source_metadata(SecurityChunker()) is True
+
+    def test_recursive_chunker_does_not_accept_source_metadata(self) -> None:
+        from grimoire.agents.ingestion import _chunker_accepts_source_metadata
+        from grimoire.core.chunker.recursive import RecursiveCharacterTextSplitter
+
+        assert (
+            _chunker_accepts_source_metadata(RecursiveCharacterTextSplitter()) is False
+        )
+
+    def test_var_keyword_chunker_accepts_anything(self) -> None:
+        """A chunker declaring ``**kwargs`` is considered compatible."""
+        from grimoire.agents.ingestion import _chunker_accepts_source_metadata
+
+        class _AnythingGoesChunker:
+            async def chunk(self, text, **kwargs):
+                return []
+
+        assert _chunker_accepts_source_metadata(_AnythingGoesChunker()) is True

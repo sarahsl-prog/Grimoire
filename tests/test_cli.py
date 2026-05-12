@@ -252,6 +252,150 @@ class TestAskCommand:
         assert call_kwargs["use_cache"] is False
 
 
+class TestAskSecurityFilters:
+    """Phase 9 — security filter flags on ``grimoire ask``."""
+
+    @patch(f"{_QUERY}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.build_query_agent")
+    @patch(f"{_QUERY}.get_db_context")
+    def test_severity_and_tactic_flags_compose(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_result = MagicMock(answer="A.", citations=[], cached=False)
+        mock_agent = MagicMock()
+        mock_agent.query = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(
+            cli,
+            ["ask", "powershell", "--severity", "high", "--tactic", "execution"],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_agent.query.call_args[1]
+        assert call_kwargs["filter_dict"]["severity"] == "high"
+        assert call_kwargs["filter_dict"]["mitre_tactic"] == "execution"
+
+    @patch(f"{_QUERY}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.build_query_agent")
+    @patch(f"{_QUERY}.get_db_context")
+    def test_all_security_flags_propagate(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_result = MagicMock(answer="A.", citations=[], cached=False)
+        mock_agent = MagicMock()
+        mock_agent.query = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(
+            cli,
+            [
+                "ask", "q",
+                "--severity", "critical",
+                "--tactic", "lateral-movement",
+                "--technique", "T1021",
+                "--source-type", "sigma_rule",
+                "--cve-id", "CVE-2024-1234",
+                "--content-date-after", "2024-01-01",
+                "--platform", "windows",
+                "--platform", "linux",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        filt = mock_agent.query.call_args[1]["filter_dict"]
+        assert filt["severity"] == "critical"
+        assert filt["mitre_tactic"] == "lateral-movement"
+        assert filt["mitre_technique_id"] == "T1021"
+        assert filt["source_type"] == "sigma_rule"
+        assert filt["cve_id"] == "CVE-2024-1234"
+        assert filt["content_date_after"] == "2024-01-01"
+        assert filt["platforms"] == ["windows", "linux"]
+
+    @patch(f"{_QUERY}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.build_query_agent")
+    @patch(f"{_QUERY}.get_db_context")
+    def test_no_security_flags_keeps_filter_dict_none(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_result = MagicMock(answer="A.", citations=[], cached=False)
+        mock_agent = MagicMock()
+        mock_agent.query = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(cli, ["ask", "plain question"])
+        assert result.exit_code == 0, result.output
+        assert mock_agent.query.call_args[1]["filter_dict"] is None
+
+
+class TestIngestSourceTypeOverride:
+    """Phase 9 — ``grimoire ingest --source-type`` override."""
+
+    @patch(f"{_INGEST}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_INGEST}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_INGEST}.build_ingestion_agent")
+    @patch(f"{_INGEST}.get_db_context")
+    def test_source_type_passed_to_ingest_file(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner, tmp_path,
+    ) -> None:
+        test_file = tmp_path / "rule.yml"
+        test_file.write_text("title: x\n")
+        mock_result = MagicMock(status="completed", chunks_created=1, tags_applied=0, duration_ms=1)
+        mock_agent = MagicMock()
+        mock_agent.ingest_file = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(
+            cli,
+            ["ingest", str(test_file), "--source-type", "sigma_rule"],
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_agent.ingest_file.call_args[1]["source_type"] == "sigma_rule"
+
+    @patch(f"{_INGEST}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_INGEST}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_INGEST}.build_ingestion_agent")
+    @patch(f"{_INGEST}.get_db_context")
+    def test_source_type_passed_to_ingest_directory(
+        self, mock_ctx: MagicMock, mock_build: MagicMock,
+        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        runner: CliRunner, tmp_path,
+    ) -> None:
+        mock_result = MagicMock(succeeded=0, total=0, skipped=0, failed=0, duration_ms=1, results=[])
+        mock_agent = MagicMock()
+        mock_agent.ingest_directory = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(
+            cli,
+            ["ingest", str(tmp_path), "--source-type", "nvd_cve"],
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_agent.ingest_directory.call_args[1]["source_type"] == "nvd_cve"
+
+    def test_invalid_source_type_rejected_by_click(self, runner: CliRunner, tmp_path) -> None:
+        """Click's Choice validator must reject unknown source_type values."""
+        f = tmp_path / "a.txt"
+        f.write_text("x")
+        result = runner.invoke(cli, ["ingest", str(f), "--source-type", "totally_invalid"])
+        assert result.exit_code != 0
+        assert "Invalid value for '--source-type'" in result.output or "Invalid value" in result.output
+
+
 class TestSearchCommand:
     """Test the search command."""
 
