@@ -321,12 +321,31 @@ def detect_source_type(
     Args:
         text: Raw document text. May be empty.
         source_metadata: Optional mapping with file context. Recognized keys
-            are ``path`` and ``source_path`` (string). Extra keys are ignored.
+            are ``path`` and ``source_path`` (string), plus ``source_type``
+            (string or :class:`SourceType`) which short-circuits detection
+            entirely — used by CLI / API callers to override autodetection
+            (e.g. ``grimoire ingest --source-type sigma_rule``). Unknown
+            override values fall through to autodetection. Extra keys are
+            ignored.
 
     Returns:
         A :class:`SourceType`. Never raises; on any internal failure the
         function falls through to the ``PROSE`` / ``UNKNOWN`` branch.
     """
+    # Explicit override wins over content / path detection.
+    if source_metadata:
+        override = (
+            source_metadata.get("source_type")
+            if isinstance(source_metadata, Mapping)
+            else None
+        )
+        if override is not None:
+            if isinstance(override, SourceType):
+                return override
+            try:
+                return SourceType(str(override).strip().lower())
+            except ValueError:
+                pass  # Unknown value — fall back to autodetection.
 
     # Defensive empty check first — saves a dozen regex calls on empties.
     if text is None or not text.strip():

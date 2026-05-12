@@ -4,7 +4,46 @@ from __future__ import annotations
 
 from typing import Any
 
+from loguru import logger
 from pydantic import BaseModel, Field
+
+# ---------------------------------------------------------------------------
+# Phase 9 — security filter keys
+# ---------------------------------------------------------------------------
+
+#: Filter keys that the security domain understands. Used to surface a
+#: *warning* on unknown keys without rejecting the request (forward-compat
+#: with future filter additions). Listed in alphabetical order for easy
+#: scanning.
+SECURITY_FILTER_KEYS: frozenset[str] = frozenset(
+    {
+        "content_date_after",
+        "cve_id",
+        "mitre_tactic",
+        "mitre_technique_id",
+        "platforms",
+        "severity",
+        "source_type",
+    }
+)
+
+
+def warn_unknown_filter_keys(filter_dict: dict[str, Any] | None) -> None:
+    """Log a single warning for any unknown security-filter keys.
+
+    The API is intentionally permissive: unknown keys pass through so that
+    a newer client which adds a filter (e.g. ``threat_actor``) does not break
+    against an older server. Operators who care can pick the warning up from
+    the logs.
+    """
+    if not filter_dict:
+        return
+    unknown = [k for k in filter_dict if k not in SECURITY_FILTER_KEYS and k != "tags"]
+    if unknown:
+        logger.warning(
+            "Unknown filter keys (passed through to the retriever): {}",
+            sorted(unknown),
+        )
 
 
 # =============================================================================
@@ -17,7 +56,9 @@ class IngestFileRequest(BaseModel):
 
     file_path: str = Field(..., description="Path to the file to ingest.")
     auto_tag: bool = Field(default=True, description="Auto-tag with LLM.")
-    storage_backend: str | None = Field(default=None, description="Storage backend override.")
+    storage_backend: str | None = Field(
+        default=None, description="Storage backend override."
+    )
 
 
 class IngestDirectoryRequest(BaseModel):
@@ -26,7 +67,9 @@ class IngestDirectoryRequest(BaseModel):
     directory: str = Field(..., description="Path to the directory.")
     recursive: bool = Field(default=True, description="Recurse into subdirectories.")
     auto_tag: bool = Field(default=True, description="Auto-tag with LLM.")
-    storage_backend: str | None = Field(default=None, description="Storage backend override.")
+    storage_backend: str | None = Field(
+        default=None, description="Storage backend override."
+    )
 
 
 class IngestResultResponse(BaseModel):
@@ -63,7 +106,9 @@ class QueryRequest(BaseModel):
 
     query: str = Field(..., description="The question to answer.")
     top_k: int = Field(default=5, ge=1, le=100, description="Number of source chunks.")
-    filter_dict: dict[str, Any] | None = Field(default=None, description="Metadata filters.")
+    filter_dict: dict[str, Any] | None = Field(
+        default=None, description="Metadata filters."
+    )
     use_cache: bool = Field(default=True, description="Use cached results.")
 
 
@@ -95,7 +140,9 @@ class SearchRequest(BaseModel):
 
     query: str = Field(..., description="Search query.")
     top_k: int = Field(default=10, ge=1, le=100, description="Number of results.")
-    filter_dict: dict[str, Any] | None = Field(default=None, description="Metadata filters.")
+    filter_dict: dict[str, Any] | None = Field(
+        default=None, description="Metadata filters."
+    )
 
 
 class SearchResultItem(BaseModel):
@@ -126,7 +173,9 @@ class GenerateRequest(BaseModel):
     """Request to generate content."""
 
     document_ids: list[str] = Field(..., min_length=1, description="Document IDs.")
-    content_type: str = Field(..., description="Type: summary, flash_card, cliff_notes, outline, extract.")
+    content_type: str = Field(
+        ..., description="Type: summary, flash_card, cliff_notes, outline, extract."
+    )
     style: str | None = Field(default=None, description="Style for summaries.")
     count: int = Field(default=10, ge=1, le=100, description="Count for flashcards.")
     query: str | None = Field(default=None, description="Query for extracts.")
@@ -224,7 +273,9 @@ class WatchStartRequest(BaseModel):
     path: str = Field(..., description="Path to watch.")
     backend: str = Field(default="local", description="Storage backend.")
     recursive: bool = Field(default=True)
-    poll_interval: int | None = Field(default=None, description="Poll interval for cloud backends.")
+    poll_interval: int | None = Field(
+        default=None, description="Poll interval for cloud backends."
+    )
 
 
 class WatchResponse(BaseModel):

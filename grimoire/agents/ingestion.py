@@ -226,6 +226,7 @@ class IngestionAgent:
         storage_backend: Optional[StorageBackend] = None,
         auto_tag: bool = True,
         categories: Optional[List[Category]] = None,
+        source_type: Optional[str] = None,
     ) -> IngestionResult:
         """Ingest a single file through the full pipeline.
 
@@ -235,6 +236,10 @@ class IngestionAgent:
             storage_backend: Override default storage backend.
             auto_tag: Whether to auto-tag the document.
             categories: Categories for auto-tagging (fetched from DB if None).
+            source_type: Optional source-type override (e.g. ``"sigma_rule"``).
+                When set, the security chunker skips autodetection and uses
+                this value directly. Has no effect outside the security
+                domain.
 
         Returns:
             IngestionResult with processing details.
@@ -332,7 +337,9 @@ class IngestionAgent:
                 )
 
             # Step 5: Chunk the document
-            chunks = await self._chunk_document(parsed.text, str(file_path), doc.id)
+            chunks = await self._chunk_document(
+                parsed.text, str(file_path), doc.id, source_type=source_type
+            )
             await self._log_processing(
                 db,
                 doc.id,
@@ -422,6 +429,7 @@ class IngestionAgent:
         recursive: bool = True,
         storage_backend: Optional[StorageBackend] = None,
         auto_tag: bool = True,
+        source_type: Optional[str] = None,
     ) -> BatchIngestionResult:
         """Ingest all supported files in a directory.
 
@@ -431,6 +439,9 @@ class IngestionAgent:
             recursive: Whether to scan subdirectories.
             storage_backend: Override default storage backend.
             auto_tag: Whether to auto-tag documents.
+            source_type: Optional security-domain source-type override applied
+                to every file in the batch (e.g. ``"sigma_rule"`` for a
+                ``./rules`` directory). Has no effect outside security mode.
 
         Returns:
             BatchIngestionResult with per-file details.
@@ -459,6 +470,7 @@ class IngestionAgent:
                 storage_backend=storage_backend,
                 auto_tag=auto_tag,
                 categories=categories,
+                source_type=source_type,
             )
             batch_result.results.append(result)
 
@@ -522,6 +534,8 @@ class IngestionAgent:
         text: str,
         file_path: str,
         doc_id: str,
+        *,
+        source_type: Optional[str] = None,
     ) -> List[Chunk]:
         """Chunk document text using the appropriate strategy.
 
@@ -529,6 +543,9 @@ class IngestionAgent:
             text: Extracted document text.
             file_path: File path for strategy selection.
             doc_id: Document ID for chunk metadata.
+            source_type: Optional security-domain ``SourceType`` override
+                forwarded as ``source_metadata`` to the chunker. Non-security
+                chunkers ignore the value.
 
         Returns:
             List of Chunk objects.
@@ -536,7 +553,22 @@ class IngestionAgent:
         strategy = _select_chunking_strategy(file_path)
         chunker = self._create_chunker(strategy)
 
-        chunks = await chunker.chunk(text, doc_id=doc_id)
+        chunk_kwargs: dict[str, Any] = {"doc_id": doc_id}
+        # The base ``Chunker.chunk`` signature is ``chunk(text, doc_id=...)``;
+        # SecurityChunker accepts an extra ``source_metadata`` keyword. Only
+        # pass it when there is something useful to communicate so we stay
+        # compatible with the legacy chunkers.
+        if source_type or file_path:
+            source_metadata: dict[str, Any] = {"path": file_path}
+            if source_type:
+                source_metadata["source_type"] = source_type
+            chunk_kwargs["source_metadata"] = source_metadata
+
+        try:
+            chunks = await chunker.chunk(text, **chunk_kwargs)
+        except TypeError:
+            # Fallback for chunkers that don't accept source_metadata.
+            chunks = await chunker.chunk(text, doc_id=doc_id)
         logger.debug(f"Chunked into {len(chunks)} chunks (strategy={strategy.value})")
         return chunks
 
