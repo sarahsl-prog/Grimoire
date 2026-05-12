@@ -4,20 +4,20 @@
 
 ## Current status
 
-Phases 0–2 of the [security strategy plan](../plans/security_strategy_plan.md) have landed. The strategy scaffolding, source-type detector, and security-metadata schema (with matching DB columns + Chroma writer hook) are merged. Domain selection is **not yet wired** into ingestion or query; that arrives in Phase 8.
+**Phases 0–6 of the [security strategy plan](../plans/security_strategy_plan.md) have landed.** All scaffolding, source-type detection, security-metadata schema, Sigma/NVD/MITRE parsers + chunkers, and the LLM metadata extractor are merged.
+
+Domain selection is **not yet wired** into ingestion or query; that arrives in Phase 8.
 
 Follow-on phases (one-line each — see the plan for full detail):
 
-- **Phase 1 — done** — Source-type detection (`security/corpus.py`).
-- **Phase 2 — done** — Metadata schema additions (`security/metadata.py`,
-  `documents` columns + JSONB blob, ChromaDB metadata merge in
-  `agents/ingestion.py::_embed_and_store`). See
-  [`metadata.md`](metadata.md).
-- **Phase 3** — Deterministic source parsers (Sigma, NVD CVE, MITRE ATT&CK).
-- **Phase 4** — LLM metadata extractor for prose / unrecognized content.
-- **Phase 5** — Security chunker dispatch.
-- **Phase 6** — Security retriever (composes `HybridSearch`).
-- **Phase 7** — Security ingestion agent integration.
+- **Phase 0 — done** — Strategy scaffolding (`grimoire/strategies/` package, `BaseRetriever` ABC, `Chunk` extended with `chunk_type` / `source_type`).
+- **Phase 1 — done** — Source-type detection (`security/corpus.py`). See [`source_types.md`](source_types.md).
+- **Phase 2 — done** — Metadata schema additions (`security/metadata.py`, `documents` columns + JSONB blob, ChromaDB metadata merge). See [`metadata.md`](metadata.md).
+- **Phase 3 — done** — Sigma rule chunker + parser (`security/chunker.py`, `security/parsers/sigma.py`). See [`chunking.md`](chunking.md).
+- **Phase 4 — done** — NVD CVE chunker + parser (`security/parsers/nvd.py`). See [`chunking.md`](chunking.md).
+- **Phase 5 — done** — MITRE ATT&CK chunker + parser (`security/parsers/mitre.py`). See [`chunking.md`](chunking.md).
+- **Phase 6 — done** — Prose fallback + LLM metadata extractor (`security/extractor.py`). See [`extractor.md`](extractor.md).
+- **Phase 7** — SecurityRetriever (re-rank wrapper).
 - **Phase 8** — Strategy loader + `settings.security` domain switch.
 - **Phase 9** — Query agent + filter documentation.
 - **Phase 10** — Hetzner deploy: compose tweaks, `.env.security.example`, deploy doc.

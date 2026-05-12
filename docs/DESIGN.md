@@ -166,9 +166,10 @@ All contributors and coding agents must follow these conventions:
     "cve_id": "string (e.g. 'CVE-2024-12345')",
     "severity": "enum: critical/high/medium/low/info/unknown",
     "mitre_technique_id": "string (e.g. 'T1059.001')",
+    "mitre_tactic": "string (e.g. 'execution', 'persistence')",
     "tlp_level": "enum: white/green/amber/red",
     "content_date": "timestamp (effective date of underlying content)",
-    "security_metadata": "JSONB (wide/sparse SecurityMetadata fields)"
+    "security_metadata": "JSONB (wide/sparse SecurityMetadata fields: cvss_score, cwe_ids, affected_products, threat_actors, malware_families, ioc_types, detection_categories, platforms, log_sources, published_date, mitre_subtechnique, source_url)"
 }
 
 # chunks — Document chunks with embeddings
@@ -1039,6 +1040,21 @@ grimoire/
 │   ├── vector.py                  # Vector search wrapper
 │   ├── fulltext.py                # FTS (SQLite/Postgres)
 │   └── hybrid.py                  # Hybrid search orchestration
+│
+├── strategies/                    # Domain-specific chunking + retrieval
+│   ├── __init__.py                # Public re-exports (BaseChunker, BaseRetriever, get_chunker_for)
+│   ├── base.py                    # Abstract types: BaseRetriever ABC, get_chunker_for registry
+│   └── security/                  # Security-domain pipeline (Phases 1–6 complete)
+│       ├── __init__.py
+│       ├── corpus.py              # SourceType enum + detect_source_type()
+│       ├── metadata.py            # SecurityMetadata, Severity, TLPLevel
+│       ├── extractor.py           # LLM metadata extractor for prose
+│       ├── chunker.py             # SecurityChunker (Sigma/NVD/MITRE/prose dispatch)
+│       └── parsers/
+│           ├── __init__.py
+│           ├── sigma.py           # parse_sigma()
+│           ├── nvd.py              # parse_cve(), parse_nvd_json()
+│           └── mitre.py           # parse_mitre()
 │
 ├── db/                            # Database layer
 │   ├── __init__.py

@@ -277,4 +277,9 @@ belongs to::
 
 ## Future phases
 
-* **Phase 6** — Prose fallback + LLM metadata extractor.
+Phases 0–6 are complete. Remaining phases:
+
+* **Phase 7** — SecurityRetriever (re-rank wrapper).
+* **Phase 8** — Strategy loader + `settings.security` domain switch.
+* **Phase 9** — Query agent + filter documentation.
+* **Phase 10** — Hetzner deploy: compose tweaks, `.env.security.example`, deploy doc.
