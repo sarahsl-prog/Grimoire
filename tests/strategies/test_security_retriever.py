@@ -198,6 +198,26 @@ class TestRecencyMultiplier:
         future = datetime(2030, 1, 1, tzinfo=timezone.utc)
         assert _recency_multiplier(future, 365, now=now) == 1.0
 
+    def test_naive_content_date_treated_as_utc(self) -> None:
+        """Regression: tz-naive ``content_date`` must not crash recency math.
+
+        ``datetime.fromisoformat`` returns naive datetimes for date-only
+        strings like ``"2024-06-15"``. Without UTC normalisation, the
+        subtraction from a tz-aware ``now`` raises ``TypeError``.
+        """
+        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
+        naive_one_year_old = datetime(2024, 6, 1)  # no tzinfo
+        # Should not raise; result equals the aware-half-life value.
+        mult = _recency_multiplier(naive_one_year_old, 365, now=now)
+        assert abs(mult - 0.5) < 0.001
+
+    def test_naive_now_and_naive_content_date(self) -> None:
+        """Both sides naive — function still tolerates and computes decay."""
+        now = datetime(2025, 6, 1)  # naive
+        old = datetime(2024, 6, 1)  # naive
+        mult = _recency_multiplier(old, 365, now=now)
+        assert abs(mult - 0.5) < 0.001
+
 
 # ---------------------------------------------------------------------------
 # 3. _security_rerank
@@ -370,6 +390,29 @@ class TestSecurityRerank:
         reranked = self._rerank(results, settings)
         # Should parse without error
         assert reranked[0].chunk_id == "z"
+
+    def test_date_only_iso_string_does_not_crash(self) -> None:
+        """Regression: tz-naive date-only ISO strings from metadata.
+
+        ChromaDB / FTS sometimes stores ``content_date`` as ``"2024-06-15"``
+        which :func:`datetime.fromisoformat` parses as a naive datetime.
+        Without UTC normalisation in ``_recency_multiplier`` the rerank
+        would raise ``TypeError`` and crash retrieval.
+        """
+        settings = _MockSettings()
+        results = [
+            _make_result(
+                "date_only",
+                score=0.5,
+                severity="high",
+                content_date_str="2024-06-15",
+            ),
+        ]
+        # Must not raise.
+        reranked = self._rerank(results, settings)
+        assert reranked[0].chunk_id == "date_only"
+        # And the recency multiplier must have been applied (score < 1.0×severity).
+        assert reranked[0].score < 0.5 * 2.0  # severity=high (2.0)
 
     def test_mutation_documents_internal_list(self) -> None:
         """The method mutates and returns the same list object."""
@@ -566,3 +609,41 @@ def test_security_retriever_subclasses_base_retriever() -> None:
     from grimoire.strategies.base import BaseRetriever
 
     assert issubclass(SecurityRetriever, BaseRetriever)
+
+
+class TestQueryIntentEnum:
+    """``QueryIntent`` is a ``str, Enum`` — must behave as both."""
+
+    def test_members_equal_string_values(self) -> None:
+        assert QueryIntent.CVE_LOOKUP == "cve_lookup"
+        assert QueryIntent.TECHNIQUE_LOOKUP == "technique_lookup"
+        assert QueryIntent.IOC_LOOKUP == "ioc_lookup"
+        assert QueryIntent.GENERAL_SECURITY == "general_security"
+
+    def test_classifier_returns_enum_member(self) -> None:
+        result = _classify_query("CVE-2024-12345")
+        assert isinstance(result, QueryIntent)
+        # And it's still equal to the raw string for dict lookup.
+        assert result == "cve_lookup"
+
+    def test_enum_member_works_as_dict_key(self) -> None:
+        """The intent matrix is keyed by raw strings; enum members must hit."""
+        matrix = {"cve_lookup": {"nvd_cve": 2.0}}
+        # Enum members hash/compare equal to their str value.
+        assert matrix.get(QueryIntent.CVE_LOOKUP.value) == {"nvd_cve": 2.0}
+
+    def test_raw_string_intent_still_accepted_by_rerank(self) -> None:
+        """``_security_rerank`` accepts raw-string intents for forward-compat."""
+        from typing import cast
+
+        settings = _MockSettings()
+        results = [
+            _make_result("prose", score=0.5, severity="high", source_type="prose"),
+        ]
+        retriever = SecurityRetriever(MagicMock(), settings)
+        # Pass a raw string (e.g. an experimental intent injected via settings).
+        out = retriever._security_rerank(
+            list(results), cast(QueryIntent, "experimental_intent")
+        )
+        # Falls back to general_security row → prose multiplier 1.0.
+        assert out[0].score == 0.5 * 2.0  # severity=high (2.0) × source 1.0

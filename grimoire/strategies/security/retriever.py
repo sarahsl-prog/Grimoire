@@ -28,7 +28,8 @@ from __future__ import annotations
 import math
 import re
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from loguru import logger
 
@@ -48,13 +49,26 @@ __all__ = ["SecurityRetriever", "QueryIntent"]
 # ---------------------------------------------------------------------------
 
 
-class QueryIntent:
-    """Query intent labels used to drive source-type boosting."""
+class QueryIntent(str, Enum):
+    """Query intent labels used to drive source-type boosting.
+
+    Inheriting from ``str`` means ``QueryIntent.CVE_LOOKUP == "cve_lookup"``
+    is ``True``, so the values can be used interchangeably as dictionary
+    keys in :attr:`SecurityConfig.intent_source_matrix` and as type hints
+    in function signatures.
+    """
 
     CVE_LOOKUP = "cve_lookup"
     TECHNIQUE_LOOKUP = "technique_lookup"
     IOC_LOOKUP = "ioc_lookup"
     GENERAL_SECURITY = "general_security"
+
+
+# Anything that can stand in for an intent: a strict :class:`QueryIntent`
+# from the classifier, or a raw string (e.g. an experimental intent injected
+# by a settings override). ``_security_rerank`` falls back to
+# ``general_security`` when the value is unknown.
+IntentLike = Union[QueryIntent, str]
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +192,14 @@ def _recency_multiplier(
     if effective_now.tzinfo is None:
         effective_now = effective_now.replace(tzinfo=timezone.utc)
 
+    # Normalise naive content_date values to UTC — ChromaDB / FTS often
+    # stores date-only ISO strings (e.g. "2024-06-15") and
+    # ``datetime.fromisoformat`` returns them tz-naive. Without this we
+    # would raise ``TypeError: can't subtract offset-naive and offset-aware
+    # datetimes`` and crash retrieval on tz-less metadata.
+    if content_date.tzinfo is None:
+        content_date = content_date.replace(tzinfo=timezone.utc)
+
     age_days = (effective_now - content_date).total_seconds() / 86400.0
     if age_days < 0:
         return 1.0  # Future-dated content gets no penalty
@@ -257,7 +279,7 @@ class SecurityRetriever(BaseRetriever):
     def _security_rerank(
         self,
         results: List[HybridResult],
-        intent: QueryIntent,
+        intent: IntentLike,
     ) -> List[HybridResult]:
         """Apply severity boost + recency decay + intent-source alignment.
 
@@ -267,7 +289,9 @@ class SecurityRetriever(BaseRetriever):
 
         Args:
             results: Results from the hybrid search (pre-rerank).
-            intent: Classified query intent.
+            intent: Classified :class:`QueryIntent`, or a raw string for
+                callers that inject custom intents via a settings override
+                — unknown values fall back to ``general_security``.
 
         Returns:
             Re-scored results (mutated in place and also returned).
@@ -275,10 +299,12 @@ class SecurityRetriever(BaseRetriever):
         severity_weights = self._security.severity_weights
         half_life_days = self._security.recency_half_life_days
         source_matrix = self._security.intent_source_matrix
-        # intent is a string (QueryIntent attribute value); use it directly
-        intent_key = str(intent)
+        # QueryIntent is a ``str, Enum`` so ``intent.value`` == ``str(intent)``
+        # for enum members; for raw-string callers we just use the value as-is.
+        intent_key = intent.value if isinstance(intent, QueryIntent) else str(intent)
         intent_row = source_matrix.get(
-            intent_key, source_matrix.get(QueryIntent.GENERAL_SECURITY, {})
+            intent_key,
+            source_matrix.get(QueryIntent.GENERAL_SECURITY.value, {}),
         )
 
         for result in results:
