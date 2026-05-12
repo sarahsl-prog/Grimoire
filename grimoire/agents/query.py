@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from grimoire.core.cache import Cache
 from grimoire.db.models import Document
 from grimoire.search.hybrid import HybridResult, HybridSearch
+from grimoire.strategies.base import BaseRetriever
 
 
 # =============================================================================
@@ -135,6 +136,7 @@ class QueryAgent:
         temperature: float = 0.3,
         max_tokens: int = 2048,
         max_context_chunks: int = 5,
+        retriever: Optional["BaseRetriever"] = None,
     ) -> None:
         self._hybrid_search = hybrid_search
         self._llm_url = llm_url.rstrip("/")
@@ -143,10 +145,15 @@ class QueryAgent:
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._max_context_chunks = max_context_chunks
+        # Phase 8: optional domain-specific retriever (e.g. SecurityRetriever).
+        # When ``None`` the agent calls ``HybridSearch.search`` directly — this
+        # preserves the pre-Phase-8 behaviour for general-domain deployments.
+        self._retriever = retriever
 
         logger.debug(
             f"QueryAgent initialized (model={llm_model}, "
-            f"max_context_chunks={max_context_chunks})"
+            f"max_context_chunks={max_context_chunks}, "
+            f"retriever={'custom' if retriever is not None else 'hybrid'})"
         )
 
     # -------------------------------------------------------------------------
@@ -187,9 +194,9 @@ class QueryAgent:
                 cached.cached = True
                 return cached
 
-        # Step 1: Hybrid search
-        search_results = await self._hybrid_search.search(
-            db, query, top_k=top_k, filter_dict=filter_dict,
+        # Step 1: Hybrid search (or domain-specific retriever, when wired).
+        search_results = await self._retrieve(
+            db, query, top_k=top_k, filter_dict=filter_dict
         )
 
         if not search_results:
@@ -247,8 +254,8 @@ class QueryAgent:
         """
         start_time = time.monotonic()
 
-        search_results = await self._hybrid_search.search(
-            db, query, top_k=top_k, filter_dict=filter_dict,
+        search_results = await self._retrieve(
+            db, query, top_k=top_k, filter_dict=filter_dict
         )
 
         results = [
@@ -270,7 +277,9 @@ class QueryAgent:
         )
 
     async def get_document_details(
-        self, db: AsyncSession, document_id: str,
+        self,
+        db: AsyncSession,
+        document_id: str,
     ) -> Optional[Dict[str, Any]]:
         """Get full details for a document.
 
@@ -309,8 +318,34 @@ class QueryAgent:
     # Context Assembly
     # -------------------------------------------------------------------------
 
+    async def _retrieve(
+        self,
+        db: AsyncSession,
+        query: str,
+        *,
+        top_k: int,
+        filter_dict: Optional[Dict[str, Any]] = None,
+    ) -> List[HybridResult]:
+        """Run the configured retrieval strategy.
+
+        Delegates to ``self._retriever.retrieve`` when a domain-specific
+        retriever (e.g. :class:`SecurityRetriever`) is wired; otherwise calls
+        ``self._hybrid_search.search`` directly — the pre-Phase-8 behaviour.
+        """
+        if self._retriever is not None:
+            return await self._retriever.retrieve(
+                db, query, top_k=top_k, filter_dict=filter_dict
+            )
+        return await self._hybrid_search.search(
+            db,
+            query,
+            top_k=top_k,
+            filter_dict=filter_dict,
+        )
+
     def _build_citations(
-        self, results: List[HybridResult],
+        self,
+        results: List[HybridResult],
     ) -> List[Citation]:
         """Build citation objects from search results.
 
@@ -321,7 +356,7 @@ class QueryAgent:
             List of Citation objects.
         """
         citations: List[Citation] = []
-        for r in results[:self._max_context_chunks]:
+        for r in results[: self._max_context_chunks]:
             snippet = r.content[:200] + "..." if len(r.content) > 200 else r.content
             metadata = r.metadata or {}
             citations.append(
@@ -345,14 +380,12 @@ class QueryAgent:
         Returns:
             Formatted context string.
         """
-        chunks = results[:self._max_context_chunks]
+        chunks = results[: self._max_context_chunks]
         parts: List[str] = []
 
         for i, result in enumerate(chunks, 1):
             title = result.document_title or "Unknown"
-            parts.append(
-                f"[Source {i}: {title}]\n{result.content}"
-            )
+            parts.append(f"[Source {i}: {title}]\n{result.content}")
 
         return "\n\n---\n\n".join(parts)
 
@@ -423,7 +456,9 @@ class QueryAgent:
     # -------------------------------------------------------------------------
 
     def _cache_key(
-        self, query: str, filter_dict: Optional[Dict[str, Any]],
+        self,
+        query: str,
+        filter_dict: Optional[Dict[str, Any]],
     ) -> str:
         """Generate a cache key for a query.
 
@@ -441,7 +476,9 @@ class QueryAgent:
         return hashlib.sha256(key_data.encode()).hexdigest()
 
     async def _check_cache(
-        self, query: str, filter_dict: Optional[Dict[str, Any]],
+        self,
+        query: str,
+        filter_dict: Optional[Dict[str, Any]],
     ) -> Optional[QueryResult]:
         """Check if a query result is cached.
 
@@ -485,7 +522,9 @@ class QueryAgent:
         try:
             key = self._cache_key(query, filter_dict)
             await self._cache.set(
-                key, result.model_dump(), ttl=3600,  # 1 hour TTL
+                key,
+                result.model_dump(),
+                ttl=3600,  # 1 hour TTL
             )
             logger.debug(f"Cached result for query: {query[:50]}...")
         except Exception as e:

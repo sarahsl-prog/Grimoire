@@ -564,3 +564,75 @@ class TestQueryModels:
         result = SearchOnlyResult(query="test")
         assert result.total_results == 0
         assert result.results == []
+
+
+# =============================================================================
+# Phase 8 — Strategy retriever routing
+# =============================================================================
+
+
+class TestRetrieverRouting:
+    """``QueryAgent`` delegates to ``retriever.retrieve`` when one is wired,
+    otherwise it falls back to ``HybridSearch.search`` (the legacy path)."""
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_hybrid_search_when_no_retriever(
+        self,
+        mock_db: AsyncMock,
+        hybrid_search: HybridSearch,
+        mock_cache: MagicMock,
+    ) -> None:
+        agent = QueryAgent(
+            hybrid_search=hybrid_search,
+            llm_url="http://localhost:11434",
+            llm_model="test-model",
+            cache=mock_cache,
+        )
+        with patch.object(
+            hybrid_search, "search", new_callable=AsyncMock
+        ) as mock_search:
+            mock_search.return_value = []
+            await agent.search(mock_db, "test", top_k=3)
+            mock_search.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("domain", ["general", "security"])
+    async def test_domain_switch_picks_correct_retrieval_path(
+        self,
+        mock_db: AsyncMock,
+        hybrid_search: HybridSearch,
+        mock_cache: MagicMock,
+        domain: str,
+    ) -> None:
+        """For ``domain=security`` the agent uses the strategy retriever;
+        for ``domain=general`` it stays on the hybrid path."""
+        from grimoire.strategies.base import BaseRetriever
+
+        class _FakeRetriever(BaseRetriever):
+            def __init__(self) -> None:
+                self.calls: List[Any] = []
+
+            async def retrieve(
+                self, db, query, *, top_k=10, filter_dict=None
+            ):
+                self.calls.append((query, top_k))
+                return []
+
+        fake = _FakeRetriever() if domain == "security" else None
+        agent = QueryAgent(
+            hybrid_search=hybrid_search,
+            llm_url="http://localhost:11434",
+            llm_model="test-model",
+            cache=mock_cache,
+            retriever=fake,
+        )
+        with patch.object(
+            hybrid_search, "search", new_callable=AsyncMock
+        ) as mock_search:
+            mock_search.return_value = []
+            await agent.search(mock_db, "T1059", top_k=3)
+            if domain == "security":
+                assert fake.calls == [("T1059", 3)]
+                mock_search.assert_not_awaited()
+            else:
+                mock_search.assert_awaited_once()

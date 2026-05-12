@@ -811,4 +811,37 @@ class TestComponentConcurrency:
 
 ---
 
+## Appendix F: Strategy loader (security/general domains)
+
+`grimoire/strategies/loader.py` is the seam that picks between Grimoire's
+"general" pipeline and the security pipeline based on `settings.security.domain`.
+
+### Hook points
+
+| Surface | Pre-Phase-8 behaviour | With Phase 8 |
+|---|---|---|
+| `agents/ingestion.py::IngestionAgent._create_chunker` | per-extension chunker selection | When `settings.security.domain == "security"` (and `IngestionAgent` was given `settings=...`), the loader returns a `SecurityChunker` which dispatches per detected source type. Otherwise, existing logic. |
+| `agents/query.py::QueryAgent` | always uses `HybridSearch.search` | Optional `retriever: BaseRetriever \| None` parameter. When `None` (default) it stays on the hybrid path; when set (the CLI factory wires `SecurityRetriever` automatically in security mode), `QueryAgent` delegates retrieval to `retriever.retrieve(...)`. |
+| `cli/helpers.py::build_ingestion_agent` / `build_query_agent` | constructed default agents | Now thread `settings` and a loaded `retriever` so security mode is on automatically when configured. |
+
+### Loader contract
+
+```python
+def load_chunker(settings, *, chunk_config=None) -> Chunker | None: ...
+def load_retriever(settings, hybrid_search) -> BaseRetriever | None: ...
+```
+
+Both functions return `None` for general-domain or missing config — the
+caller falls back to its existing default. A missing `settings.security`
+block, an empty `domain` string, or any value other than `"security"` all
+resolve to "general"; callers don't need to handle errors.
+
+### Configuration
+
+See [`docs/strategies/configuration.md`](strategies/configuration.md) for
+the full `settings.security.*` field reference, env-var examples, and the
+default `intent_source_matrix` / `severity_weights`.
+
+---
+
 ---
