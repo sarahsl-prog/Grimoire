@@ -399,6 +399,11 @@ class ChromaDBStore(VectorStore):
             else:
                 where_clause[key] = parse_value(key, value)
 
+        # ChromaDB requires exactly one operator in `where`.
+        # If we have multiple top-level field filters, wrap them in $and.
+        if len(where_clause) > 1 and not any(k in ("$and", "$or") for k in where_clause):
+            where_clause = {"$and": [{k: v} for k, v in where_clause.items()]}
+
         return where_clause
 
     def _format_results(

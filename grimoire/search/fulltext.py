@@ -271,7 +271,7 @@ class FulltextSearch:
             List of ranked search results
         """
         # Build the to_tsquery expression
-        tsquery_expr = text("to_tsquery(:lang, :q)").bindparams(lang=self.language, q=parsed_query)
+        tsquery_expr = text("to_tsquery(CAST(:lang AS regconfig), :q)").bindparams(lang=self.language, q=parsed_query)
 
         # Build tsvector for content
         content_vector = func.to_tsvector(self.language, Chunk.content)
@@ -377,7 +377,7 @@ class FulltextSearch:
             return []
 
         # Use parameterized binding to prevent SQL injection
-        tsquery_expr = text("to_tsquery(:lang, :q)").bindparams(
+        tsquery_expr = text("to_tsquery(CAST(:lang AS regconfig), :q)").bindparams(
             lang=self.language, q=fts_query.parsed
         )
         content_vector = func.to_tsvector(self.language, Chunk.content)
@@ -449,7 +449,7 @@ class FulltextSearch:
             return content
 
         # Use parameterized binding to prevent SQL injection
-        tsquery_expr = text("to_tsquery(:lang, :q)").bindparams(
+        tsquery_expr = text("to_tsquery(CAST(:lang AS regconfig), :q)").bindparams(
             lang=self.language, q=ftq.parsed
         )
         func.to_tsvector(self.language, Chunk.content)
