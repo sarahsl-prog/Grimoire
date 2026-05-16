@@ -159,6 +159,8 @@ class DocumentParser:
         ".xls",
         ".html",
         ".htm",
+        ".md",
+        ".txt",
         ".png",
         ".jpg",
         ".jpeg",
@@ -167,9 +169,13 @@ class DocumentParser:
         ".gif",
         ".bmp",
         ".webp",
+        ".json",
+        ".yaml",
+        ".yml",
     }
 
-    # Image extensions that require OCR
+    # Extensions that are plain text and should bypass Docling.
+    PLAIN_TEXT_EXTENSIONS: set[str] = {".json", ".yaml", ".yml", ".txt", ".md"}
     IMAGE_EXTENSIONS: set[str] = {
         ".png",
         ".jpg",
@@ -569,6 +575,26 @@ class DocumentParser:
                 file_hash = self._compute_file_hash(file_path)
             except Exception as e:
                 logger.error(f"Failed to compute file hash: {e}")
+
+            ext = self._detect_file_type(file_path)
+            if ext in self.PLAIN_TEXT_EXTENSIONS:
+                # Bypass Docling for text-oriented files; read UTF-8 directly.
+                logger.debug(f"Reading {file_path_str} as plain text (bypassing Docling)")
+                try:
+                    raw_text = file_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    logger.warning(f"UTF-8 decode failed for {file_path_str}, trying latin-1")
+                    raw_text = file_path.read_text(encoding="latin-1")
+                return ParsedDocument(
+                    text=raw_text,
+                    metadata=DocumentMetadata(
+                        file_type=ext,
+                        file_size=file_path.stat().st_size if file_path.exists() else None,
+                        file_hash=file_hash,
+                        word_count=self._count_words(raw_text),
+                    ),
+                    status="success",
+                )
 
             converter = self._get_converter()
 
