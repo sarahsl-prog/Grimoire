@@ -272,6 +272,190 @@ def _parse_iso_date(raw: Any) -> Optional[datetime]:
         return None
 
 
+
+
+# ---------------------------------------------------------------------------
+# cvelistV5 (CVE 5.1) helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_cvelistv5(obj) -> bool:
+    """Detect cvelistV5 / CVE 5.1 format."""
+    return obj.get("dataType") == "CVE_RECORD" and "cveMetadata" in obj
+
+
+def _extract_cvss_v5(record):
+    """Extract CVSS from cvelistV5 containers.cna.metrics."""
+    containers = record.get("containers", {})
+    cna = containers.get("cna", {})
+    metrics = cna.get("metrics", [])
+    if not isinstance(metrics, list):
+        return None, None
+    for metric in metrics:
+        if not isinstance(metric, dict):
+            continue
+        for key in ("cvssV3_1", "cvssV3_0"):
+            cvss = metric.get(key)
+            if isinstance(cvss, dict):
+                score = cvss.get("baseScore")
+                severity = cvss.get("baseSeverity")
+                if isinstance(score, (int, float)):
+                    return float(score), severity if isinstance(severity, str) else None
+    return None, None
+
+
+def _extract_description_v5(record):
+    """Extract English description from cvelistV5 CNA container."""
+    containers = record.get("containers", {})
+    cna = containers.get("cna", {})
+    descriptions = cna.get("descriptions", [])
+    if not isinstance(descriptions, list):
+        return ""
+    for desc in descriptions:
+        if isinstance(desc, dict) and desc.get("lang") == "en":
+            value = desc.get("value")
+            if isinstance(value, str):
+                return value
+    for desc in descriptions:
+        if isinstance(desc, dict):
+            value = desc.get("value")
+            if isinstance(value, str):
+                return value
+    return ""
+
+
+def _extract_references_v5(record):
+    """Extract references from cvelistV5 CNA container."""
+    refs = []
+    containers = record.get("containers", {})
+    cna = containers.get("cna", {})
+    references = cna.get("references", [])
+    if not isinstance(references, list):
+        return refs
+    for ref in references:
+        if isinstance(ref, dict):
+            url = ref.get("url")
+            if isinstance(url, str) and url:
+                refs.append(url)
+    return refs
+
+
+def _extract_cwe_ids_v5(record):
+    """Extract CWEs from cvelistV5 CNA container."""
+    cwe_ids = []
+    seen = set()
+    containers = record.get("containers", {})
+    cna = containers.get("cna", {})
+    weaknesses = cna.get("weaknesses", [])
+    if not isinstance(weaknesses, list):
+        return cwe_ids
+    for weakness in weaknesses:
+        if not isinstance(weakness, dict):
+            continue
+        descriptions = weakness.get("description", [])
+        if not isinstance(descriptions, list):
+            continue
+        for desc in descriptions:
+            if not isinstance(desc, dict):
+                continue
+            value = desc.get("value", "")
+            if isinstance(value, str):
+                m = re.search(r"CWE-(\d+)", value, re.IGNORECASE)
+                if m:
+                    cwe_id = f"CWE-{m.group(1)}"
+                    if cwe_id not in seen:
+                        seen.add(cwe_id)
+                        cwe_ids.append(cwe_id)
+    return cwe_ids
+
+
+def _extract_affected_products_v5(record):
+    """Extract affected products from cvelistV5 CNA container."""
+    products = []
+    seen = set()
+    containers = record.get("containers", {})
+    cna = containers.get("cna", {})
+    affected = cna.get("affected", [])
+    if not isinstance(affected, list):
+        return products
+    for item in affected:
+        if not isinstance(item, dict):
+            continue
+        vendor = item.get("vendor", "")
+        product = item.get("product", "")
+        if isinstance(vendor, str) and isinstance(product, str):
+            name = f"{vendor} {product}".strip()
+            if name and name not in seen:
+                seen.add(name)
+                products.append(name)
+    return products
+
+
+def _parse_date_v5(record):
+    """Parse date from cvelistV5 cveMetadata."""
+    meta = record.get("cveMetadata", {})
+    for key in ("datePublished", "dateReserved"):
+        raw = meta.get(key)
+        dt = _parse_iso_date(raw)
+        if dt:
+            return dt
+    return None
+
+
+def parse_cve_v5(record):
+    """Parse a cvelistV5 CVE 5.1 record."""
+    meta = record.get("cveMetadata", {})
+    cve_id = meta.get("cveId", "")
+    if not isinstance(cve_id, str):
+        cve_id = ""
+
+    description = _extract_description_v5(record)
+    score, severity_str = _extract_cvss_v5(record)
+    severity = Severity.UNKNOWN
+    if isinstance(severity_str, str) and severity_str:
+        try:
+            severity = Severity(severity_str.lower())
+        except ValueError:
+            severity = severity_from_cvss_score(score)
+    else:
+        severity = severity_from_cvss_score(score)
+
+    cwe_ids = _extract_cwe_ids_v5(record)
+    products = _extract_affected_products_v5(record)
+    refs = _extract_references_v5(record)
+    published = _parse_date_v5(record)
+
+    parts = []
+    if cve_id:
+        parts.append(f"CVE: {cve_id}")
+    if description:
+        parts.append(f"Description: {description}")
+    if score is not None:
+        parts.append(f"CVSS Score: {score}")
+    if severity_str:
+        parts.append(f"Severity: {severity_str}")
+    if cwe_ids:
+        parts.append(f"CWEs: {', '.join(cwe_ids)}")
+    if products:
+        parts.append(f"Affected Products: {', '.join(products)}")
+    if refs:
+        parts.append(f"References: {', '.join(refs)}")
+    if published:
+        parts.append(f"Published: {published.isoformat()}")
+
+    text = "\n".join(parts)
+
+    return text, SecurityMetadata(
+        source_type=SourceType.NVD_CVE,
+        cve_id=cve_id,
+        cvss_score=score,
+        severity=severity,
+        cwe_ids=cwe_ids,
+        affected_products=products,
+        published_date=published,
+        content_date=published,
+    )
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -376,6 +560,15 @@ def parse_nvd_json(
         return []
 
     results: List[Tuple[str, SecurityMetadata]] = []
+
+    # Shape 0: cvelistV5 / CVE 5.1 format
+    if _is_cvelistv5(obj):
+        try:
+            results.append(parse_cve_v5(obj))
+        except Exception as exc:
+            cve_id = obj.get("cveMetadata", {}).get("cveId", "unknown")
+            logger.warning("Failed to parse cvelistV5 CVE {}: {}", cve_id, exc)
+        return results
 
     # Shape 1: Bulk feed with vulnerabilities list.
     vulnerabilities = obj.get("vulnerabilities")
