@@ -194,6 +194,7 @@ addopts = [
     "--strict-config",
     "--verbose",
     "--tb=short",
+    "--ignore=tests/integration",
     "-ra",
 ]
 markers = [
