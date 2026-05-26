@@ -100,7 +100,11 @@ async def authenticate_api_key(
 
     # Update last_used_at (fire-and-forget, don't block the request)
     api_key.last_used_at = datetime.now(timezone.utc)
-    await db.flush()
+    try:
+        await db.flush()
+    except Exception:
+        # Logging update failure should not torch an already-authenticated request
+        pass
 
     return api_key
 

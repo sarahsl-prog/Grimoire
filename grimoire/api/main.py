@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from grimoire.api.routes import categories, documents, generate, ingest, query, watch
@@ -64,8 +64,11 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     app.include_router(api_keys_router, prefix="/api/v1")
 
+    limiter = app.state.limiter
+
     @app.get("/health")
-    async def health_check() -> dict[str, str]:
+    @limiter.limit("60/minute")
+    async def health_check(request: Request) -> dict[str, str]:
         return {"status": "ok"}
 
     return app

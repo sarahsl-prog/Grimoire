@@ -119,15 +119,19 @@ class OneDriveAdapter(StorageAdapter):
         return Path(os.path.expanduser(self.config.token_store))
 
     def _load_tokens(self) -> None:
-        """Load tokens from the token store file."""
+        """Load tokens from the token store file, decrypting if necessary."""
         token_path = self._get_token_path()
         if token_path.exists():
             try:
-                with open(token_path, encoding="utf-8") as f:
-                    data = json.load(f)
+                raw = token_path.read_text(encoding="utf-8")
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    from grimoire.utils.token_crypto import decrypt_tokens
+                    data = decrypt_tokens(raw)
                 self.token_data = OneDriveTokenData.from_dict(data)
                 logger.debug(f"Loaded OneDrive tokens from {token_path}")
-            except (json.JSONDecodeError, KeyError, OSError) as e:
+            except Exception as e:
                 logger.warning(f"Failed to load OneDrive tokens: {e}")
                 self.token_data = None
         else:
@@ -135,17 +139,27 @@ class OneDriveAdapter(StorageAdapter):
             self.token_data = None
 
     def _save_tokens(self) -> None:
-        """Save tokens to the token store file."""
+        """Save tokens to the token store file, encrypting when possible."""
         if self.token_data is None:
             return
 
         token_path = self._get_token_path()
         try:
             token_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(token_path, "w", encoding="utf-8") as f:
-                json.dump(self.token_data.to_dict(), f, indent=2)
+            encrypted = False
+            try:
+                from grimoire.utils.token_crypto import encrypt_tokens, TokenCryptoError
+                payload = encrypt_tokens(self.token_data.to_dict())
+                encrypted = True
+            except TokenCryptoError:
+                logger.warning(
+                    "Token encryption unavailable (cryptography not installed?). "
+                    "Saving tokens as plain JSON — install cryptography to secure tokens at rest."
+                )
+                payload = json.dumps(self.token_data.to_dict(), indent=2)
+            token_path.write_text(payload, encoding="utf-8")
             os.chmod(token_path, 0o600)
-            logger.debug(f"Saved OneDrive tokens to {token_path}")
+            logger.debug(f"Saved OneDrive tokens to {token_path} (encrypted={encrypted})")
         except OSError as e:
             logger.error(f"Failed to save OneDrive tokens: {e}")
 

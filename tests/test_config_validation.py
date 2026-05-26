@@ -477,9 +477,22 @@ class TestConfigSecurity:
         assert "***REDACTED***" in str(redacted) or "postgresql://" in str(redacted)
 
     def test_secret_key_validation(self) -> None:
-        """Test that secret key is required."""
-        config = APIConfig(secret_key="test-key")  # noqa: S106
-        assert config.secret_key == "test-key"
+        """Test that secret key enforces length and rejects the old placeholder."""
+        from pydantic import ValidationError
+
+        # Valid key (≥16 chars)
+        config = APIConfig(secret_key="a-fine-production-secret-key-xyz")  # noqa: S106
+        assert config.secret_key == "a-fine-production-secret-key-xyz"
+
+        # Rejects placeholder
+        with pytest.raises(ValidationError) as exc_info:
+            APIConfig(secret_key="change-me-in-production")  # noqa: S106
+        assert "change-me-in-production" in str(exc_info.value)
+
+        # Rejects short key
+        with pytest.raises(ValidationError) as exc_info:
+            APIConfig(secret_key="short")  # noqa: S106
+        assert "at least 16" in str(exc_info.value)
 
 
 # =============================================================================
@@ -762,9 +775,9 @@ class TestAPIConfig:
         assert config.workers == 4
 
     def test_secret_key_warning(self) -> None:
-        """Test default secret key has warning value."""
+        """Test that default secret key is None and no placeholder is present."""
         config = APIConfig()
-        assert "change" in config.secret_key.lower()
+        assert config.secret_key is None
 
 
 # =============================================================================

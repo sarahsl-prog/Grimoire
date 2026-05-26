@@ -694,10 +694,24 @@ class APIConfig(BaseModel):
     port: int = Field(default=8001, ge=1, le=65535, description="Bind port")
     reload: bool = Field(default=False, description="Enable auto-reload (dev only)")
     workers: int = Field(default=4, ge=1, le=64, description="Worker processes")
-    secret_key: str = Field(
-        default="change-me-in-production",
-        description="Secret key for JWT (CHANGE IN PROD!)",
+    secret_key: str | None = Field(
+        default=None,
+        description="Secret key for JWT or signed URLs (required in production)",
     )
+
+    @field_validator("secret_key")
+    @classmethod
+    def _reject_placeholder_secret(cls, v: str | None) -> str | None:
+        """Raise if the secret_key is still using the old placeholder or is empty."""
+        if v is None:
+            return v
+        placeholder = "change-me-in-production"
+        if v.strip() == placeholder or len(v.strip()) < 16:
+            raise ValueError(
+                "API secret_key must be at least 16 characters and cannot use "
+                f"the placeholder value '{placeholder}'. Set GRIMOIRE_API__SECRET_KEY."
+            )
+        return v
 
 
 class AuthConfig(BaseModel):
