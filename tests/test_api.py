@@ -48,6 +48,10 @@ def _make_test_api_key() -> ApiKey:
 def app():
     """Create a test FastAPI application (skip lifespan DB init)."""
     test_app = create_app(use_lifespan=False)
+    # Disable rate limiting for API endpoint tests; rate-limit logic
+    # is exercised separately in test_security.py.
+    if hasattr(test_app.state, "limiter") and test_app.state.limiter:
+        test_app.state.limiter.enabled = False
     return test_app
 
 
@@ -69,9 +73,23 @@ def client(app):
 
     app.dependency_overrides[get_db_session] = override_db
     app.dependency_overrides[get_api_key] = override_api_key
+
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
+
     app.dependency_overrides.clear()
+
+    # Wipe rate limit state between tests so /health does not stay throttled
+    if hasattr(app.state, "limiter") and app.state.limiter:
+        try:
+            app.state.limiter.reset()
+        except Exception:
+            pass
+        try:
+            storage = app.state.limiter._storage
+            storage.reset()
+        except Exception:
+            pass
 
 
 @pytest.fixture
@@ -100,47 +118,62 @@ class TestHealthCheck:
 class TestIngestAPI:
     @patch(f"{_ROUTES_INGEST}.get_ingestion_agent")
     def test_ingest_file(self, mock_get_agent, client):
-        mock_agent = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "file_path": "/tmp/test.pdf",
-            "document_id": "doc-1",
-            "status": "completed",
-            "chunks_created": 5,
-            "vectors_stored": 5,
-            "tags_applied": 2,
-            "error_message": None,
-            "duration_ms": 100,
-        }
-        mock_agent.ingest_file = AsyncMock(return_value=mock_result)
-        mock_get_agent.return_value = mock_agent
+        import pathlib
 
-        resp = client.post("/api/v1/ingest/file", json={"file_path": "/tmp/test.pdf"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["document_id"] == "doc-1"
-        assert data["chunks_created"] == 5
+        tmp_file = pathlib.Path("/tmp/test.pdf")
+        tmp_file.write_text("test")
+        try:
+            mock_agent = MagicMock()
+            mock_result = MagicMock()
+            mock_result.model_dump.return_value = {
+                "file_path": str(tmp_file),
+                "document_id": "doc-1",
+                "status": "completed",
+                "chunks_created": 5,
+                "vectors_stored": 5,
+                "tags_applied": 2,
+                "error_message": None,
+                "duration_ms": 100,
+            }
+            mock_agent.ingest_file = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            resp = client.post("/api/v1/ingest/file", json={"file_path": str(tmp_file)})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["document_id"] == "doc-1"
+            assert data["chunks_created"] == 5
+        finally:
+            tmp_file.unlink(missing_ok=True)
 
     @patch(f"{_ROUTES_INGEST}.get_ingestion_agent")
     def test_ingest_directory(self, mock_get_agent, client):
-        mock_agent = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "total": 3,
-            "succeeded": 2,
-            "skipped": 1,
-            "failed": 0,
-            "results": [],
-            "duration_ms": 500,
-        }
-        mock_agent.ingest_directory = AsyncMock(return_value=mock_result)
-        mock_get_agent.return_value = mock_agent
+        import pathlib
 
-        resp = client.post("/api/v1/ingest/directory", json={"directory": "/tmp/docs"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["total"] == 3
-        assert data["succeeded"] == 2
+        tmp_dir = pathlib.Path("/tmp/grimoire_test_dir")
+        tmp_dir.mkdir(exist_ok=True)
+        try:
+            mock_agent = MagicMock()
+            mock_result = MagicMock()
+            mock_result.model_dump.return_value = {
+                "total": 3,
+                "succeeded": 2,
+                "skipped": 1,
+                "failed": 0,
+                "results": [],
+                "duration_ms": 500,
+            }
+            mock_agent.ingest_directory = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            resp = client.post("/api/v1/ingest/directory", json={"directory": str(tmp_dir)})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total"] == 3
+            assert data["succeeded"] == 2
+        finally:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 # =============================================================================

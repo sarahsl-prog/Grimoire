@@ -164,34 +164,51 @@ class GoogleDriveAdapter(StorageAdapter):
             raise AuthenticationError(f"Failed to read credentials file: {e}") from e
 
     async def _load_tokens(self) -> dict[str, Any]:
-        """Load tokens from the token store.
+        """Load tokens from the token store, decrypting if necessary.
 
-        Returns:
-            Dictionary with access_token, refresh_token, and expires_at.
+        Plain JSON is tried first for backward compatibility; if that fails,
+        the file is treated as an encrypted payload and decrypted.
         """
         token_path = Path(self.config.token_store).expanduser()
         if token_path.exists():
             try:
-                with open(token_path, encoding="utf-8") as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        return data
-            except (json.JSONDecodeError, OSError) as e:
+                raw = token_path.read_text(encoding="utf-8")
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    from grimoire.utils.token_crypto import decrypt_tokens
+                    data = decrypt_tokens(raw)
+                if isinstance(data, dict):
+                    return data
+            except Exception as e:
                 logger.warning(f"Failed to load tokens from {token_path}: {e}")
         return {}
 
     async def _save_tokens(self, tokens: dict[str, Any]) -> None:
-        """Save tokens to the token store.
+        """Save tokens to the token store, encrypting when possible.
 
-        Args:
-            tokens: Token dictionary to save.
+        Falls back to plain JSON if the ``cryptography`` library is missing,
+        emitting a loud warning so operators know tokens are not at-rest
+        encrypted.
         """
         token_path = Path(self.config.token_store).expanduser()
         token_path.parent.mkdir(parents=True, exist_ok=True)
+
+        encrypted = False
         try:
-            with open(token_path, "w", encoding="utf-8") as f:
-                json.dump(tokens, f, indent=2)
-            os.chmod(token_path, 0o600)  # Restrict permissions
+            from grimoire.utils.token_crypto import encrypt_tokens, TokenCryptoError
+            payload = encrypt_tokens(tokens)
+            encrypted = True
+        except TokenCryptoError:
+            logger.warning(
+                "Token encryption unavailable (cryptography not installed?). "
+                "Saving tokens as plain JSON — install cryptography to secure tokens at rest."
+            )
+            payload = json.dumps(tokens, indent=2)
+
+        try:
+            token_path.write_text(payload, encoding="utf-8")
+            os.chmod(token_path, 0o600)
         except OSError as e:
             logger.error(f"Failed to save tokens to {token_path}: {e}")
             raise AuthenticationError(f"Failed to save tokens: {e}") from e
