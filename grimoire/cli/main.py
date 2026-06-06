@@ -57,6 +57,7 @@ from grimoire.cli.query import ask, search
 from grimoire.cli.status import cache_group, status
 from grimoire.cli.watch import watch
 from grimoire.cli.wiki import wiki
+from grimoire.cli.mcp import mcp
 
 cli.add_command(ingest)
 cli.add_command(watch)
@@ -73,6 +74,7 @@ cli.add_command(docs)
 cli.add_command(wiki)
 cli.add_command(keys)
 cli.add_command(migrate)
+cli.add_command(mcp)
 
 
 def main() -> None:
