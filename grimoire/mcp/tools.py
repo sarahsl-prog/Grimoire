@@ -9,8 +9,7 @@ for HTTP clients.
 Tier-based access control:
 - READ  (rdl): search, ask, get, list, status, read-only queries
 - DEV   (dvl): everything READ has + ingest, generate, create, watch start
-- AGENT (agt): everything DEV has + delete, watch stop
-"""
+- AGENT (agt): everything DEV has + delete
 
 from __future__ import annotations
 
