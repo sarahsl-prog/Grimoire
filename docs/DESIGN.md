@@ -29,8 +29,9 @@ This document outlines the complete redesign of Grimoire from a minimal 2-file R
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                   CLI / API Layer                │
-│         (Click CLI + FastAPI REST API)           │
+│              CLI / API / MCP Layer                 │
+│         (Click CLI + FastAPI REST API +          │
+│          Model Context Protocol server)            │
 ├─────────────────────────────────────────────────┤
 │                  Agent Layer                     │
 │   (LangChain Deep Agents - prebuilt tools,      │
@@ -66,6 +67,7 @@ This document outlines the complete redesign of Grimoire from a minimal 2-file R
 |-------|------------|-----------|
 | **CLI** | Click | Standard Python CLI framework, composable commands |
 | **API** | FastAPI | Async, high-performance, auto-docs, background tasks |
+| **MCP** | **mcp (Model Context Protocol)** | FastMCP with stdio + SSE transports; tier-gated tools for AI assistant integration |
 | **Agent Orchestration** | **LangChain Deep Agents** | Batteries-included agent architecture, automatic context compression, virtual filesystem, subagent spawning |
 | **LLM** | Ollama (any model) | Local-first, model-agnostic |
 | **Embeddings** | sentence-transformers (configurable, default: all-mpnet-base-v2) | Higher quality than all-MiniLM, still efficient |
@@ -999,6 +1001,13 @@ grimoire/
 │   │   └── watch.py
 │   └── schemas.py                 # Pydantic models for API
 │
+├── mcp/                           # Model Context Protocol server
+│   ├── __init__.py
+│   ├── server.py                  # FastMCP server factory
+│   ├── tools.py                   # Tier-gated MCP tool definitions
+│   ├── auth_stdio.py              # stdio auth + tier enforcement
+│   └── router.py                  # ASGI mount + SSE auth middleware
+│
 ├── agents/                        # LangChain Deep Agents
 │   ├── __init__.py
 │   ├── base.py                    # Shared agent utilities
@@ -1244,6 +1253,21 @@ grimoire cache clear                    # Clear query cache
 grimoire cache stats                    # Show cache metrics
 grimoire reindex 42                     # Reprocess document
 grimoire migrate --to qdrant            # Future: vector store migration
+```
+
+### MCP Usage Examples
+
+```bash
+# Start MCP server in stdio mode (for Claude Desktop, Cursor, etc.)
+GRIMOIRE_API_KEY=grim_agt_yourkey uv run grimoire mcp --stdio
+
+# Start standalone SSE server on port 8002
+GRIMOIRE_API_KEY=grim_agt_yourkey uv run grimoire mcp --sse --port 8002
+
+# Or use the SSE endpoint built into the API server (mounted at /mcp)
+curl -N http://localhost:8001/mcp/sse \
+  -H "X-API-Key: grim_agt_yourkey" \
+  -H "Accept: text/event-stream"
 ```
 
 ---

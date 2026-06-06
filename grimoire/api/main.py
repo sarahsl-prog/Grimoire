@@ -64,6 +64,10 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     app.include_router(api_keys_router, prefix="/api/v1")
 
+    # MCP SSE server mounted at /mcp
+    from grimoire.mcp.router import mount_mcp
+    mount_mcp(app, path="/mcp")
+
     limiter = app.state.limiter
 
     @app.get("/health")

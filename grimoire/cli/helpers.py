@@ -157,6 +157,21 @@ def build_content_gen_agent() -> Any:
     )
 
 
+def build_watcher() -> Any:
+    """Create a WatcherAgent from current settings."""
+    from grimoire.agents.watcher import WatcherAgent
+    from grimoire.storage.watch_manager import WatchManager
+
+    settings = get_settings()
+    watch_manager = WatchManager()
+    ingestion_agent = build_ingestion_agent()
+    return WatcherAgent(
+        watch_manager=watch_manager,
+        ingestion_agent=ingestion_agent,
+        db_session_factory=get_db_context,
+    )
+
+
 def build_wiki_agent() -> Any:
     """Build a WikiAgent from current settings."""
     from grimoire.agents.wiki import WikiAgent
