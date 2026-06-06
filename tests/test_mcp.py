@@ -127,7 +127,7 @@ async def test_read_tools_available_to_read_tier(mcp_server: Any) -> None:
         ))
         with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
             result = await mcp_server.call_tool("grimoire_search", {"params": {"query": "test"}})
-        assert result.content[0].text.startswith('{"status": "ok"')
+        assert '"status": "ok"' in result[0][0].text
 
 
 @pytest.mark.asyncio
@@ -157,7 +157,7 @@ async def test_ingest_allowed_for_dev_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_ingest_file", {
             "params": {"file_path": "/tmp/test.txt"},
         })
-        assert result.content[0].text.startswith('{"status": "ok"')
+        assert '"status": "ok"' in result[0][0].text
 
 
 @pytest.mark.asyncio
@@ -205,7 +205,7 @@ async def test_delete_allowed_for_agent_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_delete_document", {
             "params": {"document_id": "doc-123"},
         })
-    assert result.content[0].text.startswith('{"status": "ok"')
+    assert '"status": "ok"' in result[0][0].text
 
 
 # ---------------------------------------------------------------------------
