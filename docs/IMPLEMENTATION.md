@@ -668,6 +668,44 @@ Before starting phase N+1:
 
 ---
 
+## Appendix E: MCP Server Integration
+
+### Overview
+Grimoire exposes its full functionality via the Model Context Protocol (MCP) so that external AI assistants (Claude Desktop, Cursor, etc.) can query and manage the knowledge base natively.
+
+### Architecture
+- **FastMCP** (from `mcp>=1.8.0`) provides the server runtime
+- **14 tools** defined in `grimoire/mcp/tools.py`, each delegating to existing agents/repositories
+- **Tier-based access control**: `rdl` (read), `dvl` (dev), `agt` (agent)
+- **Two transports**:
+  - `stdio` – for local AI assistant processes (Claude Desktop)
+  - `SSE` – mounted at `/mcp` inside the existing FastAPI app
+
+### Files
+- `grimoire/mcp/server.py` – `create_mcp_server()` factory
+- `grimoire/mcp/tools.py` – tool definitions with Pydantic input models
+- `grimoire/mcp/auth_stdio.py` – stdio auth + `require_tier()` decorator
+- `grimoire/mcp/router.py` – ASGI mount + SSE auth middleware
+- `grimoire/cli/mcp.py` – CLI entry point (`grimoire mcp [--stdio|--sse]`)
+
+### Authentication
+- **stdio**: `GRIMOIRE_API_KEY` env var validated at startup
+- **SSE**: `X-API-Key` header validated by middleware before proxying to `mcp_server.sse_app()`
+- Both use existing `authenticate_api_key()` + bcrypt hashing
+
+### Tier Gating
+| Tier | Tools |
+|------|-------|
+| `rdl` | search, ask, get_document, list_documents, list_categories, watch_status, pg_query, status |
+| `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start |
+| `agt` | Dev + delete_document |
+
+### Testing
+- `tests/test_mcp.py` covers: tool registration, tier enforcement, HTTP/SSE mount, auth
+- Run: `uv run pytest tests/test_mcp.py -v`
+
+---
+
 **End of Implementation Plan**
 
 ---

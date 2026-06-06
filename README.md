@@ -13,6 +13,7 @@ Grimoire is a production-ready, modular knowledge management platform supporting
 - ☁️ **Cloud storage** - Local, USB, Google Drive, OneDrive with hybrid polling
 - ⚡ **High performance** - Async I/O, Redis caching, configurable embedding models
 - 🔒 **Privacy-first** - Local LLM via Ollama, offline capable
+- 🧩 **MCP server** - Model Context Protocol (stdio + SSE) with tier-gated tool access for AI assistant integration
 
 ## Quick Start
 
@@ -70,6 +71,9 @@ Grimoire is a production-ready, modular knowledge management platform supporting
 
    # API server
    uv run uvicorn grimoire.api.main:app --reload --port 8001
+
+   # MCP server (stdio mode for AI assistants like Claude Desktop)
+   GRIMOIRE_API_KEY=your-key-here uv run grimoire mcp --stdio
    ```
 
 ### Development
@@ -240,11 +244,37 @@ curl -X POST http://localhost:8001/api/v1/generate \
 curl http://localhost:8001/api/v1/categories
 ```
 
+### MCP (Model Context Protocol)
+
+Grimoire exposes its full functionality as an MCP server, allowing AI assistants (Claude, Cursor, etc.) to query and manage your knowledge base natively.
+
+**Available transports:**
+- **stdio** – run `grimoire mcp --stdio` and point your AI client at it (requires `GRIMOIRE_API_KEY` env var)
+- **SSE** – the API server mounts an MCP endpoint at `/mcp` (included automatically when you run `uvicorn grimoire.api.main:app`)
+
+**Authentication:** All MCP requests require an `X-API-Key` header (SSE) or a valid `GRIMOIRE_API_KEY` env var (stdio). API keys have tier-based access control:
+
+| Tier | Code: | Tools available |
+|------|------|----------------|
+| Read | `rdl` | search, ask, get_document, list_documents, list_categories, watch_status, pg_query, status |
+| Dev  | `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start |
+| Agent | `agt` | Dev + delete_document |
+
+```bash
+# List available tools via MCP
+npx @anthropic-ai/mcp-inspector node build/index.js --method tools/list
+
+# Example: search via MCP (SSE transport)
+curl -N http://localhost:8001/mcp/sse \
+  -H "X-API-Key: grim_agt_yourkey" \
+  -H "Accept: text/event-stream"
+```
+
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                   CLI / API Layer                │
+│              CLI / API / MCP Layer                 │
 ├─────────────────────────────────────────────────┤
 │                  Agent Layer                     │
 │    (Ingestion | Watcher | Query | Content Gen)  │
