@@ -64,6 +64,16 @@ def _err(message: str, hint: Optional[str] = None) -> str:
     return json.dumps(payload, indent=2)
 
 
+_mcp_watcher: Any = None
+
+
+def _get_mcp_watcher() -> Any:
+    global _mcp_watcher
+    if _mcp_watcher is None:
+        _mcp_watcher = build_watcher()
+    return _mcp_watcher
+
+
 # ---------------------------------------------------------------------------
 # Pydantic input models
 # ---------------------------------------------------------------------------
@@ -457,7 +467,7 @@ async def grimoire_create_category(params: CreateCategoryInput, ctx: Context) ->
 async def grimoire_watch_start(params: WatchStartInput, ctx: Context) -> str:
     """Start watching a path for changes.  Requires DEV tier or higher."""
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
-    watcher = build_watcher()
+    watcher = _get_mcp_watcher()
     watch_id = await watcher.watch(
         params.path,
         backend=params.backend,
@@ -468,7 +478,7 @@ async def grimoire_watch_start(params: WatchStartInput, ctx: Context) -> str:
 
 async def grimoire_watch_status(ctx: Context) -> str:
     """Get watcher statistics."""
-    watcher = build_watcher()
+    watcher = _get_mcp_watcher()
     stats = watcher.get_status()
     return _ok({
         "active_watches": stats.active_watches,
@@ -494,26 +504,27 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
         if doc is None:
             return _err(f"Document '{params.document_id}' not found.")
 
-        # Vector cleanup
-        try:
-            try:
-                from grimoire.services.vector_store import get_vector_store_service
-                settings = get_settings()
-                vector_store = get_vector_store_service(settings)
-                vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
-                if vector_ids:
-                    await vector_store.delete_vectors(vector_ids)
-            except ImportError:
-                logger.debug(f"Vector store service not available, skipping cleanup for {params.document_id}")
-        except Exception as e:
-            logger.warning(f"Failed to delete vectors for {params.document_id}: {e}")
-
+        # Delete DB row first; commit before touching ChromaDB.
         await db.delete(doc)
         try:
             await db.commit()
         except Exception:
             await db.rollback()
             return _err("Failed to delete document.")
+
+        # Vector cleanup after durable commit — best-effort.
+        # Failure leaves orphaned vectors (search noise) but document is fully deleted.
+        try:
+            from grimoire.services.vector_store import get_vector_store_service
+            settings = get_settings()
+            vector_store = get_vector_store_service(settings)
+            vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
+            if vector_ids:
+                await vector_store.delete_vectors(vector_ids)
+        except ImportError:
+            logger.debug(f"Vector store service not available, skipping cleanup for {params.document_id}")
+        except Exception as e:
+            logger.warning(f"Vectors not cleaned up for {params.document_id}: {e}. May require manual ChromaDB cleanup.")
 
     return _ok({"deleted": params.document_id})
 
