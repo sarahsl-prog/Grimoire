@@ -206,9 +206,12 @@ class PgQueryInput(BaseModel):
     @field_validator("sql")
     @classmethod
     def _must_be_select(cls, v: str) -> str:
+        import re
         stripped = v.strip().upper()
-        if not stripped.startswith("SELECT"):
-            raise ValueError("Only SELECT queries are permitted.")
+        if not (stripped.startswith("SELECT") or stripped.startswith("WITH")):
+            raise ValueError("Only SELECT queries (including WITH ... SELECT CTEs) are permitted.")
+        if re.search(r"\bSELECT\b.*\bINTO\b", stripped, re.DOTALL):
+            raise ValueError("SELECT INTO is not permitted.")
         return v
 
 
@@ -535,9 +538,8 @@ async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     from grimoire.db.session import get_db_manager
     from sqlalchemy import text
 
-    sql = params.sql.rstrip(";")
-    if "LIMIT" not in sql.upper():
-        sql = f"{sql} LIMIT {params.limit}"
+    inner = params.sql.rstrip(";")
+    sql = f"SELECT * FROM ({inner}) AS _grimoire_q LIMIT {params.limit}"
 
     manager = get_db_manager()
     async with manager.session() as db:
