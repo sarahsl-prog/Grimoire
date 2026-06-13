@@ -32,13 +32,19 @@ async def _grimoire_lifespan(app: FastMCP) -> AsyncGenerator[dict[str, Any], Non
     await initialize_db(settings.database.url, pool_size=settings.database.pool_size)
     logger.info("MCP lifespan: database initialised")
 
-    # If an API key is present in the environment, validate it eagerly.
-    # This is primarily for stdio mode; HTTP/SSE validates per-request.
-    try:
-        api_key = await authenticate_stdio_key()
-        set_current_api_key(api_key)
-    except RuntimeError as e:
-        logger.info(f"MCP lifespan: no stdio key authenticated ({e})")
+    # Validate GRIMOIRE_API_KEY eagerly if set (primarily for stdio mode).
+    # HTTP/SSE validates per-request in the ASGI middleware instead.
+    import os as _os
+    _raw_key = _os.getenv("GRIMOIRE_API_KEY", "")
+    if _raw_key:
+        try:
+            api_key = await authenticate_stdio_key(_raw_key)
+            set_current_api_key(api_key)
+        except RuntimeError as e:
+            logger.error(f"MCP lifespan: GRIMOIRE_API_KEY is set but invalid: {e}")
+            raise
+    else:
+        logger.info("MCP lifespan: no GRIMOIRE_API_KEY set (SSE validates per-request)")
 
     try:
         yield {}
@@ -58,7 +64,6 @@ def create_mcp_server() -> FastMCP:
     mcp.add_tool(tools.grimoire_list_documents, name="grimoire_list_documents")
     mcp.add_tool(tools.grimoire_list_categories, name="grimoire_list_categories")
     mcp.add_tool(tools.grimoire_watch_status, name="grimoire_watch_status")
-    mcp.add_tool(tools.grimoire_pg_query, name="grimoire_pg_query")
     mcp.add_tool(tools.grimoire_status, name="grimoire_status")
 
     # Register write tools (DEV + AGENT tiers)
@@ -67,6 +72,7 @@ def create_mcp_server() -> FastMCP:
     mcp.add_tool(tools.grimoire_generate, name="grimoire_generate")
     mcp.add_tool(tools.grimoire_create_category, name="grimoire_create_category")
     mcp.add_tool(tools.grimoire_watch_start, name="grimoire_watch_start")
+    mcp.add_tool(tools.grimoire_pg_query, name="grimoire_pg_query")  # DEV+ only
 
     # Register destructive tools (AGENT tier only)
     mcp.add_tool(tools.grimoire_delete_document, name="grimoire_delete_document")

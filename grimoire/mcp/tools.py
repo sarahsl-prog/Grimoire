@@ -10,6 +10,7 @@ Tier-based access control:
 - READ  (rdl): search, ask, get, list, status, read-only queries
 - DEV   (dvl): everything READ has + ingest, generate, create, watch start
 - AGENT (agt): everything DEV has + delete
+"""
 
 from __future__ import annotations
 
@@ -61,6 +62,16 @@ def _err(message: str, hint: Optional[str] = None) -> str:
     if hint:
         payload["hint"] = hint
     return json.dumps(payload, indent=2)
+
+
+_mcp_watcher: Any = None
+
+
+def _get_mcp_watcher() -> Any:
+    global _mcp_watcher
+    if _mcp_watcher is None:
+        _mcp_watcher = build_watcher()
+    return _mcp_watcher
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +206,12 @@ class PgQueryInput(BaseModel):
     @field_validator("sql")
     @classmethod
     def _must_be_select(cls, v: str) -> str:
+        import re
         stripped = v.strip().upper()
-        if not stripped.startswith("SELECT"):
-            raise ValueError("Only SELECT queries are permitted.")
+        if not (stripped.startswith("SELECT") or stripped.startswith("WITH")):
+            raise ValueError("Only SELECT queries (including WITH ... SELECT CTEs) are permitted.")
+        if re.search(r"\bSELECT\b.*\bINTO\b", stripped, re.DOTALL):
+            raise ValueError("SELECT INTO is not permitted.")
         return v
 
 
@@ -456,7 +470,7 @@ async def grimoire_create_category(params: CreateCategoryInput, ctx: Context) ->
 async def grimoire_watch_start(params: WatchStartInput, ctx: Context) -> str:
     """Start watching a path for changes.  Requires DEV tier or higher."""
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
-    watcher = build_watcher()
+    watcher = _get_mcp_watcher()
     watch_id = await watcher.watch(
         params.path,
         backend=params.backend,
@@ -467,7 +481,7 @@ async def grimoire_watch_start(params: WatchStartInput, ctx: Context) -> str:
 
 async def grimoire_watch_status(ctx: Context) -> str:
     """Get watcher statistics."""
-    watcher = build_watcher()
+    watcher = _get_mcp_watcher()
     stats = watcher.get_status()
     return _ok({
         "active_watches": stats.active_watches,
@@ -493,20 +507,7 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
         if doc is None:
             return _err(f"Document '{params.document_id}' not found.")
 
-        # Vector cleanup
-        try:
-            try:
-                from grimoire.services.vector_store import get_vector_store_service
-                settings = get_settings()
-                vector_store = get_vector_store_service(settings)
-                vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
-                if vector_ids:
-                    await vector_store.delete_vectors(vector_ids)
-            except ImportError:
-                logger.debug(f"Vector store service not available, skipping cleanup for {params.document_id}")
-        except Exception as e:
-            logger.warning(f"Failed to delete vectors for {params.document_id}: {e}")
-
+        # Delete DB row first; commit before touching ChromaDB.
         await db.delete(doc)
         try:
             await db.commit()
@@ -514,17 +515,31 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
             await db.rollback()
             return _err("Failed to delete document.")
 
+        # Vector cleanup after durable commit — best-effort.
+        # Failure leaves orphaned vectors (search noise) but document is fully deleted.
+        try:
+            from grimoire.services.vector_store import get_vector_store_service
+            settings = get_settings()
+            vector_store = get_vector_store_service(settings)
+            vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
+            if vector_ids:
+                await vector_store.delete_vectors(vector_ids)
+        except ImportError:
+            logger.debug(f"Vector store service not available, skipping cleanup for {params.document_id}")
+        except Exception as e:
+            logger.warning(f"Vectors not cleaned up for {params.document_id}: {e}. May require manual ChromaDB cleanup.")
+
     return _ok({"deleted": params.document_id})
 
 
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     """Run a read-only SELECT query against the Postgres database."""
+    require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
     from grimoire.db.session import get_db_manager
     from sqlalchemy import text
 
-    sql = params.sql.rstrip(";")
-    if "LIMIT" not in sql.upper():
-        sql = f"{sql} LIMIT {params.limit}"
+    inner = params.sql.rstrip(";")
+    sql = f"SELECT * FROM ({inner}) AS _grimoire_q LIMIT {params.limit}"
 
     manager = get_db_manager()
     async with manager.session() as db:

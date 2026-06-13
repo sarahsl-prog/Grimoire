@@ -39,12 +39,10 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
         """ASGI middleware that injects API key auth."""
         if scope["type"] == "http":
             # Extract headers from ASGI scope
-            headers = dict(scope.get("headers", []))
-            raw_key = None
-            for k, v in headers.items():
-                if k.lower() == b"x-api-key":
-                    raw_key = v.decode()
-                    break
+            raw_key = next(
+                (v.decode() for k, v in scope.get("headers", []) if k.lower() == b"x-api-key"),
+                None,
+            )
 
             if not raw_key:
                 await send({
@@ -78,6 +76,8 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
 
                 # Store in scope state for downstream tools
                 scope.setdefault("state", {})["api_key"] = api_key
+                from .auth_stdio import set_current_api_key as _set_key
+                _set_key(api_key)
 
         await mcp_app(scope, receive, send)
 

@@ -230,3 +230,97 @@ def test_mcp_accepts_valid_api_key(client: TestClient) -> None:
     """Requests to /mcp with a valid X-API-Key pass auth."""
     response = client.get("/mcp/sse", headers={"X-API-Key": "grim_agt_testkey123"})
     assert response.status_code != 401
+
+
+# ---------------------------------------------------------------------------
+# pg_query SQL validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM documents",
+        "select id, title from documents",
+        "  SELECT 1  ",
+        "WITH recent AS (SELECT id FROM documents) SELECT * FROM recent",
+        "with recent as (select id from documents) select * from recent",
+    ],
+)
+def test_pg_query_accepts_read_only_queries(sql: str) -> None:
+    """SELECT and WITH ... SELECT CTE queries are accepted."""
+    from grimoire.mcp.tools import PgQueryInput
+
+    model = PgQueryInput(sql=sql)
+    assert model.sql.strip() == sql.strip()
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "DELETE FROM documents",
+        "UPDATE documents SET title = 'x'",
+        "INSERT INTO documents VALUES (1)",
+        "DROP TABLE documents",
+        "TRUNCATE documents",
+    ],
+)
+def test_pg_query_rejects_non_select(sql: str) -> None:
+    """Non-SELECT/WITH statements are rejected."""
+    from pydantic import ValidationError
+
+    from grimoire.mcp.tools import PgQueryInput
+
+    with pytest.raises(ValidationError):
+        PgQueryInput(sql=sql)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * INTO new_table FROM documents",
+        "select id into backup from documents",
+    ],
+)
+def test_pg_query_rejects_select_into(sql: str) -> None:
+    """SELECT INTO (table creation) is rejected even though it starts with SELECT."""
+    from pydantic import ValidationError
+
+    from grimoire.mcp.tools import PgQueryInput
+
+    with pytest.raises(ValidationError):
+        PgQueryInput(sql=sql)
+
+
+@pytest.mark.asyncio
+async def test_pg_query_wraps_query_with_limit() -> None:
+    """grimoire_pg_query wraps the user SQL in a bounded subquery."""
+    from grimoire.mcp.tools import grimoire_pg_query, PgQueryInput
+
+    captured: dict[str, Any] = {}
+
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(return_value=iter([]))
+
+    @asynccontextmanager
+    async def _ctx():
+        yield mock_db
+
+    mock_manager = MagicMock()
+    mock_manager.session = _ctx
+
+    def _fake_text(sql: str):
+        captured["sql"] = sql
+        return sql
+
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+
+    with patch("grimoire.db.session.get_db_manager", return_value=mock_manager), \
+         patch("sqlalchemy.text", side_effect=_fake_text):
+        await grimoire_pg_query(
+            PgQueryInput(sql="SELECT id FROM documents", limit=10),
+            ctx=MagicMock(),
+        )
+
+    assert "_grimoire_q" in captured["sql"]
+    assert "LIMIT 10" in captured["sql"]
