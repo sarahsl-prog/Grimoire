@@ -10,6 +10,7 @@ Tier-based access control:
 - READ  (rdl): search, ask, get, list, status, read-only queries
 - DEV   (dvl): everything READ has + ingest, generate, create, watch start
 - AGENT (agt): everything DEV has + delete
+"""
 
 from __future__ import annotations
 
@@ -519,6 +520,7 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
 
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     """Run a read-only SELECT query against the Postgres database."""
+    require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
     from grimoire.db.session import get_db_manager
     from sqlalchemy import text
 
