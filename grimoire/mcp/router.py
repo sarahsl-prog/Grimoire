@@ -6,19 +6,19 @@ the main FastAPI app at ``/mcp``.
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from typing import Any
 
-from grimoire.api.auth import get_api_key
-from grimoire.db.models import ApiKey
+from fastapi import FastAPI
+from starlette.types import Receive, Scope, Send
 
 from .server import create_mcp_server
 
 # Lazy singleton — created on first access so that settings are already
 # resolved when the app imports this module.
-_mcp_asgi_app = None
+_mcp_asgi_app: Any = None
 
 
-def get_mcp_app():
+def get_mcp_app() -> Any:
     """Return the cached FastMCP ASGI application."""
     global _mcp_asgi_app
     if _mcp_asgi_app is None:
@@ -35,7 +35,7 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
     """
     mcp_app = get_mcp_app()
 
-    async def auth_middleware(scope, receive, send):
+    async def auth_middleware(scope: Scope, receive: Receive, send: Send) -> None:
         """ASGI middleware that injects API key auth."""
         if scope["type"] == "http":
             # Extract headers from ASGI scope
@@ -57,10 +57,24 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
                 return
 
             # Validate key via existing auth logic
+            from grimoire.api.auth import authenticate_api_key
             from grimoire.db.session import get_db_manager
-            db_mgr = get_db_manager()
+
+            try:
+                db_mgr = get_db_manager()
+            except RuntimeError:
+                await send({
+                    "type": "http.response.start",
+                    "status": 503,
+                    "headers": [[b"content-type", b"application/json"]],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": b'{"detail": "Database not initialized."}',
+                })
+                return
+
             async with db_mgr.session() as db:
-                from grimoire.api.auth import authenticate_api_key
                 api_key = await authenticate_api_key(raw_key, db)
                 if api_key is None:
                     await send({

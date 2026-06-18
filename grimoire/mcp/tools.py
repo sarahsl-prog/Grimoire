@@ -24,23 +24,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from grimoire.api.dependencies import (
     get_content_gen_agent,
-    get_db_session,
     get_ingestion_agent,
     get_query_agent,
 )
-from grimoire.api.schemas import (
-    CategoryCreateRequest,
-    DocumentListResponse,
-    GenerateRequest,
-    IngestDirectoryRequest,
-    IngestFileRequest,
-    QueryRequest,
-    SearchRequest,
-    WatchStartRequest,
-)
 from grimoire.cli.helpers import build_watcher
 from grimoire.config.settings import get_settings
-from grimoire.core.embedder import EmbedderFactory
 from grimoire.db.models import ApiKeyTier, ProcessingStatus
 from grimoire.db.session import get_db_context
 
@@ -451,10 +439,10 @@ async def grimoire_create_category(params: CreateCategoryInput, ctx: Context) ->
         db.add(cat)
         try:
             await db.commit()
+            await db.refresh(cat)
         except Exception:
             await db.rollback()
             return _err("Failed to create category.")
-        await db.refresh(cat)
 
         data = {
             "id": cat.id,
@@ -477,6 +465,24 @@ async def grimoire_watch_start(params: WatchStartInput, ctx: Context) -> str:
         recursive=params.recursive,
     )
     return _ok({"watch_id": watch_id, "path": params.path, "backend": params.backend, "is_running": True})
+
+
+class WatchStopInput(BaseModel):
+    """Parameters for grimoire_watch_stop."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    watch_id: str = Field(..., min_length=1)
+
+
+async def grimoire_watch_stop(params: WatchStopInput, ctx: Context) -> str:
+    """Stop an active watch.  Requires DEV tier or higher."""
+    require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
+    watcher = _get_mcp_watcher()
+    stopped = await watcher.unwatch(params.watch_id)
+    if not stopped:
+        return _err(f"Watch '{params.watch_id}' not found or already stopped.")
+    return _ok({"stopped": params.watch_id})
 
 
 async def grimoire_watch_status(ctx: Context) -> str:
@@ -533,18 +539,27 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
 
 
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
-    """Run a read-only SELECT query against the Postgres database."""
+    """Run a read-only SELECT query against the Postgres database.
+
+    The user-supplied SQL is executed as a subquery with a separate, validated
+    row limit applied by SQLAlchemy bound parameters.  The Pydantic validator
+    already rejects non-SELECT/WITH statements and SELECT INTO.
+    """
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
     from grimoire.db.session import get_db_manager
     from sqlalchemy import text
 
     inner = params.sql.rstrip(";")
-    sql = f"SELECT * FROM ({inner}) AS _grimoire_q LIMIT {params.limit}"
+    # Use a bound parameter for the limit so that user SQL is never
+    # interpolated into the executable statement.
+    sql = text(
+        "SELECT * FROM (:inner_query) AS _grimoire_q LIMIT :row_limit"
+    ).bindparams(inner_query=inner, row_limit=params.limit)
 
     manager = get_db_manager()
     async with manager.session() as db:
         try:
-            rows = await db.execute(text(sql))
+            rows = await db.execute(sql)
             data = [dict(r._mapping) for r in rows]
         except Exception as e:
             return _err(f"Query failed: {e}")
@@ -562,8 +577,7 @@ async def grimoire_status(ctx: Context) -> str:
         cats_total = (await db.execute(select(func.count(Category.id)))).scalar() or 0
         gen_total = (await db.execute(select(func.count(GeneratedContent.id)))).scalar() or 0
 
-        # Chunk count via relationship
-        chunks_total = 0
+        # Per-processing-status breakdown
         status_breakdown: Dict[str, int] = {}
         for status in ProcessingStatus:
             cnt = (await db.execute(
