@@ -260,8 +260,54 @@ Grimoire exposes its full functionality as an MCP server, allowing AI assistants
 | Dev  | `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start, pg_query |
 | Agent | `agt` | Dev + delete_document |
 
+**Create an API key for your MCP client:**
+
 ```bash
-# List available tools via MCP
+# Full access (recommended for Claude Desktop / Cursor)
+grimoire key create --tier agent --name my-assistant
+
+# Read-only access
+grimoire key create --tier read --name read-only-bot
+```
+
+**Connecting clients:**
+
+- **stdio** – set `GRIMOIRE_API_KEY` and run `grimoire mcp --stdio`.
+- **SSE via API server** – point your client at `http://localhost:8001/mcp/sse` with `X-API-Key`.
+- **Standalone SSE** – `grimoire mcp --sse --port 8100`.
+
+Example Claude Desktop config (`~/.config/claude/claude_desktop_config.json` or `claude_desktop_config.json` on Windows):
+
+```json
+{
+  "mcpServers": {
+    "grimoire": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/path/to/Grimoire",
+        "grimoire",
+        "mcp",
+        "--stdio"
+      ],
+      "env": {
+        "GRIMOIRE_API_KEY": "grim_agt_yourkeyhere"
+      }
+    }
+  }
+}
+```
+
+Example Cursor settings (Settings → MCP → Add new MCP server):
+
+- **Name:** `grimoire`
+- **Type:** `SSE`
+- **URL:** `http://localhost:8001/mcp/sse`
+- **Headers:** `X-API-Key: grim_agt_yourkeyhere`
+
+```bash
+# List available tools via MCP inspector
 npx @anthropic-ai/mcp-inspector node build/index.js --method tools/list
 
 # Example: search via MCP (SSE transport)
