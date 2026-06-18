@@ -467,6 +467,24 @@ async def grimoire_watch_start(params: WatchStartInput, ctx: Context) -> str:
     return _ok({"watch_id": watch_id, "path": params.path, "backend": params.backend, "is_running": True})
 
 
+class WatchStopInput(BaseModel):
+    """Parameters for grimoire_watch_stop."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    watch_id: str = Field(..., min_length=1)
+
+
+async def grimoire_watch_stop(params: WatchStopInput, ctx: Context) -> str:
+    """Stop an active watch.  Requires DEV tier or higher."""
+    require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
+    watcher = _get_mcp_watcher()
+    stopped = await watcher.unwatch(params.watch_id)
+    if not stopped:
+        return _err(f"Watch '{params.watch_id}' not found or already stopped.")
+    return _ok({"stopped": params.watch_id})
+
+
 async def grimoire_watch_status(ctx: Context) -> str:
     """Get watcher statistics."""
     watcher = _get_mcp_watcher()

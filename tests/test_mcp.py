@@ -136,6 +136,7 @@ async def test_server_creates_all_tools(mcp_server: Any) -> None:
         "grimoire_generate",
         "grimoire_create_category",
         "grimoire_watch_start",
+        "grimoire_watch_stop",
         "grimoire_delete_document",
     }
     assert expected <= names, f"Missing tools: {expected - names}"
@@ -417,6 +418,38 @@ async def test_watch_status_returns_stats(mcp_server: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_watch_stop_allowed_for_dev_tier(mcp_server: Any) -> None:
+    """DEV-tier key can stop a watch."""
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+
+    mock_watcher = MagicMock()
+    mock_watcher.unwatch = AsyncMock(return_value=True)
+
+    with patch("grimoire.mcp.tools._get_mcp_watcher", return_value=mock_watcher):
+        result = await mcp_server.call_tool("grimoire_watch_stop", {
+            "params": {"watch_id": "watch-1"},
+        })
+    assert '"status": "ok"' in result[0][0].text
+    assert "watch-1" in result[0][0].text
+
+
+@pytest.mark.asyncio
+async def test_watch_stop_returns_error_when_not_found(mcp_server: Any) -> None:
+    """grimoire_watch_stop returns error when watch_id is unknown."""
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+
+    mock_watcher = MagicMock()
+    mock_watcher.unwatch = AsyncMock(return_value=False)
+
+    with patch("grimoire.mcp.tools._get_mcp_watcher", return_value=mock_watcher):
+        result = await mcp_server.call_tool("grimoire_watch_stop", {
+            "params": {"watch_id": "missing"},
+        })
+    assert '"status": "error"' in result[0][0].text
+    assert "not found" in result[0][0].text
+
+
+@pytest.mark.asyncio
 async def test_pg_query_returns_error_on_failure(mcp_server: Any) -> None:
     """grimoire_pg_query returns a structured error when the DB query fails."""
     from grimoire.mcp.tools import grimoire_pg_query, PgQueryInput
@@ -620,24 +653,6 @@ async def test_delete_allowed_for_agent_tier(mcp_server: Any) -> None:
     assert '"status": "ok"' in result[0][0].text
 
 
-# ---------------------------------------------------------------------------
-# Category tool
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_category(mcp_server: Any) -> None:
-    """grimoire_create_category inserts a new category."""
-    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
-
-
-
-
-# ---------------------------------------------------------------------------
-# Category tool
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_create_category(mcp_server: Any) -> None:
     """grimoire_create_category inserts a new category."""
@@ -704,8 +719,6 @@ def test_mcp_requires_api_key(client: TestClient) -> None:
 
 def test_mcp_rejects_invalid_api_key(client: TestClient) -> None:
     """Requests to /mcp with an invalid X-API-Key are rejected when DB is initialized."""
-    from grimoire.db.session import initialize_db
-
     with patch("grimoire.db.session.initialize_db", new_callable=AsyncMock):
         response = client.get("/mcp/sse", headers={"X-API-Key": "grim_rdl_invalidkey"})
     # Without a real DB the middleware returns 503; the important check is that

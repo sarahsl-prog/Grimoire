@@ -49,6 +49,13 @@ async def _grimoire_lifespan(app: FastMCP) -> AsyncGenerator[dict[str, Any], Non
     try:
         yield {}
     finally:
+        try:
+            watcher = tools._get_mcp_watcher()
+            await watcher.stop_all()
+            logger.info("MCP lifespan: stopped active watchers")
+        except Exception as e:
+            # Watcher may never have been instantiated; log but don't fail shutdown.
+            logger.debug(f"MCP lifespan: watcher cleanup skipped: {e}")
         await close_db()
         logger.info("MCP lifespan: database closed")
 
@@ -72,6 +79,7 @@ def create_mcp_server() -> FastMCP:
     mcp.add_tool(tools.grimoire_generate, name="grimoire_generate")
     mcp.add_tool(tools.grimoire_create_category, name="grimoire_create_category")
     mcp.add_tool(tools.grimoire_watch_start, name="grimoire_watch_start")
+    mcp.add_tool(tools.grimoire_watch_stop, name="grimoire_watch_stop")
     mcp.add_tool(tools.grimoire_pg_query, name="grimoire_pg_query")  # DEV+ only
 
     # Register destructive tools (AGENT tier only)
