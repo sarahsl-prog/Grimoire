@@ -189,7 +189,7 @@ async def test_get_document_returns_doc(mcp_server: Any) -> None:
     mock_db.execute.return_value = mock_result
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
@@ -211,7 +211,7 @@ async def test_get_document_not_found(mcp_server: Any) -> None:
     mock_db.execute.return_value = mock_result
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
@@ -242,7 +242,7 @@ async def test_list_documents_returns_page(mcp_server: Any) -> None:
     mock_db.execute.return_value = mock_result
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
@@ -272,7 +272,7 @@ async def test_list_categories_returns_categories(mcp_server: Any) -> None:
     mock_db.execute.return_value = mock_result
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
@@ -292,7 +292,7 @@ async def test_status_returns_counts(mcp_server: Any) -> None:
     mock_db.execute.return_value = mock_result
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
@@ -458,7 +458,7 @@ async def test_pg_query_returns_error_on_failure(mcp_server: Any) -> None:
     mock_db.execute = AsyncMock(side_effect=RuntimeError("DB down"))
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     mock_manager = MagicMock()
@@ -539,7 +539,7 @@ async def test_pg_query_wraps_query_with_limit() -> None:
     mock_db.execute = AsyncMock(return_value=iter([]))
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     mock_manager = MagicMock()
@@ -643,7 +643,7 @@ async def test_delete_allowed_for_agent_tier(mcp_server: Any) -> None:
     mock_db.execute.return_value = mock_result
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
@@ -666,7 +666,7 @@ async def test_create_category(mcp_server: Any) -> None:
     mock_db.refresh = AsyncMock(return_value=None)
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
@@ -688,7 +688,7 @@ async def test_create_category_parent_not_found(mcp_server: Any) -> None:
     mock_db.execute.return_value = mock_result
 
     @asynccontextmanager
-    async def _ctx():
+    async def _ctx() -> Any:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):

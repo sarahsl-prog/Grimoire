@@ -6,16 +6,19 @@ the main FastAPI app at ``/mcp``.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import FastAPI
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .server import create_mcp_server
 
 # Lazy singleton — created on first access so that settings are already
 # resolved when the app imports this module.
-_mcp_asgi_app = None
+_mcp_asgi_app: Any = None
 
 
-def get_mcp_app():
+def get_mcp_app() -> Any:
     """Return the cached FastMCP ASGI application."""
     global _mcp_asgi_app
     if _mcp_asgi_app is None:
@@ -32,7 +35,7 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
     """
     mcp_app = get_mcp_app()
 
-    async def auth_middleware(scope, receive, send):
+    async def auth_middleware(scope: Scope, receive: Receive, send: Send) -> None:
         """ASGI middleware that injects API key auth."""
         if scope["type"] == "http":
             # Extract headers from ASGI scope
