@@ -256,8 +256,8 @@ Grimoire exposes its full functionality as an MCP server, allowing AI assistants
 
 | Tier | Code: | Tools available |
 |------|------|----------------|
-| Read | `rdl` | search, ask, get_document, list_documents, list_categories, watch_status, pg_query, status |
-| Dev  | `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start |
+| Read | `rdl` | search, ask, get_document, list_documents, list_categories, watch_status, status |
+| Dev  | `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start, pg_query |
 | Agent | `agt` | Dev + delete_document |
 
 ```bash
