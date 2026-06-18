@@ -137,7 +137,7 @@ async def test_ingest_requires_dev_tier(mcp_server: Any) -> None:
 
     with pytest.raises(ToolError) as exc_info:
         await mcp_server.call_tool("grimoire_ingest_file", {
-            "params": {"file_path": "/tmp/test.txt"},
+            "params": {"file_path": "/nonexistent/test.txt"},
         })
     text = str(exc_info.value)
     assert "requires API key tier" in text
@@ -152,10 +152,10 @@ async def test_ingest_allowed_for_dev_tier(mcp_server: Any) -> None:
     with patch("grimoire.mcp.tools.get_ingestion_agent") as mock_agent, \
          patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
         mock_agent.return_value.ingest_file = AsyncMock(return_value=MagicMock(
-            model_dump=lambda: {"file_path": "/tmp/test.txt", "status": "completed"},
+            model_dump=lambda: {"file_path": "/nonexistent/test.txt", "status": "completed"},
         ))
         result = await mcp_server.call_tool("grimoire_ingest_file", {
-            "params": {"file_path": "/tmp/test.txt"},
+            "params": {"file_path": "/nonexistent/test.txt"},
         })
         assert '"status": "ok"' in result[0][0].text
 
@@ -185,7 +185,7 @@ async def test_delete_allowed_for_agent_tier(mcp_server: Any) -> None:
     mock_doc.chunks = []
     mock_doc.tags = []
     mock_doc.title = "Test"
-    mock_doc.source_path = "/tmp/test.txt"
+    mock_doc.source_path = "/nonexistent/test.txt"
     mock_doc.file_type.value = "txt"
     mock_doc.storage_backend.value = "local"
     mock_doc.processing_status.value = "completed"
@@ -296,8 +296,6 @@ def test_pg_query_rejects_select_into(sql: str) -> None:
 async def test_pg_query_wraps_query_with_limit() -> None:
     """grimoire_pg_query wraps the user SQL in a bounded subquery."""
     from grimoire.mcp.tools import grimoire_pg_query, PgQueryInput
-
-    captured: dict[str, Any] = {}
 
     mock_db = AsyncMock()
     mock_db.execute = AsyncMock(return_value=iter([]))

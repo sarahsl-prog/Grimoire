@@ -24,23 +24,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from grimoire.api.dependencies import (
     get_content_gen_agent,
-    get_db_session,
     get_ingestion_agent,
     get_query_agent,
 )
-from grimoire.api.schemas import (
-    CategoryCreateRequest,
-    DocumentListResponse,
-    GenerateRequest,
-    IngestDirectoryRequest,
-    IngestFileRequest,
-    QueryRequest,
-    SearchRequest,
-    WatchStartRequest,
-)
 from grimoire.cli.helpers import build_watcher
 from grimoire.config.settings import get_settings
-from grimoire.core.embedder import EmbedderFactory
 from grimoire.db.models import ApiKeyTier, ProcessingStatus
 from grimoire.db.session import get_db_context
 
@@ -571,8 +559,7 @@ async def grimoire_status(ctx: Context) -> str:
         cats_total = (await db.execute(select(func.count(Category.id)))).scalar() or 0
         gen_total = (await db.execute(select(func.count(GeneratedContent.id)))).scalar() or 0
 
-        # Chunk count via relationship
-        chunks_total = 0
+        # Per-processing-status breakdown
         status_breakdown: Dict[str, int] = {}
         for status in ProcessingStatus:
             cnt = (await db.execute(

@@ -8,9 +8,6 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from grimoire.api.auth import get_api_key
-from grimoire.db.models import ApiKey
-
 from .server import create_mcp_server
 
 # Lazy singleton — created on first access so that settings are already
