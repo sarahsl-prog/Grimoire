@@ -439,10 +439,10 @@ async def grimoire_create_category(params: CreateCategoryInput, ctx: Context) ->
         db.add(cat)
         try:
             await db.commit()
+            await db.refresh(cat)
         except Exception:
             await db.rollback()
             return _err("Failed to create category.")
-        await db.refresh(cat)
 
         data = {
             "id": cat.id,

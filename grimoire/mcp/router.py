@@ -54,10 +54,24 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
                 return
 
             # Validate key via existing auth logic
+            from grimoire.api.auth import authenticate_api_key
             from grimoire.db.session import get_db_manager
-            db_mgr = get_db_manager()
+
+            try:
+                db_mgr = get_db_manager()
+            except RuntimeError:
+                await send({
+                    "type": "http.response.start",
+                    "status": 503,
+                    "headers": [[b"content-type", b"application/json"]],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": b'{"detail": "Database not initialized."}',
+                })
+                return
+
             async with db_mgr.session() as db:
-                from grimoire.api.auth import authenticate_api_key
                 api_key = await authenticate_api_key(raw_key, db)
                 if api_key is None:
                     await send({
