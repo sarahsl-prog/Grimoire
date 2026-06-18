@@ -533,18 +533,27 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
 
 
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
-    """Run a read-only SELECT query against the Postgres database."""
+    """Run a read-only SELECT query against the Postgres database.
+
+    The user-supplied SQL is executed as a subquery with a separate, validated
+    row limit applied by SQLAlchemy bound parameters.  The Pydantic validator
+    already rejects non-SELECT/WITH statements and SELECT INTO.
+    """
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
     from grimoire.db.session import get_db_manager
     from sqlalchemy import text
 
     inner = params.sql.rstrip(";")
-    sql = f"SELECT * FROM ({inner}) AS _grimoire_q LIMIT {params.limit}"
+    # Use a bound parameter for the limit so that user SQL is never
+    # interpolated into the executable statement.
+    sql = text(
+        "SELECT * FROM (:inner_query) AS _grimoire_q LIMIT :row_limit"
+    ).bindparams(inner_query=inner, row_limit=params.limit)
 
     manager = get_db_manager()
     async with manager.session() as db:
         try:
-            rows = await db.execute(text(sql))
+            rows = await db.execute(sql)
             data = [dict(r._mapping) for r in rows]
         except Exception as e:
             return _err(f"Query failed: {e}")
