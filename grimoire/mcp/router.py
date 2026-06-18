@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import FastAPI
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import Receive, Scope, Send
 
 from .server import create_mcp_server
 
