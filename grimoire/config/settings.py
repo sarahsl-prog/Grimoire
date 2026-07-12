@@ -571,6 +571,10 @@ class ObservabilityConfig(BaseModel):
         structured_logs: Enable structured logging.
         tracing: Enable OpenTelemetry/LangSmith tracing.
         metrics: Enable Prometheus metrics export.
+        mlflow_enabled: Enable MLflow tracing for the MCP server.
+        mlflow_tracking_uri: MLflow tracking server URI.
+        mlflow_experiment_name: MLflow experiment for MCP traces.
+        mlflow_langchain_autolog: Capture nested LangChain LLM spans in traces.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -581,6 +585,21 @@ class ObservabilityConfig(BaseModel):
     structured_logs: bool = Field(default=True, description="Enable structured logging")
     tracing: bool = Field(default=False, description="Enable distributed tracing")
     metrics: bool = Field(default=False, description="Enable Prometheus metrics")
+    mlflow_enabled: bool = Field(
+        default=False, description="Enable MLflow tracing for MCP tool calls"
+    )
+    mlflow_tracking_uri: str | None = Field(
+        default=None,
+        description="MLflow tracking URI (falls back to MLFLOW_TRACKING_URI env var)",
+    )
+    mlflow_experiment_name: str = Field(
+        default="grimoire-mcp",
+        description="MLflow experiment name for MCP server traces",
+    )
+    mlflow_langchain_autolog: bool = Field(
+        default=True,
+        description="Enable MLflow LangChain autolog for nested LLM spans",
+    )
 
 
 class ChunkingSemanticConfig(BaseModel):

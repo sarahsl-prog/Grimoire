@@ -18,6 +18,7 @@ from grimoire.config.settings import get_settings
 
 from .auth_stdio import authenticate_stdio_key, set_current_api_key
 from . import tools
+from .mlflow_logging import configure_mlflow, shutdown_mlflow, trace_mcp_tool
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ async def _grimoire_lifespan(app: FastMCP) -> AsyncGenerator[dict[str, Any], Non
     settings = get_settings()
     await initialize_db(settings.database.url, pool_size=settings.database.pool_size)
     logger.info("MCP lifespan: database initialised")
+    configure_mlflow(settings.observability)
 
     # Validate GRIMOIRE_API_KEY eagerly if set (primarily for stdio mode).
     # HTTP/SSE validates per-request in the ASGI middleware instead.
@@ -56,34 +58,43 @@ async def _grimoire_lifespan(app: FastMCP) -> AsyncGenerator[dict[str, Any], Non
         except Exception as e:
             # Watcher may never have been instantiated; log but don't fail shutdown.
             logger.debug(f"MCP lifespan: watcher cleanup skipped: {e}")
+        shutdown_mlflow()
         await close_db()
         logger.info("MCP lifespan: database closed")
 
 
+def _register_tool(mcp: FastMCP, func: Any, name: str) -> None:
+    """Register an MCP tool, wrapping it with MLflow tracing when enabled."""
+    mcp.add_tool(trace_mcp_tool(func, name=name), name=name)
+
+
 def create_mcp_server() -> FastMCP:
     """Build and return a FastMCP server with all Grimoire tools registered."""
+    settings = get_settings()
+    configure_mlflow(settings.observability)
+
     mcp = FastMCP("grimoire", lifespan=_grimoire_lifespan)
 
     # Register read-only tools (available to all tiers)
-    mcp.add_tool(tools.grimoire_search, name="grimoire_search")
-    mcp.add_tool(tools.grimoire_ask, name="grimoire_ask")
-    mcp.add_tool(tools.grimoire_get_document, name="grimoire_get_document")
-    mcp.add_tool(tools.grimoire_list_documents, name="grimoire_list_documents")
-    mcp.add_tool(tools.grimoire_list_categories, name="grimoire_list_categories")
-    mcp.add_tool(tools.grimoire_watch_status, name="grimoire_watch_status")
-    mcp.add_tool(tools.grimoire_status, name="grimoire_status")
+    _register_tool(mcp, tools.grimoire_search, "grimoire_search")
+    _register_tool(mcp, tools.grimoire_ask, "grimoire_ask")
+    _register_tool(mcp, tools.grimoire_get_document, "grimoire_get_document")
+    _register_tool(mcp, tools.grimoire_list_documents, "grimoire_list_documents")
+    _register_tool(mcp, tools.grimoire_list_categories, "grimoire_list_categories")
+    _register_tool(mcp, tools.grimoire_watch_status, "grimoire_watch_status")
+    _register_tool(mcp, tools.grimoire_status, "grimoire_status")
 
     # Register write tools (DEV + AGENT tiers)
-    mcp.add_tool(tools.grimoire_ingest_file, name="grimoire_ingest_file")
-    mcp.add_tool(tools.grimoire_ingest_directory, name="grimoire_ingest_directory")
-    mcp.add_tool(tools.grimoire_generate, name="grimoire_generate")
-    mcp.add_tool(tools.grimoire_create_category, name="grimoire_create_category")
-    mcp.add_tool(tools.grimoire_watch_start, name="grimoire_watch_start")
-    mcp.add_tool(tools.grimoire_watch_stop, name="grimoire_watch_stop")
-    mcp.add_tool(tools.grimoire_pg_query, name="grimoire_pg_query")  # DEV+ only
+    _register_tool(mcp, tools.grimoire_ingest_file, "grimoire_ingest_file")
+    _register_tool(mcp, tools.grimoire_ingest_directory, "grimoire_ingest_directory")
+    _register_tool(mcp, tools.grimoire_generate, "grimoire_generate")
+    _register_tool(mcp, tools.grimoire_create_category, "grimoire_create_category")
+    _register_tool(mcp, tools.grimoire_watch_start, "grimoire_watch_start")
+    _register_tool(mcp, tools.grimoire_watch_stop, "grimoire_watch_stop")
+    _register_tool(mcp, tools.grimoire_pg_query, "grimoire_pg_query")  # DEV+ only
 
     # Register destructive tools (AGENT tier only)
-    mcp.add_tool(tools.grimoire_delete_document, name="grimoire_delete_document")
+    _register_tool(mcp, tools.grimoire_delete_document, "grimoire_delete_document")
 
     logger.info("MCP server created with Grimoire tools")
     return mcp
