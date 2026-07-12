@@ -53,6 +53,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mlflow = [
+    "mlflow>=3.5.1",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
