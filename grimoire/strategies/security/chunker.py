@@ -67,7 +67,7 @@ class SecurityChunker(Chunker):
     * ``sigma_rule`` → one chunk per rule with structured metadata.
     * ``nvd_cve`` → two chunks per CVE (description + references).
     * ``prose`` / ``unknown`` / ``ioc_list`` → recursive prose chunking.
-    * ``mitre_attack`` → raise :class:`NotImplementedError` until Phase 5.
+    * ``mitre_attack`` → one chunk per section (Description, Detection, Mitigations).
 
     Args:
         config: Chunking configuration (used for prose fallback).

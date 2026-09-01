@@ -677,11 +677,40 @@ def _mock_search_result() -> MagicMock:
 
 
 def _fake_preselect_db(doc_ids: list[str]) -> Any:
-    """Mock DB session whose first execute() returns the given document ids."""
+    """Mock DB session for security search tests.
+
+    First execute() call (from _matching_document_ids): returns the given
+    document ids (strings).  Second execute() call (from _facet_only_search
+    document fetch): returns full mock Document objects with the same ids.
+    """
     mock_db = MagicMock()
-    preselect_result = MagicMock()
-    preselect_result.scalars.return_value.all.return_value = doc_ids
-    mock_db.execute = AsyncMock(return_value=preselect_result)
+
+    doc_result = MagicMock()
+    docs = []
+    for doc_id in doc_ids:
+        mock_doc = MagicMock()
+        mock_doc.id = doc_id
+        mock_doc.title = f"Test {doc_id}"
+        mock_doc.source_type = "sigma_rule"
+        mock_doc.severity = MagicMock(value="high")
+        mock_doc.mitre_technique_id = "T1059"
+        mock_doc.content_date = None
+        mock_doc.source_path = f"/test/{doc_id}"
+        docs.append(mock_doc)
+    doc_result.scalars.return_value.all.return_value = docs
+
+    ids_result = MagicMock()
+    ids_result.scalars.return_value.all.return_value = doc_ids
+
+    call_count = 0
+    async def mock_execute(self: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return ids_result
+        return doc_result
+
+    mock_db.execute = mock_execute
 
     @asynccontextmanager
     async def _ctx() -> Any:
@@ -830,7 +859,7 @@ async def test_search_playbook_facet_filters_docs_in_sql(mcp_server: Any) -> Non
                 "severity": "high",
                 "platform": "windows",
                 "log_source": "process_creation",
-                "source_types": "sigma",
+                "source_types": ["sigma_rule"],
             },
         })
 
@@ -875,23 +904,44 @@ async def test_search_playbook_phase_facet(mcp_server: Any) -> None:
 
         call = mock_agent.return_value.search.await_args
         assert call.kwargs["filter_dict"]["document_id"] == {"$in": ["doc-pb"]}
-        assert '"matched_documents": 1' in result[0][0].text
+        assert '"sql_prefiltered_documents": 1' in result[0][0].text
 
 
 @pytest.mark.asyncio
-async def test_search_playbook_rejects_bad_source_types(mcp_server: Any) -> None:
-    """source_types values outside playbooks|sigma|all fail validation."""
+async def test_search_playbook_accepts_source_types_list(mcp_server: Any) -> None:
+    """source_types accepts a list of strings; no Pydantic validation."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with pytest.raises(ToolError):
-        await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"query": "x", "source_types": "cve"},
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+        # With query present → semantic path; empty SQL results → empty results
+        result = await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"query": "x", "source_types": ["sigma_rule"]},
         })
+        text = result[0][0].text
+        assert '"mode": "semantic"' in text
+        assert '"total_results": 0' in text
 
 
 @pytest.mark.asyncio
-async def test_search_playbook_technique_only(mcp_server: Any) -> None:
-    """A MITRE technique alone (no query) searches over matching Sigma rules."""
+async def test_search_playbook_facet_only_no_matching_docs(mcp_server: Any) -> None:
+    """Facet-only search returns empty results when SQL pre-filter matches nothing."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])):
+        result = await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"mitre_technique_id": "T9999"},
+        })
+        text = result[0][0].text
+        assert '"mode": "facet_only"' in text
+        assert '"sql_prefiltered_documents": 0' in text
+        assert '"total_results": 0' in text
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_sigma_only_uses_equality(mcp_server: Any) -> None:
+    """sigma-only source_types produces a single-element source_type filter (== not IN)."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
     with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
@@ -899,19 +949,41 @@ async def test_search_playbook_technique_only(mcp_server: Any) -> None:
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
 
         await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"mitre_technique_id": "T1059"},
+            "params": {
+                "query": "anything",
+                "source_types": ["sigma_rule"],
+            },
         })
 
         call = mock_agent.return_value.search.await_args
-        assert call.kwargs["filter_dict"]["document_id"] == {"$in": ["doc-sig"]}
-        # Placeholder query so vector search still executes (positional arg)
-        assert call.args[1] == "*"
+        filters = call.kwargs["filter_dict"]
+        # Single-element list → == (not $in)
+        assert filters["source_type"] == "sigma_rule"
+        assert filters["document_id"] == {"$in": ["doc-sig"]}
 
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_technique_only(mcp_server: Any) -> None:
+    """A MITRE technique alone (no query) uses the vector-bypass path."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    # No query → _facet_only_search is called, not agent.search.
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-sig"])):
+        result = await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"mitre_technique_id": "T1059"},
+        })
+        text = result[0][0].text
+        assert '"mode": "facet_only"' in text
+        assert '"sql_prefiltered_documents": 1' in text
+        mock_agent.return_value.search.assert_not_called()
+
+    # Empty params → error
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
         result = await mcp_server.call_tool("grimoire_search_playbook", {"params": {}})
     text = result[0][0].text
     assert '"status": "error"' in text
-    assert "query" in text
 
 
 @pytest.mark.asyncio

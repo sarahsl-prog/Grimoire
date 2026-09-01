@@ -304,9 +304,14 @@ class SecurityMetadata(BaseModel):
             "playbook_phase": playbook_phase,
             "action_type": action_type,
             # Pipe-joined list fields (truncated at the entry cap).
+            # NOTE: ``log_sources`` is stored here for ChromaDB exact-match
+            # filtering ($in). SQL-side filtering uses JSONB operators over
+            # the actual JSON array in PostgreSQL — see
+            # ``_jsonb_array_contains`` in grimoire/mcp/tools.py.
             "cwe_ids": _join_list(self.cwe_ids),
             "threat_actors": _join_list(self.threat_actors),
             "platforms": _join_list(self.platforms),
+            "log_sources": _join_list(self.log_sources),
         }
         return payload
 
