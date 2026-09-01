@@ -340,19 +340,19 @@ The tool function's docstring describes the old Sigma-only interface and does no
 
 ## P6 — Technical Decisions / Open Questions
 
-### T6.1 — Should `log_sources` be added to ChromaDB metadata?
+### T6.1 — `log_sources` in ChromaDB metadata (DECIDED — folded into T6.2)
 
-The `log_sources` field is extracted from Sigma rules, stored in `SecurityMetadata.log_sources`, serialized into JSONB, but omitted from `to_chromadb_metadata()`. Should it be added as a pipe-joined string alongside `platforms`, `cwe_ids`, etc.? This would make `log_source` filtering work at both the SQL pre-filter layer and the ChromaDB post-filter layer.
+**Decision: Add `log_sources` to `to_chromadb_metadata()` as a pipe-joined string, matching the approach used for `platforms`.**
 
-**Decision needed:** Add `log_sources` to `to_chromadb_metadata()` (pipe-joined, matching `platforms`), or document that `log_source` filtering is SQL-only.
+This is implemented as part of T6.2's changes below.
 
 ---
 
 ### T6.2 — `platforms` / `log_sources`: JSONB arrays + GIN index (DECIDED)
 
-**Decision: JSON arrays with PostgreSQL JSONB operators (`@>`) + GIN index is the correct approach.**
+**Decision: JSON arrays in PostgreSQL JSONB with `@>` / GIN index for SQL filtering; pipe-joined strings in ChromaDB for exact-match `$in` filtering. Add `log_sources` to ChromaDB metadata alongside `platforms`.**
 
-**Rationale:** ILIKE on a pipe-joined string is an O(n) full-column scan at millions of rows. PostgreSQL's JSONB `@>` containment operator against a GIN-indexed column is O(log n). The ChromaDB path (pipe-joined strings for exact `$in` lookups) is fine and should be kept — it works correctly for vector-layer exact-match filtering. The two representations serve different purposes and should not be unified.
+**Rationale:** ILIKE on a pipe-joined string is an O(n) full-column scan at millions of rows. PostgreSQL's JSONB `@>` containment operator against a GIN-indexed column is O(log n). The ChromaDB path (pipe-joined strings for exact `$in` lookups) is O(1) hash lookup and should be kept — it works correctly for vector-layer filtering. The two representations serve different purposes and are not unified at the storage layer.
 
 **Specific changes:**
 
@@ -361,7 +361,7 @@ The `log_sources` field is extracted from Sigma rules, stored in `SecurityMetada
    # New helper — uses GIN-indexable JSONB operators
    def _jsonb_array_contains(column: Any, key: str, value: str) -> Any:
        from sqlalchemy import func, String
-       # Extract the array field and check membership
+       # Extract the array field and check membership using JSONB operators
        return func.jsonb_extract_path(column, key).cast(String).in_([value])
    ```
    Or using `@>` containment with a GIN index on `security_metadata`:
@@ -379,38 +379,62 @@ The `log_sources` field is extracted from Sigma rules, stored in `SecurityMetada
    )
    ```
 
-3. **ChromaDB** — Add `log_sources` to `to_chromadb_metadata()` as pipe-joined string (unchanged `|` join, `$in` exact-match filter). This is already correct for ChromaDB and should not change.
+3. **ChromaDB metadata** — Add `log_sources` to `to_chromadb_metadata()` as pipe-joined string (unchanged `|` join, `$in` exact-match filter). Also add `log_sources` to the payload dict alongside `platforms`.
 
 4. **Unified model** — List fields (`platforms`, `log_sources`, `cwe_ids`, `threat_actors`, `malware_families`, `ioc_types`, `detection_categories`) remain as JSON arrays in PostgreSQL JSONB. `to_chromadb_metadata()` pipe-joins for ChromaDB only. SQL-side filtering uses JSONB operators. No dual-format maintenance hazard since the conversion only happens at read-time for ChromaDB, not in PostgreSQL storage.
 
 **Files to change:**
-- `grimoire/mcp/tools.py` — replace `_jsonb_list_contains` with `_jsonb_array_contains`, update all call sites for `platform`, `log_source`, `phase`
+- `grimoire/mcp/tools.py` — replace `_jsonb_list_contains` with `_jsonb_array_contains`, update all call sites for `platform`, `log_source`, `phase`; also add `log_sources` to the ChromaDB filter dict in `_facet_search`
 - `alembic/versions/` — add migration for GIN index on `security_metadata`
-- `grimoire/strategies/security/metadata.py` — add `log_sources` to `to_chromadb_metadata()`, add comment documenting the JSONB/ChromaDB dual representation
+- `grimoire/strategies/security/metadata.py` — add `log_sources` to `to_chromadb_metadata()` as pipe-joined string, add comment documenting the JSONB/ChromaDB dual representation
 
 ---
 
-### T6.3 — Should `source_types` in `PlaybookSearchInput` accept a list of strings or remain a single enum-like string?
+### T6.3 — `source_types` API shape (DECIDED)
 
-Currently `source_types: str` with values `"all"`, `"playbooks"`, `"sigma"`. Should it be `List[str]` to allow future expansion (e.g., `["playbook", "sigma_rule"]` directly)?
+**Decision: Change `source_types` from `Literal["all", "playbooks", "sigma"]` to `List[str]` for future flexibility.**
 
-**Decision needed:** Keep as-is for v1 simplicity, or plan for `List[str]` in a future API version.
+Accept any list of source type strings (e.g., `["playbook", "sigma_rule"]`). Remove the validator that restricts to the three fixed values. The caller is responsible for passing valid source types (validated at the SQL layer). Keep `"all"` as a convenience shorthand — the caller or wrapper translates it to the full list before passing to `_facet_search`.
+
+```python
+# New shape
+source_types: List[str] = Field(
+    default=["playbook", "sigma_rule"],
+    description="List of source types to search. E.g. ['playbook', 'sigma_rule'] or ['sigma_rule']. Defaults to both corpora.",
+)
+```
+
+**Files to change:**
+- `grimoire/mcp/tools.py` — `PlaybookSearchInput.source_types` → `List[str]`, remove `_validate_source_types` validator, update `grimoire_search_playbook` to accept list directly
 
 ---
 
-### T6.4 — What should `grimoire_search_playbook` return when only `mitre_technique_id` is provided (no `query`)?
+### T6.4 — Facet-only playbook search (DECIDED)
 
-Currently the wildcard `"*"` is used as the query text. If the query agent does not handle `"*"` specially, this could return zero results. Should there be a dedicated path for "structured-facet-only" searches that bypasses the vector layer entirely?
+**Decision: Implement a vector-bypass path for structured-facet-only searches (Option B).**
 
-**Decision needed:** Either ensure the query agent handles `"*"` as "all documents in scope" (add integration test), or implement a vector-bypass path that returns pre-filtered document IDs as results.
+When `query` is absent (i.e., only structured facets like `mitre_technique_id`, `phase`, `platform`, `severity` are provided), bypass the vector search entirely and return pre-filtered document IDs directly from PostgreSQL as ranked results. This avoids depending on the query agent's handling of `"*"` and is more efficient for purely-structured queries.
+
+**Implementation:**
+1. In `grimoire_search_playbook`, detect when `params.query` is absent.
+2. Build the SQL pre-filter conditions as currently done.
+3. Instead of calling `_facet_search`, call `_matching_document_ids` directly to get the ranked list of matching document IDs.
+4. Return those IDs + metadata as results without invoking the vector layer.
+5. The response should indicate `"mode": "facet_only"` so clients know vector scoring was not applied.
+
+**Files to change:**
+- `grimoire/mcp/tools.py` — add facet-only branch in `grimoire_search_playbook`; add `"mode": "facet_only"` to response
 
 ---
 
-### T6.5 — Should the `facet_label` parameter be removed from `_facet_search`?
+### T6.5 — Remove unused `facet_label` from `_facet_search` (DECIDED)
 
-The `facet_label` parameter is passed but never used. Should it be removed to simplify the function signature, or used in the response?
+**Decision: Remove `facet_label` from the `_facet_search` function signature.**
 
-**Decision needed:** Remove `facet_label` or add it to the response.
+The parameter is passed from both call sites (`grimoire_search_cve` and `grimoire_search_playbook`) but is never used in the function body or response. Simplify the signature by removing it.
+
+**Files to change:**
+- `grimoire/mcp/tools.py` — remove `facet_label` parameter from `_facet_search` definition and all call sites
 
 ---
 
