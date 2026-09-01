@@ -348,11 +348,45 @@ The `log_sources` field is extracted from Sigma rules, stored in `SecurityMetada
 
 ---
 
-### T6.2 — Should `platforms` / `log_sources` use JSON array storage in JSONB instead of pipe-join?
+### T6.2 — `platforms` / `log_sources`: JSONB arrays + GIN index (DECIDED)
 
-Currently, lists are stored in JSONB as-is by SQLAlchemy's JSON type. The ChromaDB path uses pipe-joined strings. This dual representation is a maintenance hazard. Should the project standardise on one format?
+**Decision: JSON arrays with PostgreSQL JSONB operators (`@>`) + GIN index is the correct approach.**
 
-**Decision needed:** Standardise on JSON arrays in JSONB (native JSONB storage) and use PostgreSQL JSONB array operators (`@>`) for filtering instead of ILIKE.
+**Rationale:** ILIKE on a pipe-joined string is an O(n) full-column scan at millions of rows. PostgreSQL's JSONB `@>` containment operator against a GIN-indexed column is O(log n). The ChromaDB path (pipe-joined strings for exact `$in` lookups) is fine and should be kept — it works correctly for vector-layer exact-match filtering. The two representations serve different purposes and should not be unified.
+
+**Specific changes:**
+
+1. **PostgreSQL filtering** — Replace `_jsonb_list_contains` ILIKE with JSONB `@>` / `func.jsonb_extract_path` + GIN index:
+   ```python
+   # New helper — uses GIN-indexable JSONB operators
+   def _jsonb_array_contains(column: Any, key: str, value: str) -> Any:
+       from sqlalchemy import func, String
+       # Extract the array field and check membership
+       return func.jsonb_extract_path(column, key).cast(String).in_([value])
+   ```
+   Or using `@>` containment with a GIN index on `security_metadata`:
+   ```python
+   return column @> func.jsonb_build_object(key, [value])
+   ```
+
+2. **Add GIN index** — new Alembic migration:
+   ```python
+   op.create_index(
+       "ix_documents_security_metadata_gin",
+       "documents",
+       ["security_metadata"],
+       postgresql_using="gin",
+   )
+   ```
+
+3. **ChromaDB** — Add `log_sources` to `to_chromadb_metadata()` as pipe-joined string (unchanged `|` join, `$in` exact-match filter). This is already correct for ChromaDB and should not change.
+
+4. **Unified model** — List fields (`platforms`, `log_sources`, `cwe_ids`, `threat_actors`, `malware_families`, `ioc_types`, `detection_categories`) remain as JSON arrays in PostgreSQL JSONB. `to_chromadb_metadata()` pipe-joins for ChromaDB only. SQL-side filtering uses JSONB operators. No dual-format maintenance hazard since the conversion only happens at read-time for ChromaDB, not in PostgreSQL storage.
+
+**Files to change:**
+- `grimoire/mcp/tools.py` — replace `_jsonb_list_contains` with `_jsonb_array_contains`, update all call sites for `platform`, `log_source`, `phase`
+- `alembic/versions/` — add migration for GIN index on `security_metadata`
+- `grimoire/strategies/security/metadata.py` — add `log_sources` to `to_chromadb_metadata()`, add comment documenting the JSONB/ChromaDB dual representation
 
 ---
 
