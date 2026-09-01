@@ -4,10 +4,10 @@ Phase 2 introduces ``alembic/versions/0006_add_security_metadata.py``.
 This test exercises the full upgrade/downgrade/upgrade cycle on a fresh
 sqlite file:
 
-1. ``alembic upgrade head`` — schema gains the seven Phase-2 columns and
+1. ``alembic upgrade 0006`` — schema gains the seven Phase-2 columns and
    seven new indexes;
 2. ``alembic downgrade -1`` — schema loses them again;
-3. ``alembic upgrade head`` — re-applies cleanly.
+3. ``alembic upgrade 0006`` — re-applies cleanly.
 
 We bypass the project's async alembic env (which is asyncpg-only) by
 constructing a tiny synchronous test env in-place: the alembic
@@ -172,18 +172,18 @@ def test_upgrade_downgrade_upgrade_cycle(sqlite_alembic_cfg: Config) -> None:
     url = sqlite_alembic_cfg.get_main_option("sqlalchemy.url")
     assert url is not None
 
-    # Round 1: blank DB → head
-    command.upgrade(sqlite_alembic_cfg, "head")
+    # Round 1: blank DB → 0006 (security metadata migration)
+    command.upgrade(sqlite_alembic_cfg, "0006")
 
     engine = sa.create_engine(url)
     columns = _list_columns(engine, "documents")
     indexes = _list_indexes(engine, "documents")
     for col in _PHASE2_COLUMNS:
-        assert col in columns, f"column {col!r} missing after upgrade head"
+        assert col in columns, f"column {col!r} missing after upgrade 0006"
     for idx in _PHASE2_INDEXES:
-        assert idx in indexes, f"index {idx!r} missing after upgrade head"
+        assert idx in indexes, f"index {idx!r} missing after upgrade 0006"
 
-    # Round 2: head → -1 (back to 0005)
+    # Round 2: 0006 → -1 (back to 0005)
     engine.dispose()
     command.downgrade(sqlite_alembic_cfg, "-1")
 
@@ -197,7 +197,7 @@ def test_upgrade_downgrade_upgrade_cycle(sqlite_alembic_cfg: Config) -> None:
 
     # Round 3: re-upgrade should succeed
     engine.dispose()
-    command.upgrade(sqlite_alembic_cfg, "head")
+    command.upgrade(sqlite_alembic_cfg, "0006")
 
     engine = sa.create_engine(url)
     columns = _list_columns(engine, "documents")

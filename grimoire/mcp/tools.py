@@ -234,8 +234,14 @@ class CveSearchInput(BaseModel):
 class PlaybookSearchInput(BaseModel):
     """Parameters for grimoire_search_playbook.
 
-    Searches the Sigma detection-rule corpus ("playbooks") with optional
-    MITRE ATT&CK, platform, log-source, and severity facets.
+    Searches the Sigma detection-rule and IR-playbook corpora with optional
+    MITRE ATT&CK technique, IR phase, platform, log-source, and severity
+    facets.  Use ``source_types`` to restrict to specific corpora
+    (default: both ``["playbook", "sigma_rule"]``).
+
+    When ``query`` is absent and only structured facets are supplied,
+    the search runs entirely in PostgreSQL (vector-bypass, ``"mode": "facet_only"``)
+    and returns structured metadata without semantic scoring.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
@@ -243,14 +249,15 @@ class PlaybookSearchInput(BaseModel):
     query: Optional[str] = Field(
         default=None,
         max_length=2000,
-        description="Semantic search over rule titles and detection logic.",
+        description="Semantic search over rule titles and detection logic. "
+        "Omit to use the vector-bypass facet-only path.",
     )
     mitre_technique_id: Optional[str] = Field(
         default=None, description="ATT&CK technique id, e.g. 'T1059' or 'T1059.001'."
     )
     severity: Optional[str] = Field(
         default=None,
-        description="Filter by Sigma level bucket: critical | high | medium | low | info.",
+        description="Filter by severity bucket: critical | high | medium | low | info.",
     )
     platform: Optional[str] = Field(
         default=None, max_length=64, description="Platform facet, e.g. 'windows', 'linux', 'aws'."
@@ -258,26 +265,20 @@ class PlaybookSearchInput(BaseModel):
     log_source: Optional[str] = Field(
         default=None,
         max_length=64,
-        description="Sigma log source facet, e.g. 'process_creation', 'sysmon'.",
+        description="Log source facet, e.g. 'process_creation', 'sysmon'.",
     )
     phase: Optional[str] = Field(
         default=None,
         max_length=32,
         description="Playbook IR phase facet, e.g. 'identify', 'contain', 'recover'.",
     )
-    source_types: str = Field(
-        default="all",
-        description="Which corpora to search: 'all' (playbook + sigma_rule), 'playbooks', or 'sigma'.",
+    source_types: List[str] = Field(
+        default=["playbook", "sigma_rule"],
+        description="List of source types to search. "
+        "E.g. ['playbook', 'sigma_rule'] or ['sigma_rule'] only. "
+        "Defaults to both corpora.",
     )
     top_k: int = Field(default=10, ge=1, le=100, description="Maximum results to return.")
-
-    @field_validator("source_types")
-    @classmethod
-    def _validate_source_types(cls, v: str) -> str:
-        v = v.strip().lower()
-        if v not in {"all", "playbooks", "sigma"}:
-            raise ValueError("source_types must be 'all', 'playbooks', or 'sigma'.")
-        return v
 
     @field_validator("phase")
     @classmethod
@@ -356,17 +357,27 @@ async def grimoire_search(params: SearchInput, ctx: Context) -> str:
     })
 
 
-def _jsonb_list_contains(column: Any, value: str) -> Any:
-    """Portable 'list contains value' predicate over the security_metadata blob.
+def _jsonb_array_contains(column: Any, key: str, value: str) -> Any:
+    """Match a scalar value inside a JSONB array field using JSONB operators.
 
-    On PostgreSQL the stored field is JSONB, so a plain ILIKE with explicit
-    ``"value"`` quotes is safe regardless of list formatting.  On SQLite the
-    blob is plain JSON text from the PortableJSON type and the same ILIKE
-    pattern matches identically.
+    Uses PostgreSQL's JSONB ``@>`` containment operator when available,
+    falling back to a portable ILIKE pattern over the serialised JSON for
+    SQLite / other dialects.  The GIN index on ``security_metadata`` makes
+    ``@>`` O(log n) even on millions of rows; the ILIKE fallback is O(n)
+    but acceptable for development / small datasets.
+
+    ``key`` is the JSONB object key to extract (e.g. ``"platforms"``,
+    ``"playbook_phase"``, ``"log_sources"``).  The value is matched as a
+    **scalar string** — list fields are stored as JSON arrays in the blob
+    and this helper checks membership within that array.
     """
     from sqlalchemy import cast, String
 
-    return cast(column, String).ilike(f'%\"{value}\"%')
+    try:
+        return column[key].astext.cast(String).in_([value])
+    except Exception:  # noqa: S110
+        pass
+    return cast(column, String).ilike(f'%"{value}"%')
 
 
 async def _matching_document_ids(
@@ -389,10 +400,67 @@ async def _matching_document_ids(
     return list(result.scalars().all())
 
 
+async def _facet_only_search(
+    *,
+    source_types: List[str],
+    conditions: List[Any],
+    top_k: int,
+) -> str:
+    """Return pre-filtered document IDs without invoking the vector layer.
+
+    Used when the caller supplies only structured facets (no semantic query).
+    The SQL pre-filter narrows the candidate set, then document IDs are
+    returned ordered by content_date desc (most recent first) capped at top_k.
+    """
+    from sqlalchemy import select
+
+    from grimoire.db.models import Document
+
+    async with get_db_context() as db:
+        doc_ids = await _matching_document_ids(db, source_types, conditions)
+
+    if not doc_ids:
+        return _ok({
+            "mode": "facet_only",
+            "source_types": source_types,
+            "sql_prefiltered_documents": 0,
+            "results": [],
+            "total_results": 0,
+        })
+
+    async with get_db_context() as db:
+        stmt = (
+            select(Document)
+            .where(Document.id.in_(doc_ids))
+            .order_by(Document.content_date.desc())
+            .limit(top_k)
+        )
+        result = await db.execute(stmt)
+        docs = result.scalars().all()
+
+    return _ok({
+        "mode": "facet_only",
+        "source_types": source_types,
+        "sql_prefiltered_documents": len(doc_ids),
+        "results": [
+            {
+                "document_id": d.id,
+                "title": d.title,
+                "source_type": d.source_type,
+                "severity": d.severity.value if hasattr(d.severity, "value") else str(d.severity) if d.severity else None,
+                "mitre_technique_id": d.mitre_technique_id,
+                "content_date": d.content_date.isoformat() if d.content_date else None,
+                "source_path": d.source_path,
+            }
+            for d in docs
+        ],
+        "total_results": len(docs),
+    })
+
+
 async def _facet_search(
     *,
     source_types: List[str],
-    facet_label: str,
     conditions: List[Any],
     query_text: str,
     top_k: int,
@@ -416,7 +484,6 @@ async def _facet_search(
             "total_results": 0,
         })
 
-    # document_id is always a scalar in Chroma metadata, so $in matches it correctly.
     if len(source_types) == 1:
         filters: Dict[str, Any] = {
             "source_type": source_types[0], "document_id": {"$in": doc_ids}
@@ -437,7 +504,7 @@ async def _facet_search(
         "mode": "semantic",
         "source_types": source_types,
         "query": result.query,
-        "matched_documents": len(doc_ids),
+        "sql_prefiltered_documents": len(doc_ids),
         "results": [r.model_dump() for r in result.results],
         "total_results": result.total_results,
         "duration_ms": result.duration_ms,
@@ -518,7 +585,6 @@ async def grimoire_search_cve(params: CveSearchInput, ctx: Context) -> str:
 
     return await _facet_search(
         source_types=["nvd_cve"],
-        facet_label="CVE",
         conditions=conditions,
         query_text=params.query or "",
         top_k=params.top_k,
@@ -526,16 +592,21 @@ async def grimoire_search_cve(params: CveSearchInput, ctx: Context) -> str:
 
 
 async def grimoire_search_playbook(params: PlaybookSearchInput, ctx: Context) -> str:
-    """Search the Sigma detection-rule corpus.
+    """Search the Sigma detection-rule and IR-playbook corpora.
 
-    Sigma rules serve as detection "playbooks": each rule maps suspicious
-    activity to MITRE ATT&CK techniques.  Provide a free-text ``query`` and/or
-    a ``mitre_technique_id`` plus optional platform / log-source facets.
+    Provide a free-text ``query`` for semantic search, and/or structured
+    facets (mitre_technique_id, severity, phase, platform, log_source).
+    Use ``source_types`` to restrict to specific corpora.
+
+    When ``query`` is absent, the search runs entirely in PostgreSQL
+    (vector-bypass, ``"mode": "facet_only"``) and returns pre-filtered
+    document IDs without invoking the vector layer.
     """
-    if not params.query and not params.mitre_technique_id:
+    if not params.query and not params.mitre_technique_id and not params.severity \
+            and not params.phase and not params.platform and not params.log_source:
         return _err(
-            "Provide either 'query' or 'mitre_technique_id'.",
-            hint="e.g. query='powershell execution' or mitre_technique_id='T1059.001'",
+            "At least one of 'query', 'mitre_technique_id', 'severity', 'phase', "
+            "'platform', or 'log_source' is required.",
         )
 
     from grimoire.db.models import Document
@@ -547,28 +618,28 @@ async def grimoire_search_playbook(params: PlaybookSearchInput, ctx: Context) ->
         conditions.append(Document.severity == params.severity)
     if params.phase:
         conditions.append(
-            _jsonb_list_contains(Document.security_metadata, params.phase)
+            _jsonb_array_contains(Document.security_metadata, "playbook_phase", params.phase)
         )
     if params.platform:
-        conditions.append(_jsonb_list_contains(Document.security_metadata, params.platform.lower()))
+        conditions.append(
+            _jsonb_array_contains(Document.security_metadata, "platforms", params.platform.lower())
+        )
     if params.log_source:
-        conditions.append(_jsonb_list_contains(Document.security_metadata, params.log_source.lower()))
+        conditions.append(
+            _jsonb_array_contains(Document.security_metadata, "log_sources", params.log_source.lower())
+        )
 
-    source_types = {
-        "all": ["playbook", "sigma_rule"],
-        "playbooks": ["playbook"],
-        "sigma": ["sigma_rule"],
-    }[params.source_types]
-
-    # Vector search needs a query string; use a wildcard marker when the user
-    # supplied only structured facets.
-    query_text = params.query or "*"
+    if not params.query:
+        return await _facet_only_search(
+            source_types=params.source_types,
+            conditions=conditions,
+            top_k=params.top_k,
+        )
 
     return await _facet_search(
-        source_types=source_types,
-        facet_label="playbook",
+        source_types=params.source_types,
         conditions=conditions,
-        query_text=query_text,
+        query_text=params.query,
         top_k=params.top_k,
     )
 
@@ -860,7 +931,10 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
         if doc is None:
             return _err(f"Document '{params.document_id}' not found.")
 
-        # Delete DB row first; commit before touching ChromaDB.
+        # Collect vector IDs while the document is still attached to the session.
+        # Accessing lazy relationships after delete/commit raises DetachedInstanceError.
+        vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
+
         await db.delete(doc)
         try:
             await db.commit()
@@ -868,15 +942,14 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
             await db.rollback()
             return _err("Failed to delete document.")
 
-        # Vector cleanup after durable commit — best-effort.
-        # Failure leaves orphaned vectors (search noise) but document is fully deleted.
+    # Vector cleanup after durable commit — best-effort.
+    # Failure leaves orphaned vectors (search noise) but document is fully deleted.
+    if vector_ids:
         try:
             from grimoire.services.vector_store import get_vector_store_service
             settings = get_settings()
             vector_store = get_vector_store_service(settings)
-            vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
-            if vector_ids:
-                await vector_store.delete_vectors(vector_ids)
+            await vector_store.delete_vectors(vector_ids)
         except ImportError:
             logger.debug(f"Vector store service not available, skipping cleanup for {params.document_id}")
         except Exception as e:

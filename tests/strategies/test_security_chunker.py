@@ -551,3 +551,113 @@ class TestExtractorPath:
             meta = c.metadata["security_metadata"]
             assert meta["source_type"] == "prose"
             assert meta["severity"] == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# 7. End-to-end playbook corpus pipeline
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestPlaybookCorpusE2E:
+    """Full detection → parsing → chunking pipeline for playbooks."""
+
+    async def test_detect_and_chunk_ransomware_playbook(self) -> None:
+        """ransomware-containment.md is detected as PLAYBOOK and chunks correctly."""
+        from grimoire.strategies.security.corpus import SourceType, detect_source_type
+
+        text = SAMPLE_PLAYBOOK.read_text(encoding="utf-8")
+        path = str(SAMPLE_PLAYBOOK)
+
+        # T1: corpus detection
+        st = detect_source_type(text, {"path": path})
+        assert st is SourceType.PLAYBOOK
+
+        # T4: chunking end-to-end
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(text, doc_id="e2e-test", source_metadata={"path": path})
+        assert len(chunks) == 5  # Trigger, Preparation, Actions, Containment, Recovery
+        assert all(c.chunk_type == "playbook_section" for c in chunks)
+        assert all(c.source_type == "playbook" for c in chunks)
+
+        # All chunks share front-matter facets
+        for c in chunks:
+            meta = c.metadata["security_metadata"]
+            assert meta["playbook_phase"] == "contain"
+            assert meta["action_type"] == "manual"
+            assert meta["severity"] == "critical"
+            assert meta["mitre_technique_id"] == "T1486"
+            assert "windows|linux" in meta["platforms"]
+
+        # Continuity links
+        assert chunks[0].prev_chunk_id is None
+        assert chunks[-1].next_chunk_id is None
+        for i in range(1, len(chunks)):
+            assert chunks[i].prev_chunk_id == chunks[i - 1].metadata["chunk_id"]
+
+    async def test_detect_and_chunk_phishing_playbook(self) -> None:
+        """phishing-response.md is detected as PLAYBOOK and chunks correctly."""
+        from grimoire.strategies.security.corpus import SourceType, detect_source_type
+
+        phishing_fixture = PLAYBOOK_FIXTURE_DIR / "phishing-response.md"
+        text = phishing_fixture.read_text(encoding="utf-8")
+
+        st = detect_source_type(text, {"path": str(phishing_fixture)})
+        assert st is SourceType.PLAYBOOK
+
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text, doc_id="e2e-phishing", source_metadata={"path": str(phishing_fixture)}
+        )
+        assert len(chunks) >= 1
+        assert all(c.chunk_type == "playbook_section" for c in chunks)
+        meta = chunks[0].metadata["security_metadata"]
+        assert meta["source_type"] == "playbook"
+
+    async def test_playbook_chunks_have_unique_content(self) -> None:
+        """Each section in a playbook produces a distinct chunk."""
+        text = SAMPLE_PLAYBOOK.read_text(encoding="utf-8")
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text, doc_id="distinct-test", source_metadata={"path": "/playbooks/test.md"}
+        )
+        contents = [c.content for c in chunks]
+        assert len(set(contents)) == len(contents), "Duplicate chunk content found"
+
+    async def test_playbook_trigger_section_becomes_trigger_facet(self) -> None:
+        """A playbook with no trigger in frontmatter uses Trigger section content."""
+        from grimoire.strategies.security.parsers.playbook import parse_playbook
+
+        text = (
+            "---\n"
+            "title: No Front Trigger\n"
+            "phase: identify\n"
+            "---\n\n"
+            "# No Front Trigger\n\n"
+            "## Trigger\n\n"
+            "Suspicious login from unusual geography.\n\n"
+            "## Actions\n\n"
+            "Block the IP.\n"
+        )
+        result = parse_playbook(text)
+        assert len(result) == 2
+        trigger_meta = result[0][1]  # Trigger section
+        assert trigger_meta.trigger == "Suspicious login from unusual geography."
+
+    async def test_log_sources_in_chroma_metadata(self) -> None:
+        """log_sources extracted from a Sigma rule appear in to_chromadb_metadata()."""
+        from pathlib import Path
+
+        sigma_fixture = Path(__file__).parent.parent / "fixtures" / "security" / "sigma" / "sample_rules.yml"
+        from grimoire.strategies.security.parsers.sigma import parse_sigma
+
+        text = sigma_fixture.read_text(encoding="utf-8")
+        parsed = parse_sigma(text)
+        assert len(parsed) >= 1
+        rule_text, meta = parsed[0]
+        chroma_meta = meta.to_chromadb_metadata()
+        # log_sources should be in ChromaDB metadata (pipe-joined string)
+        assert "log_sources" in chroma_meta
+        # Should be a string (pipe-joined or empty)
+        assert isinstance(chroma_meta["log_sources"], str)
+
