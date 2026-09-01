@@ -72,7 +72,7 @@ _SECURITY_FILTER_OPTIONS = [
         "--source-type",
         type=str,
         default=None,
-        help="Filter by source type (sigma_rule, nvd_cve, mitre_attack, prose).",
+        help="Filter by source type (sigma_rule, nvd_cve, mitre_attack, playbook, prose).",
     ),
     click.option("--cve-id", type=str, default=None, help="Filter by CVE ID."),
     click.option(

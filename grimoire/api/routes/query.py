@@ -80,7 +80,7 @@ async def ask_question(
     ),
     source_type: str | None = Query(
         default=None,
-        description="Filter by source type (sigma_rule, nvd_cve, mitre_attack, prose).",
+        description="Filter by source type (sigma_rule, nvd_cve, mitre_attack, playbook, prose).",
     ),
     cve_id: str | None = Query(default=None, description="Filter by CVE ID."),
     content_date_after: str | None = Query(
