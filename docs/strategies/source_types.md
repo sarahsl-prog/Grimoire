@@ -92,6 +92,40 @@ lists is supported now, but the dedicated **IOC chunker arrives in a later
 phase** — until then IOC files will fall back to prose chunking even when
 correctly classified as `IOC_LIST`.
 
+**Playbook via path hint, front matter, or section structure**
+
+```
+# Any of:
+docs/corpus/playbooks/ransomware-containment.md
+docs/runbooks/phishing-response.md
+docs/ir-playbooks/data-breach.md
+docs/response-plans/credential-theft.yaml
+```
+
+or a markdown document with front-matter keys `playbook:` / `phase:` /
+`trigger:`, e.g.
+
+```
+---
+title: Ransomware Containment
+playbook: ransomware
+phase: contain
+severity: critical
+---
+```
+
+or a markdown document containing **both** a `## Trigger` and an
+`## Actions` section header.
+
+`detect_source_type(body, {"path": path})` → `SourceType.PLAYBOOK`. Playbooks
+chunk one-per-`##` section (`chunk_type="playbook_section"`) and the parser
+extracts `playbook_phase` / `action_type` / `trigger` / `mitre_technique_id` /
+`severity` from YAML front matter into `SecurityMetadata`. When front matter
+omits `trigger:`, the content of the `## Trigger` section becomes the trigger
+facet. All fields ride in the `documents.security_metadata` JSONB blob — no
+migration required — and `playbook_phase` / `action_type` are also emitted as
+ChromaDB metadata for vector-layer filtering.
+
 ## Why pure function, no LLM?
 
 Source-type detection sits on the hot path of every ingestion job and needs

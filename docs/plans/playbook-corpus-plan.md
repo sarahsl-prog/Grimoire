@@ -1,6 +1,6 @@
 # Plan: Native Playbook Corpus (`SourceType.PLAYBOOK`)
 
-**Status:** Proposed
+**Status:** ✅ Implemented on branch `mcp-updates` (commits 57400aa → dd3840f)
 **Author:** OpenCode session 2026-09-01
 **Depends on:** security-domain pipeline (Phases 1–3); `grimoire_search_playbook` MCP tool (Option B, shipped in commit 9ba460b + d920d17)
 

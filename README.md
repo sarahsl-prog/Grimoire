@@ -263,7 +263,9 @@ Grimoire exposes its full functionality as an MCP server, allowing AI assistants
 **Security-domain search tools:**
 
 - `grimoire_search_cve` — search the NVD CVE corpus. Provide `cve_id` for an exact lookup (returns the document and its chunks directly from Postgres) or `query` plus optional `severity`, `min_cvss`, and `year` facets for a semantic search over CVE descriptions.
-- `grimoire_search_playbook` — search Sigma detection rules. Provide `query` or `mitre_technique_id` (e.g. `T1059.001`) plus optional `severity`, `platform` (e.g. `windows`), and `log_source` (e.g. `process_creation`) facets.
+- `grimoire_search_playbook` — search Sigma detection rules **and** incident-response playbooks. Provide `query` or `mitre_technique_id` (e.g. `T1059.001`) plus optional `severity`, `platform`, `log_source`, `phase` (e.g. `contain`), and `source_types` (`all` — default, covers both corpora; `playbooks`; or `sigma`) facets.
+
+**Playbook corpus:** markdown documents with YAML front matter (`phase:`, `severity:`, `trigger:`, `action_type:`, `mitre_technique_id:`) and canonical `## Trigger` / `## Actions` sections are ingested as `source_type: playbook` — one chunk per section, with all facets filterable. See [docs/strategies/source_types.md](docs/strategies/source_types.md).
 
 **Create an API key for your MCP client:**
 
