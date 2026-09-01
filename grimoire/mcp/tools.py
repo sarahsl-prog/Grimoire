@@ -332,6 +332,87 @@ async def grimoire_search(params: SearchInput, ctx: Context) -> str:
     })
 
 
+def _jsonb_list_contains(column: Any, value: str) -> Any:
+    """Portable 'list contains value' predicate over the security_metadata blob.
+
+    On PostgreSQL the stored field is JSONB, so a plain ILIKE with explicit
+    ``"value"`` quotes is safe regardless of list formatting.  On SQLite the
+    blob is plain JSON text from the PortableJSON type and the same ILIKE
+    pattern matches identically.
+    """
+    from sqlalchemy import cast, String
+
+    return cast(column, String).ilike(f'%\"{value}\"%')
+
+
+async def _matching_document_ids(
+    db: Any,
+    source_type: str,
+    conditions: List[Any],
+) -> List[str]:
+    """Return document ids of ``source_type`` matching all ``conditions``."""
+    from sqlalchemy import select
+
+    from grimoire.db.models import Document
+
+    stmt = select(Document.id).where(Document.source_type == source_type)
+    for cond in conditions:
+        stmt = stmt.where(cond)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def _facet_search(
+    *,
+    source_type: str,
+    facet_label: str,
+    conditions: List[Any],
+    query_text: str,
+    top_k: int,
+) -> str:
+    """Run a semantic search restricted to documents matching SQL facets.
+
+    Facets (severity, CVSS, MITRE technique, platform, log source, CVE year)
+    are applied via SQL on ``documents`` first — several live in the
+    ``security_metadata`` JSONB blob that ChromaDB cannot substring-match —
+    then the vector search is restricted to the surviving document ids.
+    """
+    async with get_db_context() as db:
+        doc_ids = await _matching_document_ids(db, source_type, conditions)
+
+    if not doc_ids:
+        return _ok({
+            "mode": "semantic",
+            "source_type": source_type,
+            "query": query_text,
+            "results": [],
+            "total_results": 0,
+        })
+
+    # document_id is always a scalar in Chroma metadata, so $in matches it correctly.
+    filters: Dict[str, Any] = {
+        "source_type": source_type,
+        "document_id": {"$in": doc_ids},
+    }
+    agent = get_query_agent()
+    async with get_db_context() as db:
+        result = await agent.search(
+            db,
+            query_text,
+            top_k=top_k,
+            filter_dict=filters,
+        )
+    return _ok({
+        "mode": "semantic",
+        "source_type": source_type,
+        "query": result.query,
+        "matched_documents": len(doc_ids),
+        "results": [r.model_dump() for r in result.results],
+        "total_results": result.total_results,
+        "duration_ms": result.duration_ms,
+    })
+
+
 async def grimoire_search_cve(params: CveSearchInput, ctx: Context) -> str:
     """Search the ingested NVD CVE corpus.
 
@@ -366,53 +447,51 @@ async def grimoire_search_cve(params: CveSearchInput, ctx: Context) -> str:
             chunk_result = await db.execute(chunk_stmt)
             chunks = chunk_result.scalars().all()
 
+        severity = doc.severity.value if hasattr(doc.severity, "value") else doc.severity
         return _ok({
             "mode": "exact",
             "cve_id": params.cve_id,
             "document": {
                 "id": doc.id,
                 "title": doc.title,
-                "severity": doc.severity.value if hasattr(doc.severity, "value") else doc.severity,
+                "severity": severity,
                 "mitre_technique_id": doc.mitre_technique_id,
                 "source_path": doc.source_path,
                 "security_metadata": doc.security_metadata,
                 "content_date": doc.content_date.isoformat() if doc.content_date else None,
             },
             "chunks": [
-                {
-                    "chunk_index": c.chunk_index,
-                    "chunk_type": c.chunk_type,
-                    "text": c.text,
-                }
+                {"chunk_index": c.chunk_index, "content": c.content}
                 for c in chunks
             ],
         })
 
-    # Semantic path: hybrid search restricted to the CVE corpus.
-    filters: Dict[str, Any] = {"source_type": "nvd_cve"}
-    if params.severity:
-        filters["severity"] = params.severity
-    if params.year:
-        filters["cve_id"] = {"$contains": f"CVE-{params.year}-"}
-    if params.min_cvss is not None:
-        filters["cvss_score"] = {"$gte": params.min_cvss}
+    # Semantic path: facet pre-filter in SQL, then vector search on matches.
+    from sqlalchemy import Float, cast, func
 
-    agent = get_query_agent()
-    async with get_db_context() as db:
-        result = await agent.search(
-            db,
-            params.query or "",
-            top_k=params.top_k,
-            filter_dict=filters,
+    from grimoire.db.models import Document
+
+    conditions: List[Any] = []
+    if params.severity:
+        conditions.append(Document.severity == params.severity)
+    if params.year:
+        conditions.append(Document.cve_id.startswith(f"CVE-{params.year}-"))
+    if params.min_cvss is not None:
+        # cvss_score lives inside the security_metadata blob; cast to float for
+        # a numeric comparison. NULL and unparseable values fail the > comparison.
+        conditions.append(
+            cast(
+                func.json_extract(Document.security_metadata, "$.cvss_score"), Float
+            ) >= params.min_cvss
         )
-    return _ok({
-        "mode": "semantic",
-        "query": result.query,
-        "filters": filters,
-        "results": [r.model_dump() for r in result.results],
-        "total_results": result.total_results,
-        "duration_ms": result.duration_ms,
-    })
+
+    return await _facet_search(
+        source_type="nvd_cve",
+        facet_label="CVE",
+        conditions=conditions,
+        query_text=params.query or "",
+        top_k=params.top_k,
+    )
 
 
 async def grimoire_search_playbook(params: PlaybookSearchInput, ctx: Context) -> str:
@@ -428,36 +507,29 @@ async def grimoire_search_playbook(params: PlaybookSearchInput, ctx: Context) ->
             hint="e.g. query='powershell execution' or mitre_technique_id='T1059.001'",
         )
 
-    filters: Dict[str, Any] = {"source_type": "sigma_rule"}
+    from grimoire.db.models import Document
+
+    conditions: List[Any] = []
     if params.mitre_technique_id:
-        filters["mitre_technique_id"] = params.mitre_technique_id
+        conditions.append(Document.mitre_technique_id == params.mitre_technique_id)
     if params.severity:
-        filters["severity"] = params.severity
+        conditions.append(Document.severity == params.severity)
     if params.platform:
-        filters["platforms"] = {"$contains": params.platform.lower()}
+        conditions.append(_jsonb_list_contains(Document.security_metadata, params.platform.lower()))
     if params.log_source:
-        filters["log_sources"] = {"$contains": params.log_source.lower()}
+        conditions.append(_jsonb_list_contains(Document.security_metadata, params.log_source.lower()))
 
     # Vector search needs a query string; use a wildcard marker when the user
     # supplied only structured facets.
     query_text = params.query or "*"
 
-    agent = get_query_agent()
-    async with get_db_context() as db:
-        result = await agent.search(
-            db,
-            query_text,
-            top_k=params.top_k,
-            filter_dict=filters,
-        )
-    return _ok({
-        "mode": "semantic",
-        "query": result.query,
-        "filters": filters,
-        "results": [r.model_dump() for r in result.results],
-        "total_results": result.total_results,
-        "duration_ms": result.duration_ms,
-    })
+    return await _facet_search(
+        source_type="sigma_rule",
+        facet_label="playbook",
+        conditions=conditions,
+        query_text=query_text,
+        top_k=params.top_k,
+    )
 
 
 async def grimoire_ask(params: AskInput, ctx: Context) -> str:
