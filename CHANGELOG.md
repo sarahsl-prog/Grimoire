@@ -9,10 +9,11 @@ All notable changes to Grimoire are documented in this file.
 - **MCP server** – Grimoire now exposes its full knowledge-base functionality via the Model Context Protocol (MCP) so AI assistants can query and manage documents natively.
   - `stdio` transport for local clients such as Claude Desktop, Cursor, and Windsurf.
   - `SSE` transport mounted at `/mcp` inside the existing FastAPI API server, plus a standalone `grimoire mcp --sse` server.
-  - 14 tier-gated tools: `grimoire_search`, `grimoire_ask`, `grimoire_get_document`, `grimoire_list_documents`, `grimoire_list_categories`, `grimoire_watch_status`, `grimoire_status`, `grimoire_ingest_file`, `grimoire_ingest_directory`, `grimoire_generate`, `grimoire_create_category`, `grimoire_watch_start`, `grimoire_pg_query`, and `grimoire_delete_document`.
+  - 17 tier-gated tools: `grimoire_search`, `grimoire_search_cve`, `grimoire_search_playbook`, `grimoire_ask`, `grimoire_get_document`, `grimoire_list_documents`, `grimoire_list_categories`, `grimoire_watch_status`, `grimoire_status`, `grimoire_ingest_file`, `grimoire_ingest_directory`, `grimoire_generate`, `grimoire_create_category`, `grimoire_watch_start`, `grimoire_watch_stop`, `grimoire_pg_query`, and `grimoire_delete_document`.
+  - Security-domain search: `grimoire_search_cve` (exact CVE lookup or semantic search over NVD CVEs with severity/CVSS/year facets) and `grimoire_search_playbook` (semantic search over Sigma detection rules with MITRE technique, platform, log-source, and severity facets).
   - Tier-based access control:
-    - `rdl` (Read) – search, ask, get/list docs/categories, watch_status, status.
-    - `dvl` (Dev) – Read + ingest, generate, create_category, watch_start, pg_query.
+    - `rdl` (Read) – search, search_cve, search_playbook, ask, get/list docs/categories, watch_status, status.
+    - `dvl` (Dev) – Read + ingest, generate, create_category, watch_start, watch_stop, pg_query.
     - `agt` (Agent) – Dev + delete_document.
 - New CLI command: `grimoire mcp [--stdio|--sse --host HOST --port PORT]`.
 - New CLI command group: `grimoire key create|list|revoke` for API-key management.

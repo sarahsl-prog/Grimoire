@@ -696,8 +696,8 @@ Grimoire exposes its full functionality via the Model Context Protocol (MCP) so 
 ### Tier Gating
 | Tier | Tools |
 |------|-------|
-| `rdl` | search, ask, get_document, list_documents, list_categories, watch_status, status |
-| `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start, pg_query |
+| `rdl` | search, search_cve, search_playbook, ask, get_document, list_documents, list_categories, watch_status, status |
+| `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start, watch_stop, pg_query |
 | `agt` | Dev + delete_document |
 
 ### Testing

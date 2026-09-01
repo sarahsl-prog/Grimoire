@@ -256,9 +256,14 @@ Grimoire exposes its full functionality as an MCP server, allowing AI assistants
 
 | Tier | Code: | Tools available |
 |------|------|----------------|
-| Read | `rdl` | search, ask, get_document, list_documents, list_categories, watch_status, status |
-| Dev  | `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start, pg_query |
+| Read | `rdl` | search, search_cve, search_playbook, ask, get_document, list_documents, list_categories, watch_status, status |
+| Dev  | `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start, watch_stop, pg_query |
 | Agent | `agt` | Dev + delete_document |
+
+**Security-domain search tools:**
+
+- `grimoire_search_cve` — search the NVD CVE corpus. Provide `cve_id` for an exact lookup (returns the document and its chunks directly from Postgres) or `query` plus optional `severity`, `min_cvss`, and `year` facets for a semantic search over CVE descriptions.
+- `grimoire_search_playbook` — search Sigma detection rules. Provide `query` or `mitre_technique_id` (e.g. `T1059.001`) plus optional `severity`, `platform` (e.g. `windows`), and `log_source` (e.g. `process_creation`) facets.
 
 **Create an API key for your MCP client:**
 
