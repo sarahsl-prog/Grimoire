@@ -77,6 +77,8 @@ def create_mcp_server() -> FastMCP:
 
     # Register read-only tools (available to all tiers)
     _register_tool(mcp, tools.grimoire_search, "grimoire_search")
+    _register_tool(mcp, tools.grimoire_search_cve, "grimoire_search_cve")
+    _register_tool(mcp, tools.grimoire_search_playbook, "grimoire_search_playbook")
     _register_tool(mcp, tools.grimoire_ask, "grimoire_ask")
     _register_tool(mcp, tools.grimoire_get_document, "grimoire_get_document")
     _register_tool(mcp, tools.grimoire_list_documents, "grimoire_list_documents")

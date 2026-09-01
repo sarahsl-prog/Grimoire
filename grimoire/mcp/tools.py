@@ -183,6 +183,112 @@ class DeleteDocumentInput(BaseModel):
     document_id: str = Field(...)
 
 
+class CveSearchInput(BaseModel):
+    """Parameters for grimoire_search_cve."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    cve_id: Optional[str] = Field(
+        default=None, description="Exact CVE identifier, e.g. 'CVE-2021-44228'."
+    )
+    query: Optional[str] = Field(
+        default=None, max_length=2000, description="Semantic search over CVE descriptions."
+    )
+    severity: Optional[str] = Field(
+        default=None,
+        description="Filter by severity bucket: critical | high | medium | low | info | unknown.",
+    )
+    min_cvss: Optional[float] = Field(
+        default=None, ge=0.0, le=10.0, description="Minimum CVSS base score."
+    )
+    year: Optional[int] = Field(
+        default=None, ge=1999, le=2100, description="Filter by CVE year."
+    )
+    top_k: int = Field(default=10, ge=1, le=100, description="Maximum results to return.")
+
+    @field_validator("cve_id")
+    @classmethod
+    def _validate_cve_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        from grimoire.strategies.security.metadata import _RE_CVE_ID
+
+        if not _RE_CVE_ID.match(v):
+            raise ValueError("cve_id must match 'CVE-YYYY-N+', e.g. 'CVE-2021-44228'.")
+        return v
+
+    @field_validator("severity")
+    @classmethod
+    def _validate_severity(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.lower()
+        from grimoire.strategies.security.metadata import Severity
+
+        allowed = {s.value for s in Severity}
+        if v not in allowed:
+            raise ValueError(f"severity must be one of {sorted(allowed)}.")
+        return v
+
+
+class PlaybookSearchInput(BaseModel):
+    """Parameters for grimoire_search_playbook.
+
+    Searches the Sigma detection-rule corpus ("playbooks") with optional
+    MITRE ATT&CK, platform, log-source, and severity facets.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    query: Optional[str] = Field(
+        default=None,
+        max_length=2000,
+        description="Semantic search over rule titles and detection logic.",
+    )
+    mitre_technique_id: Optional[str] = Field(
+        default=None, description="ATT&CK technique id, e.g. 'T1059' or 'T1059.001'."
+    )
+    severity: Optional[str] = Field(
+        default=None,
+        description="Filter by Sigma level bucket: critical | high | medium | low | info.",
+    )
+    platform: Optional[str] = Field(
+        default=None, max_length=64, description="Platform facet, e.g. 'windows', 'linux', 'aws'."
+    )
+    log_source: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Sigma log source facet, e.g. 'process_creation', 'sysmon'.",
+    )
+    top_k: int = Field(default=10, ge=1, le=100, description="Maximum results to return.")
+
+    @field_validator("mitre_technique_id")
+    @classmethod
+    def _validate_mitre_technique_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        from grimoire.strategies.security.metadata import _RE_MITRE_TECHNIQUE_ID
+
+        if not _RE_MITRE_TECHNIQUE_ID.match(v):
+            raise ValueError(
+                "mitre_technique_id must match 'T<4d>(.<3d>)?', e.g. 'T1059.001'."
+            )
+        return v
+
+    @field_validator("severity")
+    @classmethod
+    def _validate_severity(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.lower()
+        from grimoire.strategies.security.metadata import Severity
+
+        allowed = {s.value for s in Severity}
+        if v not in allowed:
+            raise ValueError(f"severity must be one of {sorted(allowed)}.")
+        return v
+
+
 class PgQueryInput(BaseModel):
     """Parameters for grimoire_pg_query."""
 
@@ -220,6 +326,134 @@ async def grimoire_search(params: SearchInput, ctx: Context) -> str:
         )
     return _ok({
         "query": result.query,
+        "results": [r.model_dump() for r in result.results],
+        "total_results": result.total_results,
+        "duration_ms": result.duration_ms,
+    })
+
+
+async def grimoire_search_cve(params: CveSearchInput, ctx: Context) -> str:
+    """Search the ingested NVD CVE corpus.
+
+    Provide either an exact ``cve_id`` for a direct document lookup, or a
+    free-text ``query`` combined with severity / CVSS / year facets to run a
+    semantic search restricted to CVE content.
+    """
+    if not params.cve_id and not params.query:
+        return _err(
+            "Provide either 'cve_id' for an exact lookup or 'query' for semantic search.",
+            hint="e.g. cve_id='CVE-2021-44228' or query='remote code execution'",
+        )
+
+    # Exact-ID fast path: direct SQL over the indexed cve_id column.
+    if params.cve_id:
+        from sqlalchemy import select
+
+        from grimoire.db.models import Chunk, Document
+
+        async with get_db_context() as db:
+            doc_stmt = select(Document).where(Document.cve_id == params.cve_id)
+            doc_result = await db.execute(doc_stmt)
+            doc = doc_result.scalars().first() if doc_result is not None else None
+            if doc is None:
+                return _err(f"No document found for {params.cve_id}.")
+
+            chunk_stmt = (
+                select(Chunk)
+                .where(Chunk.document_id == doc.id)
+                .order_by(Chunk.chunk_index)
+            )
+            chunk_result = await db.execute(chunk_stmt)
+            chunks = chunk_result.scalars().all()
+
+        return _ok({
+            "mode": "exact",
+            "cve_id": params.cve_id,
+            "document": {
+                "id": doc.id,
+                "title": doc.title,
+                "severity": doc.severity.value if hasattr(doc.severity, "value") else doc.severity,
+                "mitre_technique_id": doc.mitre_technique_id,
+                "source_path": doc.source_path,
+                "security_metadata": doc.security_metadata,
+                "content_date": doc.content_date.isoformat() if doc.content_date else None,
+            },
+            "chunks": [
+                {
+                    "chunk_index": c.chunk_index,
+                    "chunk_type": c.chunk_type,
+                    "text": c.text,
+                }
+                for c in chunks
+            ],
+        })
+
+    # Semantic path: hybrid search restricted to the CVE corpus.
+    filters: Dict[str, Any] = {"source_type": "nvd_cve"}
+    if params.severity:
+        filters["severity"] = params.severity
+    if params.year:
+        filters["cve_id"] = {"$contains": f"CVE-{params.year}-"}
+    if params.min_cvss is not None:
+        filters["cvss_score"] = {"$gte": params.min_cvss}
+
+    agent = get_query_agent()
+    async with get_db_context() as db:
+        result = await agent.search(
+            db,
+            params.query or "",
+            top_k=params.top_k,
+            filter_dict=filters,
+        )
+    return _ok({
+        "mode": "semantic",
+        "query": result.query,
+        "filters": filters,
+        "results": [r.model_dump() for r in result.results],
+        "total_results": result.total_results,
+        "duration_ms": result.duration_ms,
+    })
+
+
+async def grimoire_search_playbook(params: PlaybookSearchInput, ctx: Context) -> str:
+    """Search the Sigma detection-rule corpus.
+
+    Sigma rules serve as detection "playbooks": each rule maps suspicious
+    activity to MITRE ATT&CK techniques.  Provide a free-text ``query`` and/or
+    a ``mitre_technique_id`` plus optional platform / log-source facets.
+    """
+    if not params.query and not params.mitre_technique_id:
+        return _err(
+            "Provide either 'query' or 'mitre_technique_id'.",
+            hint="e.g. query='powershell execution' or mitre_technique_id='T1059.001'",
+        )
+
+    filters: Dict[str, Any] = {"source_type": "sigma_rule"}
+    if params.mitre_technique_id:
+        filters["mitre_technique_id"] = params.mitre_technique_id
+    if params.severity:
+        filters["severity"] = params.severity
+    if params.platform:
+        filters["platforms"] = {"$contains": params.platform.lower()}
+    if params.log_source:
+        filters["log_sources"] = {"$contains": params.log_source.lower()}
+
+    # Vector search needs a query string; use a wildcard marker when the user
+    # supplied only structured facets.
+    query_text = params.query or "*"
+
+    agent = get_query_agent()
+    async with get_db_context() as db:
+        result = await agent.search(
+            db,
+            query_text,
+            top_k=params.top_k,
+            filter_dict=filters,
+        )
+    return _ok({
+        "mode": "semantic",
+        "query": result.query,
+        "filters": filters,
         "results": [r.model_dump() for r in result.results],
         "total_results": result.total_results,
         "duration_ms": result.duration_ms,
