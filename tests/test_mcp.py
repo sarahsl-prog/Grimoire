@@ -816,7 +816,7 @@ async def test_search_cve_requires_input(mcp_server: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_search_playbook_facet_filters_docs_in_sql(mcp_server: Any) -> None:
-    """MITRE/platform/log-source facets pre-filter Sigma docs via SQL."""
+    """MITRE/platform/log-source facets pre-filter docs via SQL."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
     with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
@@ -830,6 +830,7 @@ async def test_search_playbook_facet_filters_docs_in_sql(mcp_server: Any) -> Non
                 "severity": "high",
                 "platform": "windows",
                 "log_source": "process_creation",
+                "source_types": "sigma",
             },
         })
 
@@ -839,6 +840,53 @@ async def test_search_playbook_facet_filters_docs_in_sql(mcp_server: Any) -> Non
             "source_type": "sigma_rule",
             "document_id": {"$in": ["doc-sig"]},
         }
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_default_covers_both_corpora(mcp_server: Any) -> None:
+    """Default source_types searches playbooks AND sigma rules."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-pb", "doc-sig"])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+
+        await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"query": "contain ransomware"},
+        })
+
+        call = mock_agent.return_value.search.await_args
+        filters = call.kwargs["filter_dict"]
+        assert filters["source_type"] == {"$in": ["playbook", "sigma_rule"]}
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_phase_facet(mcp_server: Any) -> None:
+    """The phase facet pre-filters playbooks by JSONB playbook_phase."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-pb"])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+
+        result = await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"query": "contain ransomware", "phase": "contain"},
+        })
+
+        call = mock_agent.return_value.search.await_args
+        assert call.kwargs["filter_dict"]["document_id"] == {"$in": ["doc-pb"]}
+        assert '"matched_documents": 1' in result[0][0].text
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_rejects_bad_source_types(mcp_server: Any) -> None:
+    """source_types values outside playbooks|sigma|all fail validation."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with pytest.raises(ToolError):
+        await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"query": "x", "source_types": "cve"},
+        })
 
 
 @pytest.mark.asyncio

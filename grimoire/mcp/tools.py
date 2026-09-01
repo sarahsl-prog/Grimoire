@@ -260,7 +260,31 @@ class PlaybookSearchInput(BaseModel):
         max_length=64,
         description="Sigma log source facet, e.g. 'process_creation', 'sysmon'.",
     )
+    phase: Optional[str] = Field(
+        default=None,
+        max_length=32,
+        description="Playbook IR phase facet, e.g. 'identify', 'contain', 'recover'.",
+    )
+    source_types: str = Field(
+        default="all",
+        description="Which corpora to search: 'all' (playbook + sigma_rule), 'playbooks', or 'sigma'.",
+    )
     top_k: int = Field(default=10, ge=1, le=100, description="Maximum results to return.")
+
+    @field_validator("source_types")
+    @classmethod
+    def _validate_source_types(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in {"all", "playbooks", "sigma"}:
+            raise ValueError("source_types must be 'all', 'playbooks', or 'sigma'.")
+        return v
+
+    @field_validator("phase")
+    @classmethod
+    def _validate_phase(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return v.strip().lower()
 
     @field_validator("mitre_technique_id")
     @classmethod
@@ -347,15 +371,18 @@ def _jsonb_list_contains(column: Any, value: str) -> Any:
 
 async def _matching_document_ids(
     db: Any,
-    source_type: str,
+    source_types: List[str],
     conditions: List[Any],
 ) -> List[str]:
-    """Return document ids of ``source_type`` matching all ``conditions``."""
+    """Return document ids of the given ``source_types`` matching all conditions."""
     from sqlalchemy import select
 
     from grimoire.db.models import Document
 
-    stmt = select(Document.id).where(Document.source_type == source_type)
+    if len(source_types) == 1:
+        stmt = select(Document.id).where(Document.source_type == source_types[0])
+    else:
+        stmt = select(Document.id).where(Document.source_type.in_(source_types))
     for cond in conditions:
         stmt = stmt.where(cond)
     result = await db.execute(stmt)
@@ -364,7 +391,7 @@ async def _matching_document_ids(
 
 async def _facet_search(
     *,
-    source_type: str,
+    source_types: List[str],
     facet_label: str,
     conditions: List[Any],
     query_text: str,
@@ -378,22 +405,26 @@ async def _facet_search(
     then the vector search is restricted to the surviving document ids.
     """
     async with get_db_context() as db:
-        doc_ids = await _matching_document_ids(db, source_type, conditions)
+        doc_ids = await _matching_document_ids(db, source_types, conditions)
 
     if not doc_ids:
         return _ok({
             "mode": "semantic",
-            "source_type": source_type,
+            "source_types": source_types,
             "query": query_text,
             "results": [],
             "total_results": 0,
         })
 
     # document_id is always a scalar in Chroma metadata, so $in matches it correctly.
-    filters: Dict[str, Any] = {
-        "source_type": source_type,
-        "document_id": {"$in": doc_ids},
-    }
+    if len(source_types) == 1:
+        filters: Dict[str, Any] = {
+            "source_type": source_types[0], "document_id": {"$in": doc_ids}
+        }
+    else:
+        filters = {
+            "source_type": {"$in": source_types}, "document_id": {"$in": doc_ids}
+        }
     agent = get_query_agent()
     async with get_db_context() as db:
         result = await agent.search(
@@ -404,7 +435,7 @@ async def _facet_search(
         )
     return _ok({
         "mode": "semantic",
-        "source_type": source_type,
+        "source_types": source_types,
         "query": result.query,
         "matched_documents": len(doc_ids),
         "results": [r.model_dump() for r in result.results],
@@ -486,7 +517,7 @@ async def grimoire_search_cve(params: CveSearchInput, ctx: Context) -> str:
         )
 
     return await _facet_search(
-        source_type="nvd_cve",
+        source_types=["nvd_cve"],
         facet_label="CVE",
         conditions=conditions,
         query_text=params.query or "",
@@ -514,17 +545,27 @@ async def grimoire_search_playbook(params: PlaybookSearchInput, ctx: Context) ->
         conditions.append(Document.mitre_technique_id == params.mitre_technique_id)
     if params.severity:
         conditions.append(Document.severity == params.severity)
+    if params.phase:
+        conditions.append(
+            _jsonb_list_contains(Document.security_metadata, params.phase)
+        )
     if params.platform:
         conditions.append(_jsonb_list_contains(Document.security_metadata, params.platform.lower()))
     if params.log_source:
         conditions.append(_jsonb_list_contains(Document.security_metadata, params.log_source.lower()))
+
+    source_types = {
+        "all": ["playbook", "sigma_rule"],
+        "playbooks": ["playbook"],
+        "sigma": ["sigma_rule"],
+    }[params.source_types]
 
     # Vector search needs a query string; use a wildcard marker when the user
     # supplied only structured facets.
     query_text = params.query or "*"
 
     return await _facet_search(
-        source_type="sigma_rule",
+        source_types=source_types,
         facet_label="playbook",
         conditions=conditions,
         query_text=query_text,
