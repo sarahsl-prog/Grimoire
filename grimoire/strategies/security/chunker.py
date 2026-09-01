@@ -31,6 +31,7 @@ from grimoire.core.chunker.recursive import (
 from grimoire.strategies.security.corpus import SourceType, detect_source_type
 from grimoire.strategies.security.metadata import SecurityMetadata
 from grimoire.strategies.security.parsers.nvd import parse_nvd_json
+from grimoire.strategies.security.parsers.playbook import parse_playbook
 from grimoire.strategies.security.parsers.sigma import parse_sigma
 
 __all__ = ["SecurityChunker"]
@@ -129,6 +130,8 @@ class SecurityChunker(Chunker):
             return await self._chunk_nvd(text, doc_id)
         if source_type is SourceType.MITRE_ATTACK:
             return await self._chunk_mitre(text, doc_id)
+        if source_type is SourceType.PLAYBOOK:
+            return await self._chunk_playbook(text, doc_id)
 
         # PROSE, UNKNOWN, IOC_LIST → prose fallback.
         # If settings.security.llm_extract_enabled, try LLM extraction first.
@@ -176,6 +179,44 @@ class SecurityChunker(Chunker):
                 metadata={
                     "security_metadata": sec_meta.to_chromadb_metadata(),
                     "strategy": "sigma_rule",
+                },
+            )
+            chunks.append(chunk)
+
+        if chunks:
+            self._set_continuity_links(chunks, doc_id or "doc")
+        return chunks
+
+    # ------------------------------------------------------------------ #
+    # Playbook
+    # ------------------------------------------------------------------ #
+
+    async def _chunk_playbook(
+        self, text: str, doc_id: Optional[str] = None
+    ) -> List[Chunk]:
+        """Chunk playbooks: one chunk per ``##`` section.
+
+        Each chunk carries the document-level front-matter metadata so
+        ``security_metadata`` facets (playbook_phase, action_type, severity,
+        mitre_technique_id) are filterable at the vector layer.
+        """
+
+        parsed = await asyncio.to_thread(parse_playbook, text)
+        if not parsed:
+            return []
+
+        chunks: List[Chunk] = []
+        for section_text, sec_meta in parsed:
+            token_count = self._count_tokens(section_text)
+            chunk = Chunk(
+                content=section_text,
+                token_count=token_count,
+                index=len(chunks),
+                chunk_type="playbook_section",
+                source_type=sec_meta.source_type.value,
+                metadata={
+                    "security_metadata": sec_meta.to_chromadb_metadata(),
+                    "strategy": "playbook_section",
                 },
             )
             chunks.append(chunk)

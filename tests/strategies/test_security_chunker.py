@@ -27,6 +27,11 @@ SAMPLE_RULES = FIXTURE_DIR / "sample_rules.yml"
 NVD_FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "security" / "nvd"
 SAMPLE_NVD = NVD_FIXTURE_DIR / "nvdcve-sample.json"
 
+PLAYBOOK_FIXTURE_DIR = (
+    Path(__file__).parent.parent / "fixtures" / "security" / "playbooks"
+)
+SAMPLE_PLAYBOOK = PLAYBOOK_FIXTURE_DIR / "ransomware-containment.md"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -232,6 +237,95 @@ def _load_mitre_md() -> str:
 
 
 @pytest.mark.asyncio
+# ---------------------------------------------------------------------------
+# 5. Playbook path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestPlaybookPath:
+    """Playbook documents chunk one-per-``##`` section with playbook metadata."""
+
+    async def test_sections_become_chunks(self) -> None:
+        text = SAMPLE_PLAYBOOK.read_text(encoding="utf-8")
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/playbooks/ransomware-containment.md"},
+        )
+        # Trigger, Preparation, Actions, Containment, Recovery
+        assert len(chunks) >= 4
+
+    async def test_each_chunk_is_playbook_section(self) -> None:
+        text = SAMPLE_PLAYBOOK.read_text(encoding="utf-8")
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/playbooks/ransomware-containment.md"},
+        )
+        for c in chunks:
+            assert c.chunk_type == "playbook_section"
+            assert c.source_type == "playbook"
+
+    async def test_metadata_carries_playbook_facets(self) -> None:
+        text = SAMPLE_PLAYBOOK.read_text(encoding="utf-8")
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/playbooks/ransomware-containment.md"},
+        )
+        assert chunks
+        meta = chunks[0].metadata["security_metadata"]
+        assert meta["source_type"] == "playbook"
+        assert meta["playbook_phase"] == "contain"
+        assert meta["action_type"] == "manual"
+        assert meta["severity"] == "critical"
+        assert meta["mitre_technique_id"] == "T1486"
+        assert meta["platforms"] == "windows|linux"
+
+    async def test_continuity_links_set(self) -> None:
+        text = SAMPLE_PLAYBOOK.read_text(encoding="utf-8")
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/playbooks/ransomware-containment.md"},
+        )
+        assert len(chunks) > 1
+        assert chunks[0].prev_chunk_id is None
+        assert chunks[-1].next_chunk_id is None
+        for i in range(1, len(chunks)):
+            assert chunks[i].prev_chunk_id == chunks[i - 1].metadata["chunk_id"]
+            assert chunks[i - 1].next_chunk_id == chunks[i].metadata["chunk_id"]
+
+    async def test_chunk_index_sequential(self) -> None:
+        text = SAMPLE_PLAYBOOK.read_text(encoding="utf-8")
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/playbooks/ransomware-containment.md"},
+        )
+        for i, chunk in enumerate(chunks):
+            assert chunk.index == i
+
+    async def test_no_field_bleed_across_sections(self) -> None:
+        """Section chunks share front-matter metadata but content stays distinct."""
+        text = SAMPLE_PLAYBOOK.read_text(encoding="utf-8")
+        chunker = SecurityChunker()
+        chunks = await chunker.chunk(
+            text,
+            doc_id="test-doc",
+            source_metadata={"path": "/playbooks/ransomware-containment.md"},
+        )
+        contents = [c.content for c in chunks]
+        # Each chunk content must be unique
+        assert len(set(contents)) == len(contents)
+
+
 class TestMitrePath:
     async def test_stix_bundle_chunks(self) -> None:
         """Two techniques × 3 sections each = 6 chunks."""
