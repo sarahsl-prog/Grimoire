@@ -202,6 +202,77 @@ class TestFrontmatter:
 
 
 # ---------------------------------------------------------------------------
+# 4b. Playbook detection
+# ---------------------------------------------------------------------------
+
+
+class TestPlaybookDetection:
+    """Playbooks are detected via path hints and markdown frontmatter/sections."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/corpus/playbooks/ransomware-containment.md",
+            "/runbooks/phishing-response.md",
+            "/ir-playbooks/data-breach.md",
+            "/response-plans/credential-theft.yaml",
+            "/corpus/Playbooks/Win-Isolate-Host.md",
+        ],
+    )
+    def test_path_hints(self, path: str) -> None:
+        assert detect_source_type("Body content here.", {"path": path}) is SourceType.PLAYBOOK
+
+    def test_frontmatter_playbook_keys(self) -> None:
+        """Front matter with playbook/phase/trigger keys is a playbook."""
+        body = (
+            "---\n"
+            "title: Ransomware Containment\n"
+            "playbook: ransomware\n"
+            "phase: contain\n"
+            "severity: high\n"
+            "---\n"
+            "# Ransomware Containment\n\n"
+            "## Trigger\n\nDetected ransomware encryption activity.\n"
+        )
+        assert detect_source_type(body) is SourceType.PLAYBOOK
+
+    def test_markdown_trigger_and_actions_sections(self) -> None:
+        """Markdown with both ## Trigger and ## Actions sections is a playbook."""
+        body = (
+            "# Phishing Response Playbook\n\n"
+            "## Trigger\n\nUser reports suspicious email.\n\n"
+            "## Actions\n\n1. Isolate the workstation.\n2. Collect the email headers.\n"
+        )
+        assert detect_source_type(body) is SourceType.PLAYBOOK
+
+    def test_frontmatter_without_playbook_keys_is_not_playbook(self) -> None:
+        body = (
+            "---\n"
+            "title: Some Note\n"
+            "tags: [misc]\n"
+            "---\n"
+            "Just a markdown document with several long sentences to make prose detection pick it up.\n"
+        )
+        assert detect_source_type(body) is not SourceType.PLAYBOOK
+
+    def test_markdown_with_only_one_section_is_not_playbook(self) -> None:
+        body = (
+            "# Runbook\n\n"
+            "## Actions\n\n1. Do something.\n2. Do another thing.\n\n"
+            "Additional context to make it long enough for prose heuristics.\n"
+        )
+        assert detect_source_type(body) is not SourceType.PLAYBOOK
+
+    def test_playbook_path_wins_over_markdown_content(self) -> None:
+        """A /playbooks/ path with plain prose is still classified as PLAYBOOK."""
+        body = "This is a long sentence of ordinary prose about response procedures."
+        assert (
+            detect_source_type(body, {"path": "/playbooks/data-breach.md"})
+            is SourceType.PLAYBOOK
+        )
+
+
+# ---------------------------------------------------------------------------
 # 5. Filename hint
 # ---------------------------------------------------------------------------
 

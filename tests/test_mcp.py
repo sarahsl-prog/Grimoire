@@ -138,6 +138,8 @@ async def test_server_creates_all_tools(mcp_server: Any) -> None:
         "grimoire_watch_start",
         "grimoire_watch_stop",
         "grimoire_delete_document",
+        "grimoire_search_cve",
+        "grimoire_search_playbook",
     }
     assert expected <= names, f"Missing tools: {expected - names}"
 
@@ -651,6 +653,276 @@ async def test_delete_allowed_for_agent_tier(mcp_server: Any) -> None:
             "params": {"document_id": "doc-123"},
         })
     assert '"status": "ok"' in result[0][0].text
+
+
+# ---------------------------------------------------------------------------
+# Security-domain search tools
+# ---------------------------------------------------------------------------
+
+
+def _mock_search_result() -> MagicMock:
+    """Build a mock QueryAgent search result for security tools."""
+    chunk = MagicMock()
+    chunk.model_dump = lambda: {
+        "document_id": "doc-cve",
+        "text": "Apache Log4j2 JNDI features do not protect against...",
+        "score": 0.95,
+    }
+    result = MagicMock()
+    result.query = "remote code execution"
+    result.results = [chunk]
+    result.total_results = 1
+    result.duration_ms = 12
+    return result
+
+
+def _fake_preselect_db(doc_ids: list[str]) -> Any:
+    """Mock DB session whose first execute() returns the given document ids."""
+    mock_db = MagicMock()
+    preselect_result = MagicMock()
+    preselect_result.scalars.return_value.all.return_value = doc_ids
+    mock_db.execute = AsyncMock(return_value=preselect_result)
+
+    @asynccontextmanager
+    async def _ctx() -> Any:
+        yield mock_db
+
+    return _ctx
+
+
+@pytest.mark.asyncio
+async def test_search_cve_with_exact_id(mcp_server: Any) -> None:
+    """Exact cve_id input short-circuits to a direct document lookup."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    mock_db = MagicMock()
+    mock_docs_result = MagicMock()
+    mock_doc = MagicMock()
+    mock_doc.id = "doc-cve"
+    mock_doc.title = "CVE-2021-44228"
+    mock_doc.cve_id = "CVE-2021-44228"
+    mock_doc.severity = "critical"
+    mock_doc.mitre_technique_id = "T1190"
+    mock_doc.content_date = None
+    mock_doc.source_path = "/nvd/CVE-2021-44228.json"
+    mock_doc.security_metadata = {"cvss_score": 10.0}
+    mock_docs_result.scalars.return_value.first.return_value = mock_doc
+
+    mock_chunks_result = MagicMock()
+    mock_chunk = MagicMock()
+    mock_chunk.content = "Apache Log4j2 JNDI features do not protect against..."
+    mock_chunk.chunk_index = 0
+    mock_chunks_result.scalars.return_value.all.return_value = [mock_chunk]
+
+    mock_db.execute = AsyncMock(side_effect=[mock_docs_result, mock_chunks_result])
+
+    @asynccontextmanager
+    async def _ctx() -> Any:
+        yield mock_db
+
+    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
+        result = await mcp_server.call_tool("grimoire_search_cve", {
+            "params": {"cve_id": "CVE-2021-44228"},
+        })
+    text = result[0][0].text
+    assert '"status": "ok"' in text
+    assert "CVE-2021-44228" in text
+    assert "Log4j2" in text
+    # Regression (QA P0): response must use Chunk.content, not Chunk.text
+    assert '"content": "Apache Log4j2 JNDI features' in text
+    assert "chunk_type" not in text
+
+
+@pytest.mark.asyncio
+async def test_search_cve_semantic_filters_docs_in_sql(mcp_server: Any) -> None:
+    """Severity/CVSS/year facets pre-filter via SQL and restrict vector search."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-1", "doc-2"])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+
+        await mcp_server.call_tool("grimoire_search_cve", {
+            "params": {
+                "query": "remote code execution",
+                "severity": "critical",
+                "min_cvss": 9.0,
+                "year": 2024,
+            },
+        })
+
+        call = mock_agent.return_value.search.await_args
+        filters = call.kwargs["filter_dict"]
+        # Broken ChromaDB list filters must NOT leak into the vector filter
+        assert "platforms" not in filters
+        assert "cve_id" not in filters
+        assert "cvss_score" not in filters
+        assert filters == {
+            "source_type": "nvd_cve",
+            "document_id": {"$in": ["doc-1", "doc-2"]},
+        }
+
+
+@pytest.mark.asyncio
+async def test_search_cve_no_matching_docs_short_circuits(mcp_server: Any) -> None:
+    """Facet filters matching zero documents skip the vector search entirely."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+
+        result = await mcp_server.call_tool("grimoire_search_cve", {
+            "params": {"query": "anything", "severity": "critical"},
+        })
+
+        mock_agent.return_value.search.assert_not_awaited()
+        text = result[0][0].text
+        assert '"status": "ok"' in text
+        assert '"total_results": 0' in text
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+        result = await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"mitre_technique_id": "T9999"},
+        })
+        mock_agent.return_value.search.assert_not_awaited()
+        assert '"total_results": 0' in result[0][0].text
+
+
+@pytest.mark.asyncio
+async def test_search_cve_validates_cve_id_format(mcp_server: Any) -> None:
+    """Malformed CVE IDs are rejected by Pydantic validation."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with pytest.raises(ToolError):
+        await mcp_server.call_tool("grimoire_search_cve", {
+            "params": {"cve_id": "not-a-cve"},
+        })
+
+
+@pytest.mark.asyncio
+async def test_search_cve_requires_input(mcp_server: Any) -> None:
+    """Calling search_cve with neither query nor cve_id returns an error result."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
+        result = await mcp_server.call_tool("grimoire_search_cve", {"params": {}})
+    text = result[0][0].text
+    assert '"status": "error"' in text
+    assert "query" in text
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_facet_filters_docs_in_sql(mcp_server: Any) -> None:
+    """MITRE/platform/log-source facets pre-filter docs via SQL."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-sig"])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+
+        await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {
+                "query": "powershell execution",
+                "mitre_technique_id": "T1059.001",
+                "severity": "high",
+                "platform": "windows",
+                "log_source": "process_creation",
+                "source_types": "sigma",
+            },
+        })
+
+        call = mock_agent.return_value.search.await_args
+        filters = call.kwargs["filter_dict"]
+        assert filters == {
+            "source_type": "sigma_rule",
+            "document_id": {"$in": ["doc-sig"]},
+        }
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_default_covers_both_corpora(mcp_server: Any) -> None:
+    """Default source_types searches playbooks AND sigma rules."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-pb", "doc-sig"])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+
+        await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"query": "contain ransomware"},
+        })
+
+        call = mock_agent.return_value.search.await_args
+        filters = call.kwargs["filter_dict"]
+        assert filters["source_type"] == {"$in": ["playbook", "sigma_rule"]}
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_phase_facet(mcp_server: Any) -> None:
+    """The phase facet pre-filters playbooks by JSONB playbook_phase."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-pb"])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+
+        result = await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"query": "contain ransomware", "phase": "contain"},
+        })
+
+        call = mock_agent.return_value.search.await_args
+        assert call.kwargs["filter_dict"]["document_id"] == {"$in": ["doc-pb"]}
+        assert '"matched_documents": 1' in result[0][0].text
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_rejects_bad_source_types(mcp_server: Any) -> None:
+    """source_types values outside playbooks|sigma|all fail validation."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with pytest.raises(ToolError):
+        await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"query": "x", "source_types": "cve"},
+        })
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_technique_only(mcp_server: Any) -> None:
+    """A MITRE technique alone (no query) searches over matching Sigma rules."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
+         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-sig"])):
+        mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
+
+        await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"mitre_technique_id": "T1059"},
+        })
+
+        call = mock_agent.return_value.search.await_args
+        assert call.kwargs["filter_dict"]["document_id"] == {"$in": ["doc-sig"]}
+        # Placeholder query so vector search still executes (positional arg)
+        assert call.args[1] == "*"
+
+    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
+        result = await mcp_server.call_tool("grimoire_search_playbook", {"params": {}})
+    text = result[0][0].text
+    assert '"status": "error"' in text
+    assert "query" in text
+
+
+@pytest.mark.asyncio
+async def test_search_playbook_validates_technique_id(mcp_server: Any) -> None:
+    """Malformed MITRE technique IDs are rejected by Pydantic validation."""
+    set_current_api_key(_make_api_key(ApiKeyTier.READ))
+
+    with pytest.raises(ToolError):
+        await mcp_server.call_tool("grimoire_search_playbook", {
+            "params": {"mitre_technique_id": "bad-id"},
+        })
 
 
 @pytest.mark.asyncio

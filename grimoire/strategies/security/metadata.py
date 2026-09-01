@@ -207,6 +207,20 @@ class SecurityMetadata(BaseModel):
         description="Log source channels referenced (Sigma 'logsource').",
     )
 
+    # Playbook block ----------------------------------------------------------
+    playbook_phase: Optional[str] = Field(
+        default=None,
+        description="IR phase, e.g. 'identify', 'contain', 'eradicate', 'recover'.",
+    )
+    action_type: Optional[str] = Field(
+        default=None,
+        description="Whether the playbook actions are 'manual' or 'automated'.",
+    )
+    trigger: Optional[str] = Field(
+        default=None,
+        description="Condition that triggers the playbook.",
+    )
+
     # Recency -----------------------------------------------------------------
     content_date: Optional[datetime] = Field(
         default=None,
@@ -271,6 +285,8 @@ class SecurityMetadata(BaseModel):
         content_date = (
             self.content_date.isoformat() if self.content_date is not None else ""
         )
+        playbook_phase = self.playbook_phase or ""
+        action_type = self.action_type or ""
 
         payload: dict[str, Any] = {
             # Always-present filterable defaults.
@@ -284,6 +300,9 @@ class SecurityMetadata(BaseModel):
             "mitre_tactic": mitre_tactic,
             "content_date": content_date,
             "source_url": source_url,
+            # Playbook facets (rendered as "" when unset).
+            "playbook_phase": playbook_phase,
+            "action_type": action_type,
             # Pipe-joined list fields (truncated at the entry cap).
             "cwe_ids": _join_list(self.cwe_ids),
             "threat_actors": _join_list(self.threat_actors),

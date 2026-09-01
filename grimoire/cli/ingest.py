@@ -37,7 +37,7 @@ from grimoire.cli.helpers import (
 @click.option(
     "--source-type",
     type=click.Choice(
-        ["sigma_rule", "nvd_cve", "mitre_attack", "ioc_list", "prose", "unknown"]
+        ["sigma_rule", "nvd_cve", "mitre_attack", "ioc_list", "playbook", "prose", "unknown"]
     ),
     default=None,
     help="Override security source-type autodetection (security mode only).",

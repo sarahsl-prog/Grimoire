@@ -21,6 +21,9 @@ matches wins:
    ``attack-pattern`` objects.
 4. **Markdown frontmatter** — ``---``-fenced frontmatter containing
    ``kind: attack-pattern`` or ``attack_id: T<digits>`` is tagged MITRE ATT&CK.
+4b. **Playbook structure** — frontmatter with ``playbook:``/``phase:``/``trigger:``
+   keys, or markdown containing both a ``## Trigger`` and an
+   ``## Action(s)`` section header, is tagged ``PLAYBOOK``.
 5. **Filename hint** — basenames matching ``T1059``, ``T1059.001``,
    ``T1059.md``, ``T1059.001.md`` are tagged MITRE ATT&CK.
 6. **IOC content sniff** — bodies under 64 KB whose non-empty lines are
@@ -55,6 +58,7 @@ class SourceType(str, Enum):
     SIGMA_RULE = "sigma_rule"
     MITRE_ATTACK = "mitre_attack"
     IOC_LIST = "ioc_list"
+    PLAYBOOK = "playbook"
     PROSE = "prose"
     UNKNOWN = "unknown"
 
@@ -83,6 +87,13 @@ _RE_FRONTMATTER_ATTACK_ID = re.compile(
     r"^\s*attack_id:\s*T\d{4}(?:\.\d{3})?\s*$", re.MULTILINE
 )
 
+# Playbook detection: frontmatter keys and canonical section headers.
+_RE_FRONTMATTER_PLAYBOOK_KEYS = re.compile(
+    r"^\s*(?:playbook|phase|trigger):\s*\S", re.MULTILINE
+)
+_RE_MD_SECTION_TRIGGER = re.compile(r"^#{1,4}\s+trigger\b", re.MULTILINE | re.IGNORECASE)
+_RE_MD_SECTION_ACTIONS = re.compile(r"^#{1,4}\s+actions?\b", re.MULTILINE | re.IGNORECASE)
+
 # IOC sniff regexes — anchored with fullmatch via `$` so a stray prose word
 # does not accidentally match.
 _RE_IPV4 = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
@@ -101,6 +112,7 @@ _PATH_HINTS_NVD = ("/nvd-cve/", "/nvd/", "/cve/")
 _PATH_HINTS_MITRE = ("/mitre-attack/", "/attack/", "/mitre/")
 _PATH_HINTS_MITRE_EXCLUDE = ("/mitre-defend/",)
 _PATH_HINTS_IOC = ("/iocs/", "/ioc-lists/")
+_PATH_HINTS_PLAYBOOK = ("/playbooks/", "/runbooks/", "/ir-playbooks/", "/response-plans/")
 
 # Extensions that warrant the YAML sniff.
 _YAML_EXTENSIONS = (".yml", ".yaml")
@@ -150,6 +162,8 @@ def _check_path_hints(path: Optional[str]) -> Optional[SourceType]:
         return SourceType.MITRE_ATTACK
     if any(hint in haystack for hint in _PATH_HINTS_IOC):
         return SourceType.IOC_LIST
+    if any(hint in haystack for hint in _PATH_HINTS_PLAYBOOK):
+        return SourceType.PLAYBOOK
     return None
 
 
@@ -254,6 +268,31 @@ def _check_filename_hint(path: Optional[str]) -> Optional[SourceType]:
     base = os.path.basename(path)
     if _RE_FILENAME_TECHNIQUE.match(base):
         return SourceType.MITRE_ATTACK
+    return None
+
+
+def _check_playbook_structure(text: str) -> Optional[SourceType]:
+    """Detect incident-response playbooks by frontmatter keys or section headers.
+
+    Recognizes two shapes:
+    - Markdown/YAML frontmatter containing ``playbook:``, ``phase:``, or
+      ``trigger:`` keys (common response-playbook conventions).
+    - Markdown documents containing both a ``## Trigger`` and an
+      ``## Action(s)`` section header (NIST-style IR playbook structure).
+    """
+
+    # Frontmatter path.
+    if text.startswith("---\n"):
+        end = text.find("\n---", 4)
+        if end != -1:
+            frontmatter = text[4:end]
+            if _RE_FRONTMATTER_PLAYBOOK_KEYS.search(frontmatter):
+                return SourceType.PLAYBOOK
+
+    # Section-header path.
+    if _RE_MD_SECTION_TRIGGER.search(text) and _RE_MD_SECTION_ACTIONS.search(text):
+        return SourceType.PLAYBOOK
+
     return None
 
 
@@ -370,6 +409,11 @@ def detect_source_type(
 
     # 4. Markdown frontmatter
     hit = _check_frontmatter(text)
+    if hit is not None:
+        return hit
+
+    # 4b. Playbook structure (frontmatter keys or Trigger/Actions sections)
+    hit = _check_playbook_structure(text)
     if hit is not None:
         return hit
 
