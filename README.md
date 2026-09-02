@@ -350,7 +350,7 @@ Grimoire ships a security-domain pipeline (Sigma / NVD CVE / MITRE ATT&CK chunke
 - [Implementation Plan](docs/IMPLEMENTATION.md) - Phased development roadmap
 - [Security strategy](docs/strategies/README.md) — security-domain ingestion, retrieval, and filter surface
 - [Hetzner security deploy](docs/deploy/hetzner_security.md) — one-shot homelab setup for the security pipeline
-- [Coding Conventions](Claude.md) - Development guidelines and best practices
+- [Coding Conventions](CLAUDE.md) - Development guidelines and best practices
 
 ## Services (Docker Compose)
 
