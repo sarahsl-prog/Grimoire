@@ -1,0 +1,43 @@
+# Line-ending normalization.
+#
+# This repo is developed on Windows (core.autocrlf=true) but its scripts and
+# images run on Linux. Anything that a shell or a container may execute must be
+# checked out with LF endings — a CRLF shebang line makes the kernel look for an
+# interpreter named "/bin/sh\r" and fail with a confusing "no such file or
+# directory". Everything else is left to Git's own text detection so Windows
+# tooling keeps working normally.
+
+# Normalize in the repository, let Git decide per-file in the working tree.
+* text=auto
+
+# Shell scripts and container build files: always LF, on every platform.
+*.sh            text eol=lf
+*.bash          text eol=lf
+Dockerfile*     text eol=lf
+*.dockerfile    text eol=lf
+.dockerignore   text eol=lf
+
+# Files consumed by containers / Linux tooling at runtime.
+*.conf          text eol=lf
+.env.example    text eol=lf
+.env.*.example  text eol=lf
+
+# Windows-native scripts keep CRLF.
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+
+# Binaries: never touch.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.zip           binary
+*.gz            binary
+*.whl           binary
+*.so            binary
+*.dll           binary
+*.pyd           binary
+*.sqlite3       binary
