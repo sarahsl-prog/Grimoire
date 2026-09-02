@@ -19,7 +19,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from mcp.server.fastmcp import Context
+from mcp.server.mcpserver import Context
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from grimoire.api.dependencies import (

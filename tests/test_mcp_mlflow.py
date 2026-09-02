@@ -122,7 +122,7 @@ async def test_lifespan_configures_mlflow(mcp_server: object) -> None:
          patch("grimoire.mcp.server.configure_mlflow") as mock_configure, \
          patch("grimoire.mcp.server.shutdown_mlflow") as mock_shutdown, \
          patch.dict("os.environ", {}, clear=True):
-        async with mcp_server._mcp_server.lifespan(None):  # type: ignore[attr-defined]
+        async with mcp_server._lowlevel_server.lifespan(None):  # type: ignore[attr-defined]
             mock_configure.assert_called_once()
         mock_shutdown.assert_called_once()
     mock_init.assert_awaited_once()

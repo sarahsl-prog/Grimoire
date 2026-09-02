@@ -1,8 +1,10 @@
-"""FastMCP server builder for Grimoire.
+"""MCPServer builder for Grimoire.
 
-Provides ``create_mcp_server()`` which returns a configured ``FastMCP``
+Provides ``create_mcp_server()`` which returns a configured ``MCPServer``
 instance with all Grimoire tools registered.  Supports both HTTP/SSE
 (when mounted inside the FastAPI app) and stdio (when run standalone).
+
+``MCPServer`` is the mcp 2.x name for what mcp 1.x called ``FastMCP``.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 from loguru import logger
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from grimoire.db.session import initialize_db, close_db
 from grimoire.config.settings import get_settings
@@ -22,7 +24,7 @@ from .mlflow_logging import configure_mlflow, shutdown_mlflow, trace_mcp_tool
 
 
 @asynccontextmanager
-async def _grimoire_lifespan(app: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
+async def _grimoire_lifespan(app: MCPServer) -> AsyncGenerator[dict[str, Any], None]:
     """Shared lifespan for both transports.
 
     Initialises the database connection.  For stdio transport the
@@ -63,17 +65,17 @@ async def _grimoire_lifespan(app: FastMCP) -> AsyncGenerator[dict[str, Any], Non
         logger.info("MCP lifespan: database closed")
 
 
-def _register_tool(mcp: FastMCP, func: Any, name: str) -> None:
+def _register_tool(mcp: MCPServer, func: Any, name: str) -> None:
     """Register an MCP tool, wrapping it with MLflow tracing when enabled."""
     mcp.add_tool(trace_mcp_tool(func, name=name), name=name)
 
 
-def create_mcp_server() -> FastMCP:
-    """Build and return a FastMCP server with all Grimoire tools registered."""
+def create_mcp_server() -> MCPServer:
+    """Build and return an MCPServer with all Grimoire tools registered."""
     settings = get_settings()
     configure_mlflow(settings.observability)
 
-    mcp = FastMCP("grimoire", lifespan=_grimoire_lifespan)
+    mcp = MCPServer("grimoire", lifespan=_grimoire_lifespan)
 
     # Register read-only tools (available to all tiers)
     _register_tool(mcp, tools.grimoire_search, "grimoire_search")

@@ -19,7 +19,7 @@ _mcp_asgi_app: Any = None
 
 
 def get_mcp_app() -> Any:
-    """Return the cached FastMCP ASGI application."""
+    """Return the cached MCPServer ASGI application."""
     global _mcp_asgi_app
     if _mcp_asgi_app is None:
         mcp_server = create_mcp_server()

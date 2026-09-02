@@ -67,7 +67,7 @@ This document outlines the complete redesign of Grimoire from a minimal 2-file R
 |-------|------------|-----------|
 | **CLI** | Click | Standard Python CLI framework, composable commands |
 | **API** | FastAPI | Async, high-performance, auto-docs, background tasks |
-| **MCP** | **mcp (Model Context Protocol)** | FastMCP with stdio + SSE transports; tier-gated tools for AI assistant integration |
+| **MCP** | **mcp (Model Context Protocol)** | MCPServer with stdio + SSE transports; tier-gated tools for AI assistant integration |
 | **Agent Orchestration** | **LangChain Deep Agents** | Batteries-included agent architecture, automatic context compression, virtual filesystem, subagent spawning |
 | **LLM** | Ollama (any model) | Local-first, model-agnostic |
 | **Embeddings** | sentence-transformers (configurable, default: all-mpnet-base-v2) | Higher quality than all-MiniLM, still efficient |
@@ -1003,7 +1003,7 @@ grimoire/
 │
 ├── mcp/                           # Model Context Protocol server
 │   ├── __init__.py
-│   ├── server.py                  # FastMCP server factory
+│   ├── server.py                  # MCPServer factory
 │   ├── tools.py                   # Tier-gated MCP tool definitions
 │   ├── auth_stdio.py              # stdio auth + tier enforcement
 │   └── router.py                  # ASGI mount + SSE auth middleware
