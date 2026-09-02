@@ -36,7 +36,7 @@ def upgrade() -> None:
             "documents",
             ["security_metadata"],
             postgresql_using="gin",
-            postgresql_with={"type": "jsonb_path_ops"},
+            postgresql_ops={"security_metadata": "jsonb_path_ops"},
         )
     else:
         op.create_index(
