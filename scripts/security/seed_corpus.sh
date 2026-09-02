@@ -7,6 +7,13 @@
 # Designed for a fresh Hetzner box; safe to run as a non-root user in
 # the home directory.
 #
+# NVD feed version: the annual bulk feed moved from the JSON 1.1 schema
+# (feeds/json/cve/1.1/nvdcve-1.1-{year}.json.gz, now 403) to the JSON 2.0
+# schema (feeds/json/cve/2.0/nvdcve-2.0-{year}.json.gz). Same URL structure,
+# same one-complete-year-per-file shape — only the schema changed. This
+# matches what Grimoire's NVD parser already expects, so nothing downstream
+# of this script needs to change.
+#
 # Usage:
 #   CORPUS_DIR=/srv/grimoire/security-corpus ./scripts/security/seed_corpus.sh
 #   ./scripts/security/seed_corpus.sh         # defaults to ./security-corpus
@@ -19,7 +26,7 @@ CORPUS_DIR="${CORPUS_DIR:-./security-corpus}"
 NVD_YEAR="${NVD_YEAR:-$(date -u +%Y)}"
 SIGMA_REPO="${SIGMA_REPO:-https://github.com/SigmaHQ/sigma.git}"
 MITRE_REPO="${MITRE_REPO:-https://github.com/mitre/cti.git}"
-NVD_BASE_URL="${NVD_BASE_URL:-https://nvd.nist.gov/feeds/json/cve/1.1}"
+NVD_BASE_URL="${NVD_BASE_URL:-https://nvd.nist.gov/feeds/json/cve/2.0}"
 
 log() {
     printf '[seed_corpus] %s\n' "$*" >&2
@@ -71,9 +78,9 @@ fi
 NVD_DIR="${CORPUS_DIR}/nvd-cve"
 mkdir -p "${NVD_DIR}"
 
-NVD_FILE="${NVD_DIR}/nvdcve-1.1-${NVD_YEAR}.json"
+NVD_FILE="${NVD_DIR}/nvdcve-2.0-${NVD_YEAR}.json"
 NVD_GZ="${NVD_FILE}.gz"
-NVD_URL="${NVD_BASE_URL}/nvdcve-1.1-${NVD_YEAR}.json.gz"
+NVD_URL="${NVD_BASE_URL}/nvdcve-2.0-${NVD_YEAR}.json.gz"
 
 if [[ -f "${NVD_FILE}" ]]; then
     log "NVD ${NVD_YEAR} already present at ${NVD_FILE} (delete to force re-download)"

@@ -5,6 +5,13 @@
 # This is idempotent: re-running it pulls updates rather than re-cloning,
 # and an already-downloaded NVD feed is left alone.
 #
+# NVD feed version: the annual bulk feed moved from the JSON 1.1 schema
+# (feeds/json/cve/1.1/nvdcve-1.1-{year}.json.gz, now 403) to the JSON 2.0
+# schema (feeds/json/cve/2.0/nvdcve-2.0-{year}.json.gz). Same URL structure,
+# same one-complete-year-per-file shape — only the schema changed. This
+# matches what Grimoire's NVD parser already expects, so nothing downstream
+# of this script needs to change.
+#
 # Windows/PowerShell port of seed_corpus.sh. Unlike the shell version this
 # script needs no curl.exe or gzip.exe: downloads use Invoke-WebRequest and
 # decompression uses .NET's System.IO.Compression.GZipStream.
@@ -33,7 +40,7 @@ $CorpusDir  = if ($env:CORPUS_DIR)   { $env:CORPUS_DIR }   else { ".\security-co
 $NvdYear    = if ($env:NVD_YEAR)     { $env:NVD_YEAR }     else { [DateTime]::UtcNow.Year.ToString([System.Globalization.CultureInfo]::InvariantCulture) }
 $SigmaRepo  = if ($env:SIGMA_REPO)   { $env:SIGMA_REPO }   else { "https://github.com/SigmaHQ/sigma.git" }
 $MitreRepo  = if ($env:MITRE_REPO)   { $env:MITRE_REPO }   else { "https://github.com/mitre/cti.git" }
-$NvdBaseUrl = if ($env:NVD_BASE_URL) { $env:NVD_BASE_URL } else { "https://nvd.nist.gov/feeds/json/cve/1.1" }
+$NvdBaseUrl = if ($env:NVD_BASE_URL) { $env:NVD_BASE_URL } else { "https://nvd.nist.gov/feeds/json/cve/2.0" }
 
 function Write-Log {
     param([string]$Message = "")
@@ -142,9 +149,9 @@ else {
 $NvdDir = Join-Path $CorpusDir "nvd-cve"
 New-Item -ItemType Directory -Path $NvdDir -Force | Out-Null
 
-$NvdFile = Join-Path $NvdDir "nvdcve-1.1-$NvdYear.json"
+$NvdFile = Join-Path $NvdDir "nvdcve-2.0-$NvdYear.json"
 $NvdGz   = "$NvdFile.gz"
-$NvdUrl  = "$NvdBaseUrl/nvdcve-1.1-$NvdYear.json.gz"
+$NvdUrl  = "$NvdBaseUrl/nvdcve-2.0-$NvdYear.json.gz"
 
 if (Test-Path -LiteralPath $NvdFile -PathType Leaf) {
     Write-Log "NVD $NvdYear already present at $NvdFile (delete to force re-download)"

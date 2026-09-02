@@ -26,7 +26,6 @@ from grimoire.strategies.security.parsers.nvd import (
     severity_from_cvss_score,
 )
 
-
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "security" / "nvd"
 SAMPLE_BULK = FIXTURE_DIR / "nvdcve-sample.json"
 
@@ -274,3 +273,265 @@ class TestEdgeCases:
         d = _load_sample_dict()
         results = parse_nvd_json(d)
         assert len(results) == 3
+
+
+# ---------------------------------------------------------------------------
+# 7. baseSeverity "NONE" (regression: silently dropped records)
+# ---------------------------------------------------------------------------
+
+
+class TestBaseSeverityNone:
+    """NVD emits ``baseSeverity: "NONE"`` with ``baseScore: 0.0``.
+
+    "none" is not a :class:`Severity` member, so the unguarded
+    ``Severity(severity_str.lower())`` raised ValueError, which
+    ``parse_nvd_json`` swallowed — dropping the record entirely.
+    Shape copied from live CVE-2026-23634 / CVE-2025-6591.
+    """
+
+    @staticmethod
+    def _payload(metric_key: str, version: str) -> dict:
+        return {
+            "cve": {
+                "id": "CVE-2026-23634",
+                "published": "2026-01-14T18:15:00.000",
+                "descriptions": [{"lang": "en", "value": "Zero-impact advisory."}],
+                "metrics": {
+                    metric_key: [
+                        {
+                            "source": "security-advisories@github.com",
+                            "type": "Primary",
+                            "cvssData": {
+                                "version": version,
+                                "baseScore": 0.0,
+                                "baseSeverity": "NONE",
+                            },
+                        }
+                    ]
+                },
+            }
+        }
+
+    @pytest.mark.parametrize(
+        "metric_key,version",
+        [("cvssMetricV31", "3.1"), ("cvssMetricV40", "4.0")],
+    )
+    def test_none_severity_record_is_not_dropped(
+        self, metric_key: str, version: str
+    ) -> None:
+        results = parse_nvd_json(self._payload(metric_key, version))
+        assert len(results) == 1, "record must survive, not be swallowed"
+
+    @pytest.mark.parametrize(
+        "metric_key,version",
+        [("cvssMetricV31", "3.1"), ("cvssMetricV40", "4.0")],
+    )
+    def test_none_severity_falls_back_to_score(
+        self, metric_key: str, version: str
+    ) -> None:
+        _, meta = parse_nvd_json(self._payload(metric_key, version))[0]
+        assert meta.cve_id == "CVE-2026-23634"
+        assert meta.cvss_score == 0.0
+        # severity_from_cvss_score(0.0) -> INFO
+        assert meta.severity is Severity.INFO
+
+    def test_unrecognised_severity_string_falls_back_to_score(self) -> None:
+        """Any out-of-enum baseSeverity should degrade, not explode."""
+        payload = self._payload("cvssMetricV31", "3.1")
+        payload["cve"]["metrics"]["cvssMetricV31"][0]["cvssData"].update(
+            {"baseScore": 7.5, "baseSeverity": "SEVERE"}
+        )
+        results = parse_nvd_json(payload)
+        assert len(results) == 1
+        _, meta = results[0]
+        assert meta.cvss_score == 7.5
+        assert meta.severity is Severity.HIGH
+
+    def test_none_severity_in_bulk_feed_survives(self) -> None:
+        """The drop happened inside parse_nvd_json's bulk loop."""
+        payload = {
+            "vulnerabilities": [
+                {"cve": self._payload("cvssMetricV40", "4.0")["cve"]},
+                {
+                    "cve": {
+                        "id": "CVE-2026-00001",
+                        "descriptions": [{"lang": "en", "value": "Normal record."}],
+                        "metrics": {
+                            "cvssMetricV31": [
+                                {
+                                    "type": "Primary",
+                                    "cvssData": {
+                                        "baseScore": 9.8,
+                                        "baseSeverity": "CRITICAL",
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                },
+            ]
+        }
+        results = parse_nvd_json(payload)
+        assert len(results) == 2
+        assert results[0][1].severity is Severity.INFO
+        assert results[1][1].severity is Severity.CRITICAL
+
+
+# ---------------------------------------------------------------------------
+# 8. CVSS v4.0 extraction
+# ---------------------------------------------------------------------------
+
+
+# Shape copied verbatim from live NVD 2.0 data (CVE-2026-* QNAP advisory).
+_V40_ENTRY = {
+    "source": "security@qnapsecurity.com.tw",
+    "type": "Secondary",
+    "cvssData": {
+        "version": "4.0",
+        "vectorString": "CVSS:4.0/AV:L/AC:H/AT:P/PR:L/UI:N/VC:H/VI:H/VA:H",
+        "baseScore": 4.4,
+        "baseSeverity": "MEDIUM",
+        "attackVector": "LOCAL",
+        "vulnConfidentialityImpact": "HIGH",
+    },
+}
+
+
+class TestCvssV40:
+    """~4-6% of 2026 records carry only a ``cvssMetricV40`` block."""
+
+    def test_v40_only_record_extracts_score(self) -> None:
+        payload = {
+            "cve": {
+                "id": "CVE-2026-40001",
+                "descriptions": [{"lang": "en", "value": "v4.0-only record."}],
+                "metrics": {"cvssMetricV40": [_V40_ENTRY]},
+            }
+        }
+        results = parse_nvd_json(payload)
+        assert len(results) == 1
+        text, meta = results[0]
+        assert meta.cvss_score == 4.4
+        assert meta.severity is Severity.MEDIUM
+        assert "CVSS Score: 4.4" in text
+
+    def test_v40_only_with_ssvc_sibling(self) -> None:
+        """Real records pair cvssMetricV40 with a non-CVSS ssvcV203 block."""
+        payload = {
+            "cve": {
+                "id": "CVE-2026-40002",
+                "descriptions": [{"lang": "en", "value": "v4.0 plus ssvc."}],
+                "metrics": {
+                    "cvssMetricV40": [_V40_ENTRY],
+                    "ssvcV203": [{"source": "cisa", "type": "Primary"}],
+                },
+            }
+        }
+        _, meta = parse_nvd_json(payload)[0]
+        assert meta.cvss_score == 4.4
+        assert meta.severity is Severity.MEDIUM
+
+    def test_v40_preferred_over_older_at_same_authority(self) -> None:
+        """Among equally-authoritative entries, the newest version wins."""
+        payload = {
+            "cve": {
+                "id": "CVE-2026-40003",
+                "descriptions": [{"lang": "en", "value": "Both v4.0 and v3.1."}],
+                "metrics": {
+                    "cvssMetricV40": [
+                        {
+                            "type": "Secondary",
+                            "cvssData": {"baseScore": 6.9, "baseSeverity": "MEDIUM"},
+                        }
+                    ],
+                    "cvssMetricV31": [
+                        {
+                            "type": "Secondary",
+                            "cvssData": {"baseScore": 4.9, "baseSeverity": "MEDIUM"},
+                        }
+                    ],
+                },
+            }
+        }
+        _, meta = parse_nvd_json(payload)[0]
+        assert meta.cvss_score == 6.9
+
+    def test_primary_v31_outranks_secondary_v40(self) -> None:
+        """NVD-authored Primary scores beat CNA Secondary ones.
+
+        NVD does not yet issue Primary v4.0 scores; version-only ordering
+        would demote authoritative v3.1 scores (live: CVE-2026-0544,
+        CRITICAL 9.8 -> MEDIUM 5.5).
+        """
+        payload = {
+            "cve": {
+                "id": "CVE-2026-0544",
+                "descriptions": [{"lang": "en", "value": "Mixed authority."}],
+                "metrics": {
+                    "cvssMetricV40": [
+                        {
+                            "source": "cna@vendor.example",
+                            "type": "Secondary",
+                            "cvssData": {"baseScore": 5.5, "baseSeverity": "MEDIUM"},
+                        }
+                    ],
+                    "cvssMetricV31": [
+                        {
+                            "source": "nvd@nist.gov",
+                            "type": "Primary",
+                            "cvssData": {"baseScore": 9.8, "baseSeverity": "CRITICAL"},
+                        }
+                    ],
+                },
+            }
+        }
+        _, meta = parse_nvd_json(payload)[0]
+        assert meta.cvss_score == 9.8
+        assert meta.severity is Severity.CRITICAL
+
+    def test_v40_none_severity_combined_regression(self) -> None:
+        """Both bugs at once: a v4.0-only record scored 0.0 / NONE."""
+        payload = {
+            "cve": {
+                "id": "CVE-2025-6591",
+                "descriptions": [{"lang": "en", "value": "v4.0 zero-impact."}],
+                "metrics": {
+                    "cvssMetricV40": [
+                        {
+                            "type": "Secondary",
+                            "cvssData": {
+                                "version": "4.0",
+                                "baseScore": 0.0,
+                                "baseSeverity": "NONE",
+                            },
+                        }
+                    ]
+                },
+            }
+        }
+        results = parse_nvd_json(payload)
+        assert len(results) == 1
+        _, meta = results[0]
+        assert meta.cvss_score == 0.0
+        assert meta.severity is Severity.INFO
+
+    def test_malformed_entry_falls_through_to_next(self) -> None:
+        """A junk v4.0 entry must not mask a usable v3.1 score."""
+        payload = {
+            "cve": {
+                "id": "CVE-2026-40004",
+                "descriptions": [{"lang": "en", "value": "Malformed v4.0."}],
+                "metrics": {
+                    "cvssMetricV40": [{"type": "Primary", "cvssData": None}],
+                    "cvssMetricV31": [
+                        {
+                            "type": "Primary",
+                            "cvssData": {"baseScore": 7.5, "baseSeverity": "HIGH"},
+                        }
+                    ],
+                },
+            }
+        }
+        _, meta = parse_nvd_json(payload)[0]
+        assert meta.cvss_score == 7.5
+        assert meta.severity is Severity.HIGH
