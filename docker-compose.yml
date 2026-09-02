@@ -46,7 +46,6 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
-      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -134,4 +133,4 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.23.0.0/16
+        - subnet: 172.28.0.0/16

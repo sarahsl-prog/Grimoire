@@ -37,7 +37,6 @@ services:
     container_name: grimoire-redis-security
     volumes:
       - redis_data_security:/data
-      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
 
   chromadb:
     container_name: grimoire-chromadb-security
@@ -70,4 +69,4 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.24.0.0/16
+        - subnet: 172.29.0.0/16
