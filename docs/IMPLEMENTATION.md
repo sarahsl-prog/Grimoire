@@ -674,7 +674,7 @@ Before starting phase N+1:
 Grimoire exposes its full functionality via the Model Context Protocol (MCP) so that external AI assistants (Claude Desktop, Cursor, etc.) can query and manage the knowledge base natively.
 
 ### Architecture
-- **FastMCP** (from `mcp>=1.8.0`) provides the server runtime
+- **MCPServer** (from `mcp>=2.0.0`) provides the server runtime — this class was named `FastMCP` in mcp 1.x
 - **14 tools** defined in `grimoire/mcp/tools.py`, each delegating to existing agents/repositories
 - **Tier-based access control**: `rdl` (read), `dvl` (dev), `agt` (agent)
 - **Two transports**:

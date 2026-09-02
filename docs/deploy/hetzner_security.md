@@ -51,7 +51,7 @@ uv run alembic upgrade head
 # 7. Ingest the corpora.
 uv run grimoire ingest --source-type sigma_rule  /srv/grimoire/security-corpus/sigma-rules/rules
 uv run grimoire ingest --source-type mitre_attack /srv/grimoire/security-corpus/mitre-attack/enterprise-attack
-uv run grimoire ingest --source-type nvd_cve     /srv/grimoire/security-corpus/nvd-cve/nvdcve-1.1-$(date -u +%Y).json
+uv run grimoire ingest --source-type nvd_cve     /srv/grimoire/security-corpus/nvd-cve/nvdcve-2.0-$(date -u +%Y).json
 ```
 
 After ingest, you can smoke-test from the CLI:
@@ -163,7 +163,11 @@ curl -s -H "Authorization: Bearer $API_KEY" \
 
 * **Corpus refresh:** re-run `seed_corpus.sh` weekly (it's idempotent —
   Sigma / MITRE pull as `git pull --ff-only`, NVD only re-downloads if
-  the year-file is missing).
+  the year-file is missing). NVD is pulled from the JSON 2.0 annual feed
+  (`nvdcve-2.0-{year}.json.gz`); the retired 1.1 feed now returns 403.
+  Because the year-file is only fetched when absent, delete
+  `nvd-cve/nvdcve-2.0-<year>.json` to force a refresh of an already-seeded
+  year.
 * **Schema migrations:** `uv run alembic upgrade head` after each
   Grimoire release.
 * **API keys:** rotate `GRIMOIRE_API__SECRET_KEY` only when you can

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -302,7 +303,14 @@ class TestDedupInputValidation:
         with pytest.raises(FileNotFoundError):
             compute_file_hash(non_existent)
 
-    @pytest.mark.skipif(os.getuid() == 0, reason="Cannot test permissions as root")
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Unix permission semantics; chmod(0o000) does not block reads on Windows",
+    )
+    @pytest.mark.skipif(
+        hasattr(os, "getuid") and os.getuid() == 0,
+        reason="Cannot test permissions as root",
+    )
     def test_permission_error(self, temp_file: Path) -> None:
         """File without read permission raises PermissionError."""
         # Remove read permissions

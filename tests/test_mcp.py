@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 
 from grimoire.api.main import create_app
 from grimoire.db.models import ApiKey, ApiKeyTier
@@ -97,7 +97,7 @@ async def test_stdio_lifespan_validates_api_key(mcp_server: Any) -> None:
          patch("grimoire.mcp.server.set_current_api_key") as mock_set, \
          patch.dict("os.environ", {"GRIMOIRE_API_KEY": "grim_agt_testkey123"}):
         mock_auth.return_value = _make_api_key(ApiKeyTier.AGENT)
-        async with mcp_server._mcp_server.lifespan(None):
+        async with mcp_server._lowlevel_server.lifespan(None):
             mock_auth.assert_awaited_once()
             mock_set.assert_called_once()
         mock_close.assert_awaited_once()
@@ -111,7 +111,7 @@ async def test_stdio_lifespan_skips_auth_without_env(mcp_server: Any) -> None:
          patch("grimoire.mcp.server.close_db", new_callable=AsyncMock) as mock_close, \
          patch("grimoire.mcp.server.authenticate_stdio_key") as mock_auth, \
          patch.dict("os.environ", {}, clear=True):
-        async with mcp_server._mcp_server.lifespan(None):
+        async with mcp_server._lowlevel_server.lifespan(None):
             mock_auth.assert_not_awaited()
         mock_close.assert_awaited_once()
     mock_init.assert_awaited_once()
@@ -163,8 +163,8 @@ async def test_ask_returns_answer(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_ask", {
             "params": {"query": "What is ML?"},
         })
-    assert '"status": "ok"' in result[0][0].text
-    assert "Machine learning is..." in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert "Machine learning is..." in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -198,8 +198,8 @@ async def test_get_document_returns_doc(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_get_document", {
             "params": {"document_id": "doc-123"},
         })
-    assert '"status": "ok"' in result[0][0].text
-    assert "Test Doc" in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert "Test Doc" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -220,7 +220,7 @@ async def test_get_document_not_found(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_get_document", {
             "params": {"document_id": "missing-id"},
         })
-    assert '"status": "error"' in result[0][0].text
+    assert '"status": "error"' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -251,8 +251,8 @@ async def test_list_documents_returns_page(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_list_documents", {
             "params": {"limit": 1, "offset": 0},
         })
-    assert '"status": "ok"' in result[0][0].text
-    assert "Doc One" in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert "Doc One" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -279,8 +279,8 @@ async def test_list_categories_returns_categories(mcp_server: Any) -> None:
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
         result = await mcp_server.call_tool("grimoire_list_categories", {})
-    assert '"status": "ok"' in result[0][0].text
-    assert "Research" in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert "Research" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -299,8 +299,8 @@ async def test_status_returns_counts(mcp_server: Any) -> None:
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
         result = await mcp_server.call_tool("grimoire_status", {})
-    assert '"status": "ok"' in result[0][0].text
-    assert '"documents": 5' in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert '"documents": 5' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -316,7 +316,7 @@ async def test_ingest_directory_allowed_for_dev_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_ingest_directory", {
             "params": {"directory": "/nonexistent/dir"},
         })
-        assert '"status": "ok"' in result[0][0].text
+        assert '"status": "ok"' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -336,8 +336,8 @@ async def test_generate_summary(mcp_server: Any) -> None:
                 "style": "detailed",
             },
         })
-    assert '"status": "ok"' in result[0][0].text
-    assert "A summary." in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert "A summary." in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -352,8 +352,8 @@ async def test_generate_extract_requires_query(mcp_server: Any) -> None:
                 "content_type": "extract",
             },
         })
-    assert '"status": "error"' in result[0][0].text
-    assert "query" in result[0][0].text
+    assert '"status": "error"' in result.content[0].text
+    assert "query" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -368,7 +368,7 @@ async def test_generate_invalid_content_type(mcp_server: Any) -> None:
                 "content_type": "invalid_type",
             },
         })
-    assert '"status": "error"' in result[0][0].text
+    assert '"status": "error"' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -396,8 +396,8 @@ async def test_watch_start_allowed_for_dev_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_watch_start", {
             "params": {"path": "/nonexistent/dir"},
         })
-    assert '"status": "ok"' in result[0][0].text
-    assert "watch-1" in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert "watch-1" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -415,8 +415,8 @@ async def test_watch_status_returns_stats(mcp_server: Any) -> None:
 
     with patch("grimoire.mcp.tools._get_mcp_watcher", return_value=mock_watcher):
         result = await mcp_server.call_tool("grimoire_watch_status", {})
-    assert '"status": "ok"' in result[0][0].text
-    assert '"active_watches": 1' in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert '"active_watches": 1' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -431,8 +431,8 @@ async def test_watch_stop_allowed_for_dev_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_watch_stop", {
             "params": {"watch_id": "watch-1"},
         })
-    assert '"status": "ok"' in result[0][0].text
-    assert "watch-1" in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert "watch-1" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -447,8 +447,8 @@ async def test_watch_stop_returns_error_when_not_found(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_watch_stop", {
             "params": {"watch_id": "missing"},
         })
-    assert '"status": "error"' in result[0][0].text
-    assert "not found" in result[0][0].text
+    assert '"status": "error"' in result.content[0].text
+    assert "not found" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -574,7 +574,7 @@ async def test_read_tools_available_to_read_tier(mcp_server: Any) -> None:
         ))
         with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
             result = await mcp_server.call_tool("grimoire_search", {"params": {"query": "test"}})
-        assert '"status": "ok"' in result[0][0].text
+        assert '"status": "ok"' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -604,7 +604,7 @@ async def test_ingest_allowed_for_dev_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_ingest_file", {
             "params": {"file_path": "/nonexistent/test.txt"},
         })
-        assert '"status": "ok"' in result[0][0].text
+        assert '"status": "ok"' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -652,7 +652,7 @@ async def test_delete_allowed_for_agent_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_delete_document", {
             "params": {"document_id": "doc-123"},
         })
-    assert '"status": "ok"' in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
 
 
 # ---------------------------------------------------------------------------
@@ -753,7 +753,7 @@ async def test_search_cve_with_exact_id(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_search_cve", {
             "params": {"cve_id": "CVE-2021-44228"},
         })
-    text = result[0][0].text
+    text = result.content[0].text
     assert '"status": "ok"' in text
     assert "CVE-2021-44228" in text
     assert "Log4j2" in text
@@ -806,7 +806,7 @@ async def test_search_cve_no_matching_docs_short_circuits(mcp_server: Any) -> No
         })
 
         mock_agent.return_value.search.assert_not_awaited()
-        text = result[0][0].text
+        text = result.content[0].text
         assert '"status": "ok"' in text
         assert '"total_results": 0' in text
 
@@ -817,7 +817,7 @@ async def test_search_cve_no_matching_docs_short_circuits(mcp_server: Any) -> No
             "params": {"mitre_technique_id": "T9999"},
         })
         mock_agent.return_value.search.assert_not_awaited()
-        assert '"total_results": 0' in result[0][0].text
+        assert '"total_results": 0' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -838,7 +838,7 @@ async def test_search_cve_requires_input(mcp_server: Any) -> None:
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
         result = await mcp_server.call_tool("grimoire_search_cve", {"params": {}})
-    text = result[0][0].text
+    text = result.content[0].text
     assert '"status": "error"' in text
     assert "query" in text
 
@@ -904,7 +904,7 @@ async def test_search_playbook_phase_facet(mcp_server: Any) -> None:
 
         call = mock_agent.return_value.search.await_args
         assert call.kwargs["filter_dict"]["document_id"] == {"$in": ["doc-pb"]}
-        assert '"sql_prefiltered_documents": 1' in result[0][0].text
+        assert '"sql_prefiltered_documents": 1' in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -919,7 +919,7 @@ async def test_search_playbook_accepts_source_types_list(mcp_server: Any) -> Non
         result = await mcp_server.call_tool("grimoire_search_playbook", {
             "params": {"query": "x", "source_types": ["sigma_rule"]},
         })
-        text = result[0][0].text
+        text = result.content[0].text
         assert '"mode": "semantic"' in text
         assert '"total_results": 0' in text
 
@@ -933,7 +933,7 @@ async def test_search_playbook_facet_only_no_matching_docs(mcp_server: Any) -> N
         result = await mcp_server.call_tool("grimoire_search_playbook", {
             "params": {"mitre_technique_id": "T9999"},
         })
-        text = result[0][0].text
+        text = result.content[0].text
         assert '"mode": "facet_only"' in text
         assert '"sql_prefiltered_documents": 0' in text
         assert '"total_results": 0' in text
@@ -974,7 +974,7 @@ async def test_search_playbook_technique_only(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_search_playbook", {
             "params": {"mitre_technique_id": "T1059"},
         })
-        text = result[0][0].text
+        text = result.content[0].text
         assert '"mode": "facet_only"' in text
         assert '"sql_prefiltered_documents": 1' in text
         mock_agent.return_value.search.assert_not_called()
@@ -982,7 +982,7 @@ async def test_search_playbook_technique_only(mcp_server: Any) -> None:
     # Empty params → error
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
         result = await mcp_server.call_tool("grimoire_search_playbook", {"params": {}})
-    text = result[0][0].text
+    text = result.content[0].text
     assert '"status": "error"' in text
 
 
@@ -1017,8 +1017,8 @@ async def test_create_category(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_create_category", {
             "params": {"name": "AI", "description": "AI stuff"},
         })
-    assert '"status": "ok"' in result[0][0].text
-    assert "AI" in result[0][0].text
+    assert '"status": "ok"' in result.content[0].text
+    assert "AI" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -1039,8 +1039,8 @@ async def test_create_category_parent_not_found(mcp_server: Any) -> None:
         result = await mcp_server.call_tool("grimoire_create_category", {
             "params": {"name": "AI", "parent_slug": "missing"},
         })
-    assert '"status": "error"' in result[0][0].text
-    assert "Parent category" in result[0][0].text
+    assert '"status": "error"' in result.content[0].text
+    assert "Parent category" in result.content[0].text
 
 
 # ---------------------------------------------------------------------------

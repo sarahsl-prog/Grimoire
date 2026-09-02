@@ -12,6 +12,7 @@ from contextvars import ContextVar
 from typing import Optional
 
 from loguru import logger
+from mcp.server.mcpserver.exceptions import ToolError
 
 from grimoire.api.auth import authenticate_api_key
 from grimoire.db.models import ApiKey, ApiKeyTier
@@ -82,12 +83,20 @@ def require_tier(*tiers: ApiKeyTier) -> None:
         tiers: One or more tiers that are permitted.
 
     Raises:
-        RuntimeError: If the current key is missing or not in *tiers*.
+        ToolError: If the current key is not in *tiers*.
+        RuntimeError: If no key is present in the context at all.
+
+    Note:
+        ``ToolError`` (not a bare ``RuntimeError``) is required here: mcp 2.x
+        only forwards the message of a ``ToolError`` to the client, and
+        replaces the message of every other exception with an opaque
+        "Error executing tool <name>".  Raising ``ToolError`` keeps the
+        actionable tier-denial text visible to MCP clients.
     """
     key = get_current_api_key()
     if key.tier not in tiers:
         tier_names = ", ".join(t.value for t in tiers)
-        raise RuntimeError(
+        raise ToolError(
             f"Tool requires API key tier in ({tier_names}).  "
             f"Current key '{key.name}' is tier '{key.tier.value}'."
         )
