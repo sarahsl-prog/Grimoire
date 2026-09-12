@@ -49,7 +49,7 @@ from grimoire.db.base import Base
 from grimoire.strategies.security.metadata import Severity, TLPLevel
 
 
-def SQLEnum(enum_class, **kwargs):
+def SQLEnum(enum_class: type[Enum], **kwargs: Any) -> _SQLEnum:
     """Wrapper around SQLAlchemy Enum that uses enum values (lowercase) instead of names."""
     return _SQLEnum(
         enum_class, values_callable=lambda x: [e.value for e in x], **kwargs
