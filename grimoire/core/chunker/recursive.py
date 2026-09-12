@@ -296,7 +296,7 @@ class RecursiveCharacterTextSplitter(Chunker):
 
         # Create Chunk objects
         chunks: list[Chunk] = []
-        for i, content in enumerate(chunk_texts):
+        for content in chunk_texts:
             if not content.strip():
                 continue
 

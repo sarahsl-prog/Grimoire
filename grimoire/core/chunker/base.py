@@ -218,7 +218,7 @@ class Chunker(ABC):
         from uuid import uuid4
 
         # Generate IDs for all chunks first
-        for i, chunk in enumerate(chunks):
+        for chunk in chunks:
             chunk_id = str(uuid4())
             chunk.metadata["chunk_id"] = chunk_id
 
