@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import click
@@ -14,6 +15,12 @@ from grimoire.cli.helpers import (
     setup_db,
     teardown_db,
 )
+
+if TYPE_CHECKING:
+    # Type-only: the CLI defers model imports to keep startup fast.
+    from collections.abc import Sequence
+
+    from grimoire.db.models import Category
 
 
 @click.group("category")
@@ -262,7 +269,9 @@ async def untag(ctx: click.Context, doc_id: str, tags: tuple[str, ...]) -> None:
         await teardown_db()
 
 
-def _print_tree(cats: list, indent: int = 0, parent_id: str | None = None) -> None:
+def _print_tree(
+    cats: Sequence[Category], indent: int = 0, parent_id: str | None = None
+) -> None:
     """Print categories as an indented tree."""
     for cat in cats:
         if cat.parent_id == parent_id:
