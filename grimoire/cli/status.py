@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import click
+from loguru import logger
 
 from grimoire.cli.helpers import (
     async_command,
@@ -87,8 +88,9 @@ async def status(ctx: click.Context, detailed: bool) -> None:
                     click.echo("\n  Cache:")
                     click.echo(f"    Size:     {stats.get('size', 0)} items")
                     click.echo(f"    Disk:     {stats.get('volume', 0)} bytes")
-            except Exception:
-                pass
+            except Exception as e:
+                # A status command should say why it could not read cache stats.
+                logger.debug(f"Could not read cache stats: {e}")
     finally:
         await teardown_db()
 
