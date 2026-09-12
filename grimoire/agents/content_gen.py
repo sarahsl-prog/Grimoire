@@ -441,7 +441,12 @@ class ContentGenerationAgent:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data.get("response", "").strip()
+                # Ollama's payload is external input: don't assume the shape.
+                if not isinstance(data, dict):
+                    logger.error(f"LLM returned a non-object payload: {type(data)}")
+                    return "Error: LLM returned an unexpected response format."
+                generated = data.get("response", "")
+                return generated.strip() if isinstance(generated, str) else ""
 
         except httpx.ConnectError:
             logger.error(f"Cannot connect to LLM at {self._llm_url}")
