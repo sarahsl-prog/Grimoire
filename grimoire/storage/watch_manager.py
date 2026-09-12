@@ -454,10 +454,10 @@ class CloudStoragePoller:
                 from grimoire.config.settings import get_settings
 
                 settings = get_settings()
-                if settings.cloud and settings.cloud.microsoft:
+                if settings.cloud and settings.cloud.onedrive:
                     from grimoire.storage.onedrive import OneDriveAdapter
 
-                    self._adapters[backend] = OneDriveAdapter(settings.cloud.microsoft)
+                    self._adapters[backend] = OneDriveAdapter(settings.cloud.onedrive)
                     return self._adapters[backend]
         except Exception as e:
             logger.error(f"Failed to create {backend.value} adapter: {e}")
