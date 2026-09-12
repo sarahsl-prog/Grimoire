@@ -301,11 +301,11 @@ class GoogleDriveAdapter(StorageAdapter):
         if tokens.get("refresh_token"):
             try:
                 return await self._refresh_access_token()
-            except TokenRefreshError:
+            except TokenRefreshError as e:
                 logger.warning(
                     "Token refresh failed, re-authentication may be required"
                 )
-                raise AuthenticationError("Token expired and refresh failed")
+                raise AuthenticationError("Token expired and refresh failed") from e
 
         raise AuthenticationError("No valid access token available")
 
