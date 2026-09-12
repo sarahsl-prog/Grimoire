@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 import click
 from sqlalchemy import func, select
@@ -16,6 +17,11 @@ from grimoire.cli.helpers import (
     setup_db,
     teardown_db,
 )
+
+if TYPE_CHECKING:
+    # Type-only: the content generation agent is built lazily by helpers, so
+    # importing it here at runtime would undo the CLI's deferred-import startup.
+    from grimoire.agents.content_gen import GenerationResult
 
 
 @click.group()
@@ -34,10 +40,11 @@ async def _resolve_doc_ids(
     """
     if doc_id and category:
         raise click.UsageError("Use --doc-id or --category, not both.")
-    if not doc_id and not category:
-        raise click.UsageError("Provide --doc-id or --category.")
     if doc_id:
         return list(doc_id)
+    # Checked after the doc_id return so `category` is known non-empty below.
+    if not category:
+        raise click.UsageError("Provide --doc-id or --category.")
 
     # Resolve by category
     from grimoire.db.models import Category, Document, DocumentTag, ProcessingStatus
@@ -272,22 +279,22 @@ async def outline(
         await teardown_db()
 
 
-def _output_result(result: object, fmt: str) -> None:
+def _output_result(result: GenerationResult, fmt: str) -> None:
     """Print generation result in requested format."""
     if fmt == "json":
-        click.echo(json.dumps(result.model_dump(), indent=2, default=str))  # type: ignore[union-attr]
+        click.echo(json.dumps(result.model_dump(), indent=2, default=str))
         return
 
-    content = getattr(result, "content", "")
+    content = result.content
     if not content:
         echo_error("No content generated.")
         return
 
     click.echo(f"\n{content}\n")
 
-    cached = getattr(result, "cached", False)
-    duration = getattr(result, "duration_ms", 0)
-    model = getattr(result, "model_used", "")
+    cached = result.cached
+    duration = result.duration_ms
+    model = result.model_used
     meta_parts = []
     if model:
         meta_parts.append(f"model={model}")
