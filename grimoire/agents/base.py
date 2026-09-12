@@ -6,29 +6,27 @@ This module contains base classes and utilities that are shared across all Grimo
 
 import asyncio
 import functools
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, Concatenate
 
 from loguru import logger
-
-T = TypeVar("T")
 
 
 class BaseAgent:
     """Base class for all Grimoire agents providing shared functionality."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self.logger = logger.bind(agent=self.name)
 
-    async def execute_with_retry(
+    async def execute_with_retry[T](
         self,
-        func: Callable[..., T],
-        *args,
+        func: Callable[..., Awaitable[T]],
+        *args: Any,
         max_retries: int = 3,
         delay: float = 1.0,
-        **kwargs,
+        **kwargs: Any,
     ) -> T:
         """
         Execute a function with retry logic.
@@ -45,8 +43,13 @@ class BaseAgent:
 
         Raises:
             Exception: If all retry attempts fail
+            ValueError: If max_retries is negative, which would leave no attempt
+                to report a failure from.
         """
-        last_exception = None
+        if max_retries < 0:
+            raise ValueError(f"max_retries must be >= 0, got {max_retries}")
+
+        last_exception: Exception | None = None
 
         for attempt in range(max_retries + 1):
             try:
@@ -63,38 +66,48 @@ class BaseAgent:
                         f"All {max_retries + 1} attempts failed. Last error: {e}"
                     )
 
+        # The loop above always runs at least once (max_retries >= 0 is enforced)
+        # and either returns or records an exception, so this is defensive only.
+        if last_exception is None:  # pragma: no cover
+            raise ExecutionError("Retry loop exited without a result or an error")
         raise last_exception
 
-    def log_execution(func: Callable[..., T]) -> Callable[..., T]:
-        """
-        Decorator to log function execution.
 
-        Args:
-            func: The function to decorate
+def log_execution[**P, T](
+    func: Callable[Concatenate[BaseAgent, P], Awaitable[T]],
+) -> Callable[Concatenate[BaseAgent, P], Coroutine[Any, Any, T]]:
+    """
+    Decorator to log execution of an async BaseAgent method.
 
-        Returns:
-            Wrapped function with logging
-        """
+    Lives at module scope rather than in the class body so it can be applied as
+    a plain ``@log_execution`` inside agent subclasses; as a class attribute it
+    would have received the agent instance in place of the decorated function.
 
-        @functools.wraps(func)
-        async def wrapper(self, *args, **kwargs):
-            # Get the class name if this is a method
-            class_name = ""
-            if hasattr(self, "__class__"):
-                class_name = f"{self.__class__.__name__}."
+    Args:
+        func: The async agent method to decorate
 
-            func_name = f"{class_name}{func.__name__}"
+    Returns:
+        Wrapped method with logging
+    """
 
-            self.logger.info(f"Executing {func_name}")
-            try:
-                result = await func(self, *args, **kwargs)
-                self.logger.info(f"Successfully executed {func_name}")
-                return result
-            except Exception as e:
-                self.logger.error(f"Error executing {func_name}: {e}")
-                raise
+    async def wrapper(self: BaseAgent, /, *args: P.args, **kwargs: P.kwargs) -> T:
+        func_name = f"{self.__class__.__name__}.{func.__name__}"
 
-        return wrapper
+        self.logger.info(f"Executing {func_name}")
+        try:
+            result = await func(self, *args, **kwargs)
+            self.logger.info(f"Successfully executed {func_name}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error executing {func_name}: {e}")
+            raise
+
+    # update_wrapper is called for its in-place side effect and `wrapper` is
+    # returned directly: the _Wrapped type that functools.wraps/update_wrapper
+    # returns does not unify with a Concatenate-based Callable under mypy
+    # --strict, though the runtime metadata copy is identical.
+    functools.update_wrapper(wrapper, func)
+    return wrapper
 
 
 # Common error handling utilities
@@ -150,10 +163,12 @@ def validate_path(path: str) -> Path:
         resolved_path = Path(path).resolve()
         return resolved_path
     except Exception as e:
-        raise ValueError(f"Invalid path '{path}': {e}")
+        raise ValueError(f"Invalid path '{path}': {e}") from e
 
 
-async def run_concurrent_tasks(tasks: list, limit: int = 10) -> list:
+async def run_concurrent_tasks[T](
+    tasks: list[Coroutine[Any, Any, T]], limit: int = 10
+) -> list[T]:
     """
     Run coroutines concurrently with a limit on concurrent executions.
 
@@ -166,8 +181,8 @@ async def run_concurrent_tasks(tasks: list, limit: int = 10) -> list:
     """
     semaphore = asyncio.Semaphore(limit)
 
-    async def run_task(task):
+    async def run_task(task: Coroutine[Any, Any, T]) -> T:
         async with semaphore:
             return await task
 
-    return await asyncio.gather(*[run_task(task) for task in tasks])
+    return list(await asyncio.gather(*[run_task(task) for task in tasks]))
