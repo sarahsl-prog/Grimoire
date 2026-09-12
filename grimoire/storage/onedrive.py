@@ -554,7 +554,9 @@ class OneDriveAdapter(StorageAdapter):
         if delta_url:
             token_start = delta_url.find("token=")
             if token_start > 0:
-                extracted = delta_url[token_start + 6 :].strip('\'""')
+                # Graph sometimes wraps the delta token in single or double
+                # quotes; strip either kind off both ends.
+                extracted = delta_url[token_start + 6 :].strip("'\"")
                 if extracted:
                     self._delta_tokens[path or "root"] = extracted
 
