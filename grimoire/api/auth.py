@@ -17,6 +17,7 @@ a measurable bottleneck.
 
 from __future__ import annotations
 
+import contextlib
 import secrets
 from datetime import UTC, datetime
 
@@ -96,11 +97,9 @@ async def authenticate_api_key(raw_key: str, db: AsyncSession) -> ApiKey | None:
 
     # Update last_used_at (fire-and-forget, don't block the request)
     api_key.last_used_at = datetime.now(UTC)
-    try:
+    # Logging update failure should not torch an already-authenticated request
+    with contextlib.suppress(Exception):
         await db.flush()
-    except Exception:
-        # Logging update failure should not torch an already-authenticated request
-        pass
 
     return api_key
 

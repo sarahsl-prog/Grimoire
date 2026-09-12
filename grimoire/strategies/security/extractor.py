@@ -16,6 +16,7 @@ Typical usage::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from datetime import UTC, datetime
@@ -111,10 +112,8 @@ class LLMExtractionResult(BaseModel):
 
         severity = Severity.UNKNOWN
         if self.severity:
-            try:
+            with contextlib.suppress(ValueError):
                 severity = Severity(self.severity)
-            except ValueError:
-                pass
 
         content_dt: datetime | None = None
         if self.content_date:
