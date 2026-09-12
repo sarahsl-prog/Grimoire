@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import click
 from sqlalchemy import func, select
@@ -15,6 +16,12 @@ from grimoire.cli.helpers import (
     setup_db,
     teardown_db,
 )
+
+if TYPE_CHECKING:
+    # Type-only: the CLI defers model imports to keep startup fast.
+    from collections.abc import Sequence
+
+    from grimoire.db.models import Document
 
 
 def _parse_since(value: str) -> datetime:
@@ -36,10 +43,10 @@ def _parse_since(value: str) -> datetime:
 
     try:
         return datetime.fromisoformat(value)
-    except ValueError:
+    except ValueError as e:
         raise click.BadParameter(
             f"Invalid date '{value}'. Use ISO format (2026-03-01) or relative (7d, 2w, 3m)."
-        )
+        ) from e
 
 
 @click.group()
@@ -143,7 +150,7 @@ async def docs_list(
         await teardown_db()
 
 
-def _output_text(documents: list) -> None:
+def _output_text(documents: Sequence[Document]) -> None:
     """Print documents in formatted text table."""
     if not documents:
         click.echo("No documents found.")
@@ -169,7 +176,7 @@ def _output_text(documents: list) -> None:
     click.echo(f"\n{len(documents)} document(s) found.")
 
 
-def _output_markdown(documents: list) -> None:
+def _output_markdown(documents: Sequence[Document]) -> None:
     """Print documents as a GitHub-flavored markdown table."""
     if not documents:
         click.echo("No documents found.")
@@ -201,7 +208,9 @@ def _output_markdown(documents: list) -> None:
     click.echo(f"\n{len(documents)} document(s) found.")
 
 
-def _output_json(documents: list, doc_categories: dict[str, list[str]]) -> None:
+def _output_json(
+    documents: Sequence[Document], doc_categories: dict[str, list[str]]
+) -> None:
     """Print documents as JSON."""
     if not documents:
         click.echo("[]")
