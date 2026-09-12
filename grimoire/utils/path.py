@@ -38,8 +38,10 @@ def is_uri(path: str) -> bool:
     Returns:
         True if path is a URI, False otherwise
     """
+    # Unreachable for well-typed callers, but load-bearing at runtime: urlparse
+    # accepts bytes and would report b"gdrive://x" as a URI.
     if not isinstance(path, str):
-        return False
+        return False  # type: ignore[unreachable]
 
     try:
         result = urlparse(path)
