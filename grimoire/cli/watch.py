@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+from typing import Any
 
 import click
 
@@ -72,7 +73,7 @@ async def watch_start(
             db_session_factory=db_manager.session,
         )
 
-        watch_kwargs: dict = {"backend": backend, "recursive": recursive}
+        watch_kwargs: dict[str, Any] = {"backend": backend, "recursive": recursive}
         if poll_interval is not None:
             watch_kwargs["poll_interval"] = poll_interval
 
