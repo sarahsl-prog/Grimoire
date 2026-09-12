@@ -458,7 +458,7 @@ class RedisCache(Cache):
             cursor = 0
             deleted = 0
             while True:
-                cursor, keys = await self._client.scan(
+                cursor, keys = await self._client.scan(  # type: ignore[union-attr]
                     cursor=cursor, match=pattern, count=100
                 )
                 if keys:
