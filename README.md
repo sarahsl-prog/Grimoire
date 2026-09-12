@@ -95,6 +95,28 @@ uv run mypy --strict grimoire
 uv run pytest --cov=grimoire --cov-report=html
 ```
 
+## Upgrading an existing install
+
+Already running Grimoire? Do **not** re-run the Quick Start — it assumes an
+empty database. The short version of an in-place upgrade:
+
+```bash
+# 1. Back up Postgres + the Chroma volume + .env  (see the full guide)
+# 2. Stop the API server, watcher, and any MCP clients
+git pull --ff-only origin main      # or: git checkout <release-tag>
+uv sync                             # reconcile the venv — never skip this
+diff <(grep -o '^[A-Z_]*' .env.example | sort -u) \
+     <(grep -o '^[A-Z_]*' .env | sort -u)   # adopt new settings
+docker compose pull && docker compose up -d
+uv run alembic upgrade head         # apply schema migrations
+uv run grimoire cache clear
+uv run grimoire status --detailed   # counts should match your pre-upgrade baseline
+```
+
+Read the `Upgrading` block of every release you are skipping in
+[CHANGELOG.md](CHANGELOG.md), and see **[docs/UPGRADING.md](docs/UPGRADING.md)**
+for backups, config drift, rollback, re-embedding, and troubleshooting.
+
 ## Configuration
 
 Grimoire uses Pydantic Settings for configuration. Settings are loaded from:
@@ -346,6 +368,7 @@ Grimoire ships a security-domain pipeline (Sigma / NVD CVE / MITRE ATT&CK chunke
 
 ## Documentation
 
+- [Upgrade Guide](docs/UPGRADING.md) - Upgrading an existing install in place
 - [Design Document](docs/DESIGN.md) - Complete system architecture and design decisions
 - [Implementation Plan](docs/IMPLEMENTATION.md) - Phased development roadmap
 - [Security strategy](docs/strategies/README.md) — security-domain ingestion, retrieval, and filter surface
