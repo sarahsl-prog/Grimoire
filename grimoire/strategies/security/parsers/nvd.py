@@ -317,12 +317,12 @@ def _parse_iso_date(raw: Any) -> datetime | None:
 # ---------------------------------------------------------------------------
 
 
-def _is_cvelistv5(obj) -> bool:
+def _is_cvelistv5(obj: dict[str, Any]) -> bool:
     """Detect cvelistV5 / CVE 5.1 format."""
     return obj.get("dataType") == "CVE_RECORD" and "cveMetadata" in obj
 
 
-def _extract_cvss_v5(record):
+def _extract_cvss_v5(record: dict[str, Any]) -> tuple[float | None, str | None]:
     """Extract CVSS from cvelistV5 containers.cna.metrics."""
     containers = record.get("containers", {})
     cna = containers.get("cna", {})
@@ -342,7 +342,7 @@ def _extract_cvss_v5(record):
     return None, None
 
 
-def _extract_description_v5(record):
+def _extract_description_v5(record: dict[str, Any]) -> str:
     """Extract English description from cvelistV5 CNA container."""
     containers = record.get("containers", {})
     cna = containers.get("cna", {})
@@ -362,9 +362,9 @@ def _extract_description_v5(record):
     return ""
 
 
-def _extract_references_v5(record):
+def _extract_references_v5(record: dict[str, Any]) -> list[str]:
     """Extract references from cvelistV5 CNA container."""
-    refs = []
+    refs: list[str] = []
     containers = record.get("containers", {})
     cna = containers.get("cna", {})
     references = cna.get("references", [])
@@ -378,10 +378,10 @@ def _extract_references_v5(record):
     return refs
 
 
-def _extract_cwe_ids_v5(record):
+def _extract_cwe_ids_v5(record: dict[str, Any]) -> list[str]:
     """Extract CWEs from cvelistV5 CNA container."""
-    cwe_ids = []
-    seen = set()
+    cwe_ids: list[str] = []
+    seen: set[str] = set()
     containers = record.get("containers", {})
     cna = containers.get("cna", {})
     weaknesses = cna.get("weaknesses", [])
@@ -407,10 +407,10 @@ def _extract_cwe_ids_v5(record):
     return cwe_ids
 
 
-def _extract_affected_products_v5(record):
+def _extract_affected_products_v5(record: dict[str, Any]) -> list[str]:
     """Extract affected products from cvelistV5 CNA container."""
-    products = []
-    seen = set()
+    products: list[str] = []
+    seen: set[str] = set()
     containers = record.get("containers", {})
     cna = containers.get("cna", {})
     affected = cna.get("affected", [])
@@ -429,7 +429,7 @@ def _extract_affected_products_v5(record):
     return products
 
 
-def _parse_date_v5(record):
+def _parse_date_v5(record: dict[str, Any]) -> datetime | None:
     """Parse date from cvelistV5 cveMetadata."""
     meta = record.get("cveMetadata", {})
     for key in ("datePublished", "dateReserved"):
@@ -440,7 +440,7 @@ def _parse_date_v5(record):
     return None
 
 
-def parse_cve_v5(record):
+def parse_cve_v5(record: dict[str, Any]) -> tuple[str, SecurityMetadata]:
     """Parse a cvelistV5 CVE 5.1 record."""
     meta = record.get("cveMetadata", {})
     cve_id = meta.get("cveId", "")
@@ -463,7 +463,7 @@ def parse_cve_v5(record):
     refs = _extract_references_v5(record)
     published = _parse_date_v5(record)
 
-    parts = []
+    parts: list[str] = []
     if cve_id:
         parts.append(f"CVE: {cve_id}")
     if description:
@@ -602,7 +602,11 @@ def parse_nvd_json(
     elif isinstance(text_or_obj, dict):
         obj = text_or_obj
     else:
-        logger.warning("NVD parse received unexpected type: {}", type(text_or_obj))
+        # Unreachable per the annotation, but parse_nvd_json promises never to
+        # raise, so the guard stays for callers that bypass type checking.
+        logger.warning(  # type: ignore[unreachable]
+            "NVD parse received unexpected type: {}", type(text_or_obj)
+        )
         return []
 
     results: list[tuple[str, SecurityMetadata]] = []
