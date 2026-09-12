@@ -4,19 +4,22 @@ This module provides repository classes for accessing and manipulating
 domain entities through the database.
 """
 
-from typing import Generic, TypeVar
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.db.models import Category, Chunk, Document, DocumentTag, WikiPage
 
-# Type variable for generic repository
-T = TypeVar("T")
 
+class BaseRepository[T]:
+    """Base repository class with common CRUD operations.
 
-class BaseRepository(Generic[T]):
-    """Base repository class with common CRUD operations."""
+    Subclasses must set ``model`` to the mapped class they wrap; the generic
+    CRUD methods below build their statements from it.
+    """
+
+    model: type[Any]
 
     def __init__(self, session: AsyncSession):
         """
@@ -53,7 +56,8 @@ class BaseRepository(Generic[T]):
         """
         stmt = select(self.model).where(self.model.id == entity_id)
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        entity: T | None = result.scalar_one_or_none()
+        return entity
 
     async def list_all(self) -> list[T]:
         """
