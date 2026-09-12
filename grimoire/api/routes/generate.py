@@ -29,9 +29,11 @@ async def generate_content(
     try:
         ct = ContentType(body.content_type)
     except ValueError:
+        # from None: the detail below already names the bad value, and the
+        # underlying enum ValueError adds nothing for the caller.
         raise HTTPException(
             status_code=400, detail=f"Invalid content_type: {body.content_type}"
-        )
+        ) from None
 
     if ct == ContentType.SUMMARY:
         result = await agent.generate_summary(
