@@ -18,7 +18,6 @@ from pydantic import BaseModel, ConfigDict, Field
 # Docling imports
 try:
     from docling.datamodel.base_models import ConversionStatus, InputFormat
-    from docling.datamodel.document import ConversionResult, InputDocument
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import (
         DocumentConverter,
