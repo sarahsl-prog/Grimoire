@@ -672,7 +672,9 @@ class IngestionAgent:
         await db.flush()
 
         # Now set prev/next links since all chunks exist in the DB
-        for chunk, chunk_model in zip(chunks, chunk_models):
+        # strict=True: chunk_models is built 1:1 from chunks above, so a length
+        # mismatch is a bug worth failing on rather than silently truncating.
+        for chunk, chunk_model in zip(chunks, chunk_models, strict=True):
             chunk_model.prev_chunk_id = chunk.prev_chunk_id
             chunk_model.next_chunk_id = chunk.next_chunk_id
 
@@ -730,7 +732,9 @@ class IngestionAgent:
         )
 
         # Update vector_id references in chunk models
-        for cm, vid in zip(chunk_models, ids):
+        # strict=True: ids is derived from chunk_models, so any mismatch would
+        # silently leave chunks without a vector_id.
+        for cm, vid in zip(chunk_models, ids, strict=True):
             cm.vector_id = vid
         await db.flush()
 
