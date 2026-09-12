@@ -190,6 +190,17 @@ module = [
 ]
 ignore_missing_imports = true
 
+# mlflow is an optional extra (grimoire[mlflow]). When it is not installed the
+# module resolves to Any, which makes this file's optional-import fallback
+# ignores look unused and @mlflow.trace look like an untyped decorator. Both are
+# correct when the extra IS installed, so results must not flip with the local
+# environment.
+[[tool.mypy.overrides]]
+module = ["grimoire.mcp.mlflow_logging"]
+warn_unused_ignores = false
+disallow_untyped_decorators = false
+warn_return_any = false
+
 # Pytest configuration
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
