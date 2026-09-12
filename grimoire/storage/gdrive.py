@@ -14,6 +14,7 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -443,10 +444,8 @@ class GoogleDriveAdapter(StorageAdapter):
 
         size_bytes = 0
         if "size" in file_data:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 size_bytes = int(file_data["size"])
-            except (ValueError, TypeError):
-                pass
 
         return FileInfo(
             path=f"gdrive://{file_data.get('id', '')}",
@@ -539,13 +538,13 @@ class GoogleDriveAdapter(StorageAdapter):
 
         except httpx.HTTPStatusError as e:
             error_text = e.response.text
-            try:
+            # Best effort: enrich the message from the JSON body when there is
+            # one, otherwise fall back to the raw response text set above.
+            with contextlib.suppress(Exception):
                 error_json = e.response.json()
                 error_text = error_json.get(
                     "error_description", error_json.get("error", error_text)
                 )
-            except Exception:
-                pass
             raise AuthenticationError(f"Token exchange failed: {error_text}") from e
         except httpx.NetworkError as e:
             raise AuthenticationError(
@@ -750,10 +749,8 @@ class GoogleDriveAdapter(StorageAdapter):
 
         size_bytes = 0
         if "size" in result:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 size_bytes = int(result["size"])
-            except (ValueError, TypeError):
-                pass
 
         owners = result.get("owners", [])
         owner = owners[0].get("displayName") if owners else None
@@ -916,7 +913,6 @@ class GoogleDriveAdapter(StorageAdapter):
 
     def __del__(self) -> None:
         """Cleanup when the adapter is garbage collected."""
-        try:
+        # Don't raise during garbage collection
+        with contextlib.suppress(Exception):
             asyncio.get_event_loop().create_task(self.close())
-        except Exception:
-            pass  # Don't raise during garbage collection
