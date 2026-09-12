@@ -4,12 +4,10 @@ This module provides repository classes for accessing and manipulating
 domain entities through the database.
 """
 
-from collections.abc import AsyncGenerator
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, TypeVar
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from grimoire.db.models import Category, Chunk, Document, DocumentTag, WikiPage
 
