@@ -52,6 +52,18 @@ def _err(message: str, hint: str | None = None) -> str:
     return json.dumps(payload, indent=2)
 
 
+def _severity_value(severity: Any) -> str | None:
+    """Normalize a document severity to its plain string value.
+
+    Documents usually carry a ``Severity`` enum, but callers also hand us rows
+    whose severity is already a bare string, so both shapes are accepted.
+    """
+    if severity is None:
+        return None
+    value = getattr(severity, "value", None)
+    return str(value) if value is not None else str(severity)
+
+
 _mcp_watcher: Any = None
 
 
@@ -475,11 +487,7 @@ async def _facet_only_search(
                     "document_id": d.id,
                     "title": d.title,
                     "source_type": d.source_type,
-                    "severity": (
-                        d.severity.value
-                        if hasattr(d.severity, "value")
-                        else str(d.severity) if d.severity else None
-                    ),
+                    "severity": _severity_value(d.severity),
                     "mitre_technique_id": d.mitre_technique_id,
                     "content_date": (
                         d.content_date.isoformat() if d.content_date else None
@@ -586,9 +594,7 @@ async def grimoire_search_cve(params: CveSearchInput, ctx: Context) -> str:
             chunk_result = await db.execute(chunk_stmt)
             chunks = chunk_result.scalars().all()
 
-        severity = (
-            doc.severity.value if hasattr(doc.severity, "value") else doc.severity
-        )
+        severity = _severity_value(doc.severity)
         return _ok(
             {
                 "mode": "exact",
