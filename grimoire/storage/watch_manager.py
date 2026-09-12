@@ -33,6 +33,7 @@ from watchdog.observers.polling import PollingObserver as Observer
 from grimoire.storage.base import (
     FileChange,
     FileChangeType,
+    StorageAdapter,
     StorageBackend,
 )
 
@@ -413,7 +414,7 @@ class CloudStoragePoller:
 
     def __init__(self) -> None:
         self._page_tokens: dict[str, str] = {}
-        self._adapters: dict[StorageBackend, Any] = {}
+        self._adapters: dict[StorageBackend, StorageAdapter] = {}
 
     async def poll_changes(
         self,
@@ -435,7 +436,7 @@ class CloudStoragePoller:
             logger.error(f"Error polling {backend.value}: {e}")
             return []
 
-    def _get_adapter(self, backend: StorageBackend) -> Any:
+    def _get_adapter(self, backend: StorageBackend) -> StorageAdapter | None:
         """Get or create a cloud storage adapter for the given backend."""
         if backend in self._adapters:
             return self._adapters[backend]
