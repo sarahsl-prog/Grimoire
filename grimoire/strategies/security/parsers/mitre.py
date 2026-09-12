@@ -32,11 +32,15 @@ def _extract_mitre_id(text: str, stix_obj: dict[str, Any] | None = None) -> str 
         refs = stix_obj.get("external_references", [])
         for ref in refs:
             if isinstance(ref, dict):
+                # STIX is untrusted input: a non-string here would make the
+                # regex calls raise instead of simply not matching.
                 ext_id = ref.get("external_id", "")
-                if _RE_MITRE_TECHNIQUE_ID.match(ext_id):
+                if isinstance(ext_id, str) and _RE_MITRE_TECHNIQUE_ID.match(ext_id):
                     return ext_id
                 # URL fallback — MITRE urls use /techniques/TXXXX or /techniques/TXXXX/NNN
                 url = ref.get("url", "")
+                if not isinstance(url, str):
+                    continue
                 m = re.search(r"/techniques/([T\d\.]+)", url)
                 if m:
                     tid = m.group(1)
