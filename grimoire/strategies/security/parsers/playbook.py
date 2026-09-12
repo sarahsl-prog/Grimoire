@@ -40,7 +40,7 @@ yields an empty list.
 from __future__ import annotations
 
 import re
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 import yaml
 from loguru import logger
@@ -68,7 +68,7 @@ _PLAYBOOK_PHASES = {
 }
 
 
-def playbook_severity_from_string(raw: Optional[str]) -> Severity:
+def playbook_severity_from_string(raw: str | None) -> Severity:
     """Map a front-matter severity string to the shared :class:`Severity` bucket."""
     if not raw or not isinstance(raw, str):
         return Severity.UNKNOWN
@@ -83,7 +83,7 @@ def playbook_severity_from_string(raw: Optional[str]) -> Severity:
     return lookup.get(raw.strip().lower(), Severity.UNKNOWN)
 
 
-def _split_front_matter(text: str) -> Tuple[dict[str, Any], str]:
+def _split_front_matter(text: str) -> tuple[dict[str, Any], str]:
     """Return ``(front_matter_dict, body)`` for ``---``-fenced documents.
 
     Malformed YAML logs a warning and is treated as no front matter.
@@ -105,13 +105,13 @@ def _split_front_matter(text: str) -> Tuple[dict[str, Any], str]:
     return parsed, body
 
 
-def _split_sections(body: str) -> List[Tuple[str, str]]:
+def _split_sections(body: str) -> list[tuple[str, str]]:
     """Split markdown body into ``(header, content)`` for each ``##`` section.
 
     Preamble text before the first ``##`` is ignored (it's the title block).
     """
     matches = list(_RE_L2_SECTION.finditer(body))
-    sections: List[Tuple[str, str]] = []
+    sections: list[tuple[str, str]] = []
     for i, match in enumerate(matches):
         header = match.group(1).strip()
         start = match.end()
@@ -122,7 +122,7 @@ def _split_sections(body: str) -> List[Tuple[str, str]]:
     return sections
 
 
-def _str_list(value: Any) -> List[str]:
+def _str_list(value: Any) -> list[str]:
     """Coerce a front-matter field into a list of strings."""
     if isinstance(value, list):
         return [str(v) for v in value if v]
@@ -172,7 +172,7 @@ def _section_text(header: str, content: str) -> str:
     return f"{header}\n\n{content}"
 
 
-def parse_playbook(text: str) -> List[Tuple[str, SecurityMetadata]]:
+def parse_playbook(text: str) -> list[tuple[str, SecurityMetadata]]:
     """Parse a playbook document into ``(section_text, SecurityMetadata)`` tuples.
 
     A document must contain at least one ``##`` section to parse; otherwise the
@@ -196,7 +196,7 @@ def parse_playbook(text: str) -> List[Tuple[str, SecurityMetadata]]:
 
     base_meta = _extract_metadata(front_matter)
 
-    results: List[Tuple[str, SecurityMetadata]] = []
+    results: list[tuple[str, SecurityMetadata]] = []
     for header, content in sections:
         meta = base_meta.model_copy()
         # A "Trigger" section with no front-matter trigger adopts its content

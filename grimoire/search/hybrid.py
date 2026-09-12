@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,6 @@ from grimoire.core.embedder import Embedder
 from grimoire.core.reranker import Reranker
 from grimoire.search.fulltext import FulltextSearch
 from grimoire.vectorstore.base import VectorStore
-
 
 # =============================================================================
 # Data Models
@@ -43,10 +42,10 @@ class HybridResult:
     document_id: str
     content: str
     score: float
-    vector_score: Optional[float] = None
-    fts_score: Optional[float] = None
-    document_title: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    vector_score: float | None = None
+    fts_score: float | None = None
+    document_title: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 # =============================================================================
@@ -83,7 +82,7 @@ class HybridSearch:
         self,
         vector_store: VectorStore,
         embedder: Embedder,
-        reranker: Optional[Reranker] = None,
+        reranker: Reranker | None = None,
         vector_weight: float = 0.7,
         fts_weight: float = 0.3,
     ) -> None:
@@ -106,10 +105,10 @@ class HybridSearch:
         top_k: int = 10,
         vector_top_k: int = 50,
         fts_top_k: int = 20,
-        filter_dict: Optional[Dict[str, Any]] = None,
+        filter_dict: dict[str, Any] | None = None,
         rerank: bool = True,
-        rerank_top_k: Optional[int] = None,
-    ) -> List[HybridResult]:
+        rerank_top_k: int | None = None,
+    ) -> list[HybridResult]:
         """Execute a hybrid search combining vector and full-text results.
 
         Args:
@@ -145,7 +144,9 @@ class HybridSearch:
         # Apply reranking if available
         if rerank and self._reranker and len(merged) > 1:
             merged = await self._apply_reranking(
-                query, merged, top_k=rerank_top_k,
+                query,
+                merged,
+                top_k=rerank_top_k,
             )
 
         # Sort by score and limit
@@ -157,8 +158,8 @@ class HybridSearch:
         query: str,
         *,
         top_k: int = 10,
-        filter_dict: Optional[Dict[str, Any]] = None,
-    ) -> List[HybridResult]:
+        filter_dict: dict[str, Any] | None = None,
+    ) -> list[HybridResult]:
         """Perform vector search only (no FTS).
 
         Args:
@@ -177,7 +178,7 @@ class HybridSearch:
         query: str,
         *,
         top_k: int = 10,
-    ) -> List[HybridResult]:
+    ) -> list[HybridResult]:
         """Perform full-text search only (no vector search).
 
         Args:
@@ -198,8 +199,8 @@ class HybridSearch:
         self,
         query: str,
         top_k: int = 50,
-        filter_dict: Optional[Dict[str, Any]] = None,
-    ) -> List[HybridResult]:
+        filter_dict: dict[str, Any] | None = None,
+    ) -> list[HybridResult]:
         """Execute vector similarity search.
 
         Args:
@@ -212,10 +213,15 @@ class HybridSearch:
         """
         try:
             # Ensure vector store is initialized (lazy init)
-            if hasattr(self._vector_store, 'is_initialized') and not self._vector_store.is_initialized:
+            if (
+                hasattr(self._vector_store, "is_initialized")
+                and not self._vector_store.is_initialized
+            ):
                 embedding_dim = self._embedder.embedding_dim
                 await self._vector_store.initialize(
-                    collection_name=getattr(self._vector_store, 'collection_name', 'documents'),
+                    collection_name=getattr(
+                        self._vector_store, "collection_name", "documents"
+                    ),
                     embedding_dim=embedding_dim,
                 )
 
@@ -227,7 +233,7 @@ class HybridSearch:
                 include=["metadatas", "documents", "distances"],
             )
 
-            results: List[HybridResult] = []
+            results: list[HybridResult] = []
             for item in raw_results:
                 # ChromaDB returns distance; convert to similarity score
                 distance = item.get("distance", 0.0)
@@ -257,7 +263,7 @@ class HybridSearch:
         db: AsyncSession,
         query: str,
         top_k: int = 20,
-    ) -> List[HybridResult]:
+    ) -> list[HybridResult]:
         """Execute full-text search.
 
         Args:
@@ -279,7 +285,7 @@ class HybridSearch:
             max_rank = max(r.rank for r in fts_results) if fts_results else 1.0
             max_rank = max(max_rank, 0.001)  # Avoid division by zero
 
-            results: List[HybridResult] = []
+            results: list[HybridResult] = []
             for r in fts_results:
                 normalized_score = r.rank / max_rank
                 results.append(
@@ -306,9 +312,9 @@ class HybridSearch:
 
     def _merge_results(
         self,
-        vector_results: List[HybridResult],
-        fts_results: List[HybridResult],
-    ) -> List[HybridResult]:
+        vector_results: list[HybridResult],
+        fts_results: list[HybridResult],
+    ) -> list[HybridResult]:
         """Merge and deduplicate vector and FTS results.
 
         When both searches return the same chunk, their scores are combined.
@@ -320,7 +326,7 @@ class HybridSearch:
         Returns:
             Merged and deduplicated results.
         """
-        merged: Dict[str, HybridResult] = {}
+        merged: dict[str, HybridResult] = {}
 
         # Add vector results
         for r in vector_results:
@@ -347,9 +353,9 @@ class HybridSearch:
     async def _apply_reranking(
         self,
         query: str,
-        results: List[HybridResult],
+        results: list[HybridResult],
         top_k: int = 10,
-    ) -> List[HybridResult]:
+    ) -> list[HybridResult]:
         """Apply cross-encoder reranking to merged results.
 
         Args:
@@ -366,10 +372,12 @@ class HybridSearch:
         try:
             documents = [r.content for r in results]
             top_indices = await self._reranker.rerank(
-                query, documents, top_k=top_k,
+                query,
+                documents,
+                top_k=top_k,
             )
 
-            reranked: List[HybridResult] = []
+            reranked: list[HybridResult] = []
             for rank, idx in enumerate(top_indices):
                 result = results[idx]
                 # Override score with reranking position

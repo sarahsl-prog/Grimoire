@@ -2,7 +2,6 @@
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import List
 
 import numpy as np
 
@@ -34,9 +33,9 @@ class Reranker(ABC):
     async def rerank(
         self,
         query: str,
-        documents: List[str],
+        documents: list[str],
         top_k: int = 5,
-    ) -> List[int]:
+    ) -> list[int]:
         """Rerank documents by relevance to query.
 
         Args:
@@ -88,7 +87,9 @@ class CrossEncoderReranker(Reranker):
             self._model = CrossEncoder(self._model_name)
         return self._model
 
-    async def rerank(self, query: str, documents: List[str], top_k: int = 5) -> List[int]:
+    async def rerank(
+        self, query: str, documents: list[str], top_k: int = 5
+    ) -> list[int]:
         if top_k <= 0 or not documents:
             return []
 

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +66,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     # MCP SSE server mounted at /mcp
     from grimoire.mcp.router import mount_mcp
+
     mount_mcp(app, path="/mcp")
 
     limiter = app.state.limiter

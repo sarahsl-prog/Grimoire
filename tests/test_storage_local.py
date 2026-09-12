@@ -10,20 +10,17 @@ This module tests the LocalStorageAdapter implementation covering:
 
 import asyncio
 import os
-import stat
 import sys
 import tempfile
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
-from unittest import mock
 
 import pytest
 
 # Skip tests if watchdog is not available
 try:
     from watchdog.observers import Observer
+
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
@@ -38,7 +35,6 @@ from grimoire.storage.local import (
     WatchdogWatchHandle,
     _WatchdogEventHandler,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -116,7 +112,7 @@ class TestLocalStorageAdapterHappyPath:
                 f.write(f"content {i}")
 
         result = await adapter.list_files(temp_dir, recursive=False)
-        
+
         assert len(result) == 3
         for file_info in result:
             assert file_info.path.startswith(temp_dir)
@@ -133,14 +129,14 @@ class TestLocalStorageAdapterHappyPath:
         # Create nested structure
         subdir = os.path.join(temp_dir, "subdir")
         os.makedirs(subdir)
-        
+
         with open(os.path.join(temp_dir, "root.txt"), "w") as f:
             f.write("root")
         with open(os.path.join(subdir, "nested.txt"), "w") as f:
             f.write("nested")
 
         result = await adapter.list_files(temp_dir, recursive=True)
-        
+
         file_names = [f.name for f in result]
         assert "root.txt" in file_names
         assert "nested.txt" in file_names
@@ -181,7 +177,7 @@ class TestLocalStorageAdapterHappyPath:
     ) -> None:
         """get_metadata() returns metadata for file."""
         result = await adapter.get_metadata(temp_file)
-        
+
         assert result.path == temp_file
         assert result.size_bytes == len(b"Hello, World!")
         assert isinstance(result.modified_at, datetime)
@@ -195,7 +191,7 @@ class TestLocalStorageAdapterHappyPath:
     ) -> None:
         """get_metadata() returns metadata for directory."""
         result = await adapter.get_metadata(temp_dir)
-        
+
         assert result.path == str(Path(temp_dir).absolute())
         # Directories have non-zero size (block size) on most filesystems
         assert isinstance(result.size_bytes, int)
@@ -225,13 +221,13 @@ class TestWatchFunctionality:
         self, adapter: LocalStorageAdapter, temp_dir: str
     ) -> None:
         """watch() returns a WatchHandle."""
-        changes: List[FileChange] = []
-        
+        changes: list[FileChange] = []
+
         def callback(change: FileChange) -> None:
             changes.append(change)
 
         handle = await adapter.watch(temp_dir, callback)
-        
+
         try:
             assert handle is not None
             assert isinstance(handle, WatchdogWatchHandle)
@@ -243,13 +239,13 @@ class TestWatchFunctionality:
         self, adapter: LocalStorageAdapter, temp_dir: str
     ) -> None:
         """WatchHandle can be started and stopped."""
-        changes: List[FileChange] = []
-        
+        changes: list[FileChange] = []
+
         def callback(change: FileChange) -> None:
             changes.append(change)
 
         handle = await adapter.watch(temp_dir, callback)
-        
+
         try:
             assert not handle.is_running()
             handle.start()
@@ -264,15 +260,15 @@ class TestWatchFunctionality:
         self, adapter: LocalStorageAdapter, temp_dir: str
     ) -> None:
         """WatchHandle works as context manager."""
-        changes: List[FileChange] = []
-        
+        changes: list[FileChange] = []
+
         def callback(change: FileChange) -> None:
             changes.append(change)
 
         handle = await adapter.watch(temp_dir, callback)
         with handle:
             assert handle.is_running()
-        
+
         # Observer thread might take a moment to stop
         await asyncio.sleep(0.1)
         assert not handle.is_running()
@@ -282,30 +278,32 @@ class TestWatchFunctionality:
         self, adapter: LocalStorageAdapter, temp_dir: str
     ) -> None:
         """watch() detects new file creation events."""
-        changes: List[FileChange] = []
-        
+        changes: list[FileChange] = []
+
         def callback(change: FileChange) -> None:
             changes.append(change)
 
         handle = await adapter.watch(temp_dir, callback)
         handle.start()
-        
+
         try:
             # Wait for observer to start
             await asyncio.sleep(0.1)
-            
+
             # Create a file
             new_file = os.path.join(temp_dir, "newfile.txt")
             with open(new_file, "w") as f:
                 f.write("new content")
-            
+
             # Wait for event
             await asyncio.sleep(0.5)
-            
+
             # Check that creation was detected
-            created_events = [c for c in changes if c.change_type == FileChangeType.CREATED]
+            created_events = [
+                c for c in changes if c.change_type == FileChangeType.CREATED
+            ]
             assert len(created_events) >= 0
-            
+
         finally:
             handle.stop()
 
@@ -331,7 +329,7 @@ class TestEdgeCases:
 
         result = await adapter.list_files(temp_dir)
         file_names = {f.name for f in result}
-        
+
         assert "visible.txt" in file_names
         assert ".hidden" in file_names
 
@@ -342,7 +340,7 @@ class TestEdgeCases:
         """read_file() handles large files."""
         large_file = os.path.join(temp_dir, "large.bin")
         large_data = b"x" * (1024 * 1024)  # 1MB
-        
+
         with open(large_file, "wb") as f:
             f.write(large_data)
 
@@ -372,7 +370,7 @@ class TestEdgeCases:
         for i in range(5):
             deep_path = os.path.join(deep_path, f"level{i}")
             os.makedirs(deep_path)
-        
+
         final_file = os.path.join(deep_path, "deep_file.txt")
         with open(final_file, "w") as f:
             f.write("deep")
@@ -432,9 +430,7 @@ class TestErrorHandling:
             await adapter.list_files(temp_file)
 
     @pytest.mark.asyncio
-    async def test_read_file_nonexistent(
-        self, adapter: LocalStorageAdapter
-    ) -> None:
+    async def test_read_file_nonexistent(self, adapter: LocalStorageAdapter) -> None:
         """read_file() raises FileNotFoundError for missing file."""
         with pytest.raises(FileNotFoundError):
             await adapter.read_file("/nonexistent/file.txt")
@@ -448,18 +444,15 @@ class TestErrorHandling:
             await adapter.read_file(temp_dir)
 
     @pytest.mark.asyncio
-    async def test_get_metadata_nonexistent(
-        self, adapter: LocalStorageAdapter
-    ) -> None:
+    async def test_get_metadata_nonexistent(self, adapter: LocalStorageAdapter) -> None:
         """get_metadata() raises FileNotFoundError for missing path."""
         with pytest.raises(FileNotFoundError):
             await adapter.get_metadata("/nonexistent/path")
 
     @pytest.mark.asyncio
-    async def test_watch_nonexistent_path(
-        self, adapter: LocalStorageAdapter
-    ) -> None:
+    async def test_watch_nonexistent_path(self, adapter: LocalStorageAdapter) -> None:
         """watch() raises FileNotFoundError for non-existent path."""
+
         def callback(change: FileChange) -> None:
             pass
 
@@ -471,6 +464,7 @@ class TestErrorHandling:
         self, adapter: LocalStorageAdapter, temp_file: str
     ) -> None:
         """watch() raises NotADirectoryError when given file."""
+
         def callback(change: FileChange) -> None:
             pass
 
@@ -508,9 +502,7 @@ class TestAsyncBehavior:
             files.append(path)
 
         # Read all concurrently
-        results = await asyncio.gather(
-            *[adapter.read_file(f) for f in files]
-        )
+        results = await asyncio.gather(*[adapter.read_file(f) for f in files])
 
         assert len(results) == 5
         for i, result in enumerate(results):
@@ -526,16 +518,12 @@ class TestAsyncBehavior:
                 f.write(f"{i}")
 
         # List files and read first file concurrently
-        file_info_task = asyncio.create_task(
-            adapter.list_files(temp_dir)
-        )
-        
+        file_info_task = asyncio.create_task(adapter.list_files(temp_dir))
+
         file_infos = await file_info_task
-        
+
         if file_infos:
-            read_task = asyncio.create_task(
-                adapter.read_file(file_infos[0].path)
-            )
+            read_task = asyncio.create_task(adapter.read_file(file_infos[0].path))
             content = await read_task
             assert len(content) > 0
 
@@ -552,8 +540,10 @@ class TestAsyncBehavior:
         # Get metadata for directory
         results = await asyncio.gather(
             adapter.get_metadata(temp_dir),
-            *[adapter.get_metadata(os.path.join(temp_dir, f"file{i}.txt")) 
-              for i in range(5)]
+            *[
+                adapter.get_metadata(os.path.join(temp_dir, f"file{i}.txt"))
+                for i in range(5)
+            ],
         )
 
         assert len(results) == 6  # 1 directory + 5 files
@@ -627,17 +617,17 @@ class TestIntegration:
         """list_files() handles symbolic links appropriately."""
         target = os.path.join(temp_dir, "target.txt")
         link = os.path.join(temp_dir, "link.txt")
-        
+
         with open(target, "w") as f:
             f.write("target content")
-        
+
         # Create symlink if supported
         try:
             os.symlink(target, link)
-            
+
             files = await adapter.list_files(temp_dir)
             assert len(files) == 2
-            
+
             # Verify we can read the symlink
             link_file = next(f for f in files if f.name == "link.txt")
             content = await adapter.read_file(link_file.path)
@@ -661,13 +651,13 @@ class TestDataModels:
         """FileInfo has all required fields populated."""
         files = await adapter.list_files(os.path.dirname(temp_file))
         assert len(files) == 1
-        
+
         info = files[0]
         assert info.path
         assert info.name
         assert info.size_bytes is not None
         assert info.modified_at is not None
-        
+
     @pytest.mark.asyncio
     async def test_file_info_mime_types(
         self, adapter: LocalStorageAdapter, temp_dir: str
@@ -699,7 +689,7 @@ class TestDataModels:
     ) -> None:
         """FileMetadata hash is valid SHA-256 hex string."""
         metadata = await adapter.get_metadata(temp_file)
-        
+
         assert metadata.file_hash is not None
         assert len(metadata.file_hash) == 64  # SHA-256 hex
         # Verify it's hex
@@ -716,11 +706,11 @@ class TestWatchdogEventHandler:
 
     def test_event_handler_initialization(self) -> None:
         """_WatchdogEventHandler can be initialized."""
-        changes: List[FileChange] = []
-        
+        changes: list[FileChange] = []
+
         def callback(change: FileChange) -> None:
             changes.append(change)
-        
+
         handler = _WatchdogEventHandler(callback)
         assert handler._callback == callback
 
@@ -728,7 +718,7 @@ class TestWatchdogEventHandler:
         """WatchdogWatchHandle properly manages observer lifecycle."""
         observer = Observer()
         handle = WatchdogWatchHandle(observer, "/test/path")
-        
+
         assert not handle.is_running()
         handle.start()
         assert handle.is_running()
@@ -739,71 +729,71 @@ class TestWatchdogEventHandler:
         """WatchdogWatchHandle works as context manager."""
         observer = Observer()
         handle = WatchdogWatchHandle(observer, "/test/path")
-        
+
         with handle:
             assert handle.is_running()
-        
+
         assert not handle.is_running()
 
     def test_handler_on_deleted(self) -> None:
         """on_deleted creates FileChange with correct type."""
-        received_changes: List[FileChange] = []
-        
+        received_changes: list[FileChange] = []
+
         def callback(change: FileChange) -> None:
             received_changes.append(change)
-        
+
         handler = _WatchdogEventHandler(callback)
-        
+
         # Create a mock event object
         class MockEvent:
             src_path = "/test/file.txt"
             is_directory = False
-        
+
         event = MockEvent()
         handler.on_deleted(event)
-        
+
         assert len(received_changes) == 1
         assert received_changes[0].change_type == FileChangeType.DELETED
         assert received_changes[0].path == "/test/file.txt"
 
     def test_handler_on_modified_skips_directories(self) -> None:
         """on_modified skips directory modification events."""
-        received_changes: List[FileChange] = []
-        
+        received_changes: list[FileChange] = []
+
         def callback(change: FileChange) -> None:
             received_changes.append(change)
-        
+
         handler = _WatchdogEventHandler(callback)
-        
+
         # Create a mock directory event
         class MockDirEvent:
             src_path = "/test/dir"
             is_directory = True
-        
+
         event = MockDirEvent()
         handler.on_modified(event)
-        
+
         # No changes should be recorded for directories
         assert len(received_changes) == 0
 
     def test_handler_on_moved(self) -> None:
         """on_moved creates FileChange with previous_path."""
-        received_changes: List[FileChange] = []
-        
+        received_changes: list[FileChange] = []
+
         def callback(change: FileChange) -> None:
             received_changes.append(change)
-        
+
         handler = _WatchdogEventHandler(callback)
-        
+
         # Create a mock move event
         class MockMovedEvent:
             src_path = "/test/old_file.txt"
             dest_path = "/test/new_file.txt"
             is_directory = False
-        
+
         event = MockMovedEvent()
         handler.on_moved(event)
-        
+
         assert len(received_changes) == 1
         assert received_changes[0].change_type == FileChangeType.MOVED
         assert received_changes[0].path == "/test/new_file.txt"
@@ -811,27 +801,27 @@ class TestWatchdogEventHandler:
 
     def test_handler_callback_exception_handling(self) -> None:
         """Handler gracefully handles exceptions in callback."""
-        
+
         def failing_callback(change: FileChange) -> None:
             raise RuntimeError("Callback failure")
-        
+
         handler = _WatchdogEventHandler(failing_callback)
-        
+
         # Should not raise even though callback fails
         class MockEvent:
             src_path = "/test/file.txt"
             is_directory = False
-        
+
         event = MockEvent()
         handler.on_created(event)  # Should not raise
 
     def test_handler_on_any_event(self) -> None:
         """on_any_event exists and can be called."""
         handler = _WatchdogEventHandler(lambda c: None)
-        
+
         class MockEvent:
             pass
-        
+
         event = MockEvent()
         # Should not raise
         handler.on_any_event(event)
@@ -839,18 +829,18 @@ class TestWatchdogEventHandler:
     def test_create_file_info_for_nonexistent_file(self) -> None:
         """_create_file_info returns None for non-existent files."""
         handler = _WatchdogEventHandler(lambda c: None)
-        
+
         result = handler._create_file_info("/nonexistent/path/file.txt")
         assert result is None
 
     def test_handler_to_str_with_bytes(self) -> None:
         """_to_str handles bytes input correctly."""
         handler = _WatchdogEventHandler(lambda c: None)
-        
+
         # Test with bytes
         result = handler._to_str(b"/test/file.txt")
         assert result == "/test/file.txt"
-        
+
         # Test with string (should pass through)
         result2 = handler._to_str("/test/file.txt")
         assert result2 == "/test/file.txt"
@@ -880,7 +870,7 @@ class TestPermissionHandling:
         no_access_dir = os.path.join(temp_dir, "no_access")
         os.makedirs(no_access_dir)
         os.chmod(no_access_dir, 0o000)
-        
+
         try:
             with pytest.raises(PermissionError):
                 await adapter.list_files(no_access_dir)
@@ -895,9 +885,9 @@ class TestPermissionHandling:
         no_read_file = os.path.join(temp_dir, "no_read.txt")
         with open(no_read_file, "w") as f:
             f.write("secret")
-        
+
         os.chmod(no_read_file, 0o000)
-        
+
         try:
             with pytest.raises((PermissionError, OSError)):
                 await adapter.read_file(no_read_file)
@@ -922,28 +912,29 @@ class TestStorageAdapterCompliance:
     async def test_all_abstract_methods_implemented(self) -> None:
         """All abstract methods have implementations."""
         adapter = LocalStorageAdapter()
-        
+
         # Check that methods are implemented (don't raise NotImplementedError)
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_file = os.path.join(tmp_dir, "test.txt")
             with open(test_file, "w") as f:
                 f.write("test")
-            
+
             # These should not raise NotImplementedError
             await adapter.list_files(tmp_dir)
             await adapter.read_file(test_file)
             await adapter.get_metadata(test_file)
             await adapter.exists(tmp_dir)
             await adapter.supports_watch()
-            
+
             # list_changes should raise NotImplementedError by design
             with pytest.raises(NotImplementedError):
                 await adapter.list_changes(datetime.now())
 
             # watch should work (returns handle without raising)
-            changes: List[FileChange] = []
+            changes: list[FileChange] = []
+
             def callback(c: FileChange) -> None:
                 changes.append(c)
-            
+
             handle = await adapter.watch(tmp_dir, callback)
             handle.stop()

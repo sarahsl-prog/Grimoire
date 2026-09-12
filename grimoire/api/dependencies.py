@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,10 +17,11 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-@functools.lru_cache()
+@functools.lru_cache
 def _get_ingestion_agent_cached() -> Any:
     """Build and cache IngestionAgent instance."""
     from grimoire.cli.helpers import build_ingestion_agent
+
     return build_ingestion_agent()
 
 
@@ -28,10 +30,11 @@ def get_ingestion_agent() -> Any:
     return _get_ingestion_agent_cached()
 
 
-@functools.lru_cache()
+@functools.lru_cache
 def _get_query_agent_cached() -> Any:
     """Build and cache QueryAgent instance."""
     from grimoire.cli.helpers import build_query_agent
+
     return build_query_agent()
 
 
@@ -40,10 +43,11 @@ def get_query_agent() -> Any:
     return _get_query_agent_cached()
 
 
-@functools.lru_cache()
+@functools.lru_cache
 def _get_content_gen_agent_cached() -> Any:
     """Build and cache ContentGenerationAgent instance."""
     from grimoire.cli.helpers import build_content_gen_agent
+
     return build_content_gen_agent()
 
 

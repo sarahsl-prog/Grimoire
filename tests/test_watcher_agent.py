@@ -10,20 +10,15 @@ Tests cover:
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
-from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_asyncio
 
-from grimoire.agents.watcher import WatcherAgent, WatcherStats, WatchStatus
 from grimoire.agents.ingestion import IngestionResult
-from grimoire.storage.base import FileChange, FileChangeType, StorageBackend
+from grimoire.agents.watcher import WatcherAgent, WatcherStats, WatchStatus
+from grimoire.storage.base import FileChange, FileChangeType
 from grimoire.storage.watch_manager import WatchManager
-
 
 # =============================================================================
 # Fixtures
@@ -106,7 +101,9 @@ class TestWatcherHappyPath:
 
     @pytest.mark.asyncio
     async def test_start_watch(
-        self, watcher: WatcherAgent, mock_watch_manager: MagicMock,
+        self,
+        watcher: WatcherAgent,
+        mock_watch_manager: MagicMock,
     ) -> None:
         """Can start watching a directory."""
         watch_id = await watcher.watch("/tmp/test", backend="local")
@@ -115,7 +112,9 @@ class TestWatcherHappyPath:
 
     @pytest.mark.asyncio
     async def test_stop_watch(
-        self, watcher: WatcherAgent, mock_watch_manager: MagicMock,
+        self,
+        watcher: WatcherAgent,
+        mock_watch_manager: MagicMock,
     ) -> None:
         """Can stop a specific watch."""
         await watcher.watch("/tmp/test", backend="local")
@@ -125,7 +124,9 @@ class TestWatcherHappyPath:
 
     @pytest.mark.asyncio
     async def test_stop_all(
-        self, watcher: WatcherAgent, mock_watch_manager: MagicMock,
+        self,
+        watcher: WatcherAgent,
+        mock_watch_manager: MagicMock,
     ) -> None:
         """Can stop all watches."""
         await watcher.watch("/tmp/test", backend="local")
@@ -151,7 +152,8 @@ class TestWatcherHappyPath:
 
     @pytest.mark.asyncio
     async def test_context_manager(
-        self, mock_watch_manager: MagicMock,
+        self,
+        mock_watch_manager: MagicMock,
         mock_ingestion_agent: MagicMock,
         mock_db_session_factory: MagicMock,
     ) -> None:
@@ -194,7 +196,9 @@ class TestWatcherFiltering:
         change = make_change("/tmp/test/file.txt", FileChangeType.MOVED)
         assert watcher._should_process(change) is False
 
-    def test_should_not_process_unsupported_extension(self, watcher: WatcherAgent) -> None:
+    def test_should_not_process_unsupported_extension(
+        self, watcher: WatcherAgent
+    ) -> None:
         """Unsupported file types should not be processed."""
         change = make_change("/tmp/test/data.xyz", FileChangeType.CREATED)
         assert watcher._should_process(change) is False
@@ -328,7 +332,9 @@ class TestWatcherEdgeCases:
 
     @pytest.mark.asyncio
     async def test_unwatch_nonexistent(
-        self, watcher: WatcherAgent, mock_watch_manager: MagicMock,
+        self,
+        watcher: WatcherAgent,
+        mock_watch_manager: MagicMock,
     ) -> None:
         """Unwatching a nonexistent watch returns False."""
         mock_watch_manager.stop_watch = AsyncMock(return_value=False)
@@ -337,7 +343,9 @@ class TestWatcherEdgeCases:
 
     @pytest.mark.asyncio
     async def test_multiple_watches(
-        self, watcher: WatcherAgent, mock_watch_manager: MagicMock,
+        self,
+        watcher: WatcherAgent,
+        mock_watch_manager: MagicMock,
     ) -> None:
         """Can manage multiple concurrent watches."""
         mock_watch_manager.start_watch = AsyncMock(
@@ -353,7 +361,8 @@ class TestWatcherEdgeCases:
 
     @pytest.mark.asyncio
     async def test_stop_all_clears_trackers(
-        self, watcher: WatcherAgent,
+        self,
+        watcher: WatcherAgent,
     ) -> None:
         """stop_all removes all trackers."""
         await watcher.watch("/tmp/test", backend="local")
@@ -398,12 +407,18 @@ class TestWatcherModels:
             total_files_failed=2,
             watches=[
                 WatchStatus(
-                    watch_id="w1", path="/a", backend="local",
-                    files_processed=7, files_failed=1,
+                    watch_id="w1",
+                    path="/a",
+                    backend="local",
+                    files_processed=7,
+                    files_failed=1,
                 ),
                 WatchStatus(
-                    watch_id="w2", path="/b", backend="local",
-                    files_processed=3, files_failed=1,
+                    watch_id="w2",
+                    path="/b",
+                    backend="local",
+                    files_processed=3,
+                    files_failed=1,
                 ),
             ],
         )

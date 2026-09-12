@@ -17,16 +17,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # Docling imports
 try:
-    from docling.datamodel.base_models import ConversionStatus
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.document import ConversionResult
+    from docling.datamodel.base_models import ConversionStatus, InputFormat
+    from docling.datamodel.document import ConversionResult, InputDocument
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import (
         DocumentConverter,
-        PdfFormatOption,
         ImageFormatOption,
+        PdfFormatOption,
     )
-    from docling.datamodel.document import InputDocument
 
     DOCLEY_AVAILABLE = True
 except ImportError:
@@ -533,7 +531,7 @@ class DocumentParser:
 
             return result
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(f"Timeout parsing {file_path_obj} after {config.timeout}s")
             return ParsedDocument(
                 status="failed",
@@ -554,9 +552,7 @@ class DocumentParser:
                 ),
             )
 
-    def _parse_sync(
-        self, file_path: Path, config: ParserConfig
-    ) -> ParsedDocument:
+    def _parse_sync(self, file_path: Path, config: ParserConfig) -> ParsedDocument:
         """Synchronous parsing method (runs in thread pool).
 
         Args:
@@ -579,17 +575,23 @@ class DocumentParser:
             ext = self._detect_file_type(file_path)
             if ext in self.PLAIN_TEXT_EXTENSIONS:
                 # Bypass Docling for text-oriented files; read UTF-8 directly.
-                logger.debug(f"Reading {file_path_str} as plain text (bypassing Docling)")
+                logger.debug(
+                    f"Reading {file_path_str} as plain text (bypassing Docling)"
+                )
                 try:
                     raw_text = file_path.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
-                    logger.warning(f"UTF-8 decode failed for {file_path_str}, trying latin-1")
+                    logger.warning(
+                        f"UTF-8 decode failed for {file_path_str}, trying latin-1"
+                    )
                     raw_text = file_path.read_text(encoding="latin-1")
                 return ParsedDocument(
                     text=raw_text,
                     metadata=DocumentMetadata(
                         file_type=ext,
-                        file_size=file_path.stat().st_size if file_path.exists() else None,
+                        file_size=(
+                            file_path.stat().st_size if file_path.exists() else None
+                        ),
                         file_hash=file_hash,
                         word_count=self._count_words(raw_text),
                     ),

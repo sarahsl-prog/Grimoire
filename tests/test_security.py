@@ -8,7 +8,7 @@ These tests fill the gaps identified in the code-review report (May 26):
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -32,7 +32,7 @@ def _make_test_api_key(**overrides: Any) -> ApiKey:
         "tier": ApiKeyTier.AGENT,
         "key_prefix": "grim_agt_tst",
         "key_hash": "$2b$12$fakehash",
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return ApiKey(**defaults)
@@ -178,12 +178,15 @@ class TestAuthEdgeCases:
     @pytest.mark.asyncio
     async def test_expired_key(self, mock_db) -> None:
         key = _make_test_api_key(
-            expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+            expires_at=datetime.now(UTC) - timedelta(days=1),
         )
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = key
         mock_db.execute.return_value = mock_result
-        assert await authenticate_api_key("grim_agt_tst1234567890123456789012", mock_db) is None
+        assert (
+            await authenticate_api_key("grim_agt_tst1234567890123456789012", mock_db)
+            is None
+        )
 
     @pytest.mark.asyncio
     async def test_revoked_key_filtered_by_query(self, mock_db) -> None:
@@ -191,7 +194,10 @@ class TestAuthEdgeCases:
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None  # DB returns nothing
         mock_db.execute.return_value = mock_result
-        assert await authenticate_api_key("grim_agt_tst1234567890123456789012", mock_db) is None
+        assert (
+            await authenticate_api_key("grim_agt_tst1234567890123456789012", mock_db)
+            is None
+        )
 
     @pytest.mark.asyncio
     async def test_bcrypt_hash_mismatch(self, mock_db) -> None:
@@ -255,6 +261,7 @@ class TestAuthDependency:
             yield mock_session
 
         from grimoire.api.dependencies import get_db_session
+
         app.dependency_overrides[get_db_session] = override_db
 
         with TestClient(app) as c:
@@ -281,6 +288,7 @@ class TestAuthDependency:
             yield mock_session
 
         from grimoire.api.dependencies import get_db_session
+
         app.dependency_overrides[get_db_session] = override_db
 
         with TestClient(app) as c:

@@ -6,11 +6,10 @@ used throughout the Grimoire knowledge management system.
 """
 
 import hashlib
-from typing import Union
 from pathlib import Path
 
 
-def compute_file_hash(file_path: Union[str, Path]) -> str:
+def compute_file_hash(file_path: str | Path) -> str:
     """
     Compute SHA-256 hash of a file.
 
@@ -37,8 +36,8 @@ def compute_file_hash(file_path: Union[str, Path]) -> str:
             for chunk in iter(lambda: f.read(8192), b""):
                 sha256_hash.update(chunk)
         return sha256_hash.hexdigest()
-    except IOError as e:
-        raise IOError(f"Error reading file {file_path}: {e}")
+    except OSError as e:
+        raise OSError(f"Error reading file {file_path}: {e}")
 
 
 def compute_string_hash(content: str) -> str:
@@ -79,7 +78,7 @@ def compute_query_hash(query: str, filters: dict = None, top_k: int = None) -> s
     return compute_string_hash(params)
 
 
-def verify_file_hash(file_path: Union[str, Path], expected_hash: str) -> bool:
+def verify_file_hash(file_path: str | Path, expected_hash: str) -> bool:
     """
     Verify that a file's hash matches an expected hash.
 
@@ -93,5 +92,5 @@ def verify_file_hash(file_path: Union[str, Path], expected_hash: str) -> bool:
     try:
         actual_hash = compute_file_hash(file_path)
         return actual_hash == expected_hash
-    except (FileNotFoundError, IOError):
+    except (OSError, FileNotFoundError):
         return False

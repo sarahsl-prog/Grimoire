@@ -17,7 +17,6 @@ from grimoire.strategies.security.corpus import SourceType
 from grimoire.strategies.security.metadata import Severity
 from grimoire.strategies.security.parsers.playbook import parse_playbook
 
-
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "security" / "playbooks"
 RANSOMWARE = FIXTURE_DIR / "ransomware-containment.md"
 PHISHING = FIXTURE_DIR / "phishing-response.md"

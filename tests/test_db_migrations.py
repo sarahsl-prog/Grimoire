@@ -23,14 +23,14 @@ from __future__ import annotations
 import importlib.util
 import shutil
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, List
 
 import pytest
 import sqlalchemy as sa
-from alembic import command
 from alembic.config import Config
 
+from alembic import command
 
 # Columns added by 0006 — kept in sync with the migration / model.
 _PHASE2_COLUMNS: tuple[str, ...] = (
@@ -135,12 +135,12 @@ def sqlite_alembic_cfg() -> Iterator[Config]:
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def _list_columns(engine: sa.Engine, table: str) -> List[str]:
+def _list_columns(engine: sa.Engine, table: str) -> list[str]:
     insp = sa.inspect(engine)
     return [col["name"] for col in insp.get_columns(table)]
 
 
-def _list_indexes(engine: sa.Engine, table: str) -> List[str]:
+def _list_indexes(engine: sa.Engine, table: str) -> list[str]:
     insp = sa.inspect(engine)
     return [idx["name"] for idx in insp.get_indexes(table)]
 

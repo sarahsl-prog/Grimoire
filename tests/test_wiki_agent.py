@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,14 +19,8 @@ from grimoire.agents.wiki import (
 from grimoire.db.models import (
     CompileStatus,
     Document,
-    WikiCompileJob,
-    WikiCrossReference,
-    WikiPage,
     WikiPageSection,
-    WikiPageStatus,
-    WikiRefType,
 )
-
 
 # ============================================================================
 # Fixtures
@@ -63,7 +56,7 @@ def make_mock_document(
     doc.id = doc_id
     doc.title = title
     doc.source_path = source_path
-    doc.created_at = datetime.now(timezone.utc)
+    doc.created_at = datetime.now(UTC)
     return doc
 
 
@@ -76,15 +69,15 @@ class TestIdentifyEntities:
     """Test _identify_entities LLM call and parsing."""
 
     @pytest.mark.asyncio
-    async def test_identifies_entities_from_chunks(
-        self, agent: WikiAgent
-    ) -> None:
+    async def test_identifies_entities_from_chunks(self, agent: WikiAgent) -> None:
         """LLM returns valid entity list."""
         mock_response = (
             '[{"name": "Auth Pipeline", "entity_type": "process", '
             '"summary": "Handles auth", "confidence": 0.9}]'
         )
-        with patch.object(agent, "_call_llm", new_callable=AsyncMock, return_value=mock_response):
+        with patch.object(
+            agent, "_call_llm", new_callable=AsyncMock, return_value=mock_response
+        ):
             entities = await agent._identify_entities(["some chunk text"])
         assert len(entities) == 1
         assert entities[0].name == "Auth Pipeline"
@@ -92,20 +85,20 @@ class TestIdentifyEntities:
         assert entities[0].confidence == 0.9
 
     @pytest.mark.asyncio
-    async def test_empty_entity_list(
-        self, agent: WikiAgent
-    ) -> None:
+    async def test_empty_entity_list(self, agent: WikiAgent) -> None:
         """LLM returns no entities."""
-        with patch.object(agent, "_call_llm", new_callable=AsyncMock, return_value="[]"):
+        with patch.object(
+            agent, "_call_llm", new_callable=AsyncMock, return_value="[]"
+        ):
             entities = await agent._identify_entities(["some text"])
         assert len(entities) == 0
 
     @pytest.mark.asyncio
-    async def test_malformed_llm_response(
-        self, agent: WikiAgent
-    ) -> None:
+    async def test_malformed_llm_response(self, agent: WikiAgent) -> None:
         """LLM returns garbage — should return empty list, not crash."""
-        with patch.object(agent, "_call_llm", new_callable=AsyncMock, return_value="not json"):
+        with patch.object(
+            agent, "_call_llm", new_callable=AsyncMock, return_value="not json"
+        ):
             entities = await agent._identify_entities(["text"])
         assert entities == []
 
@@ -131,7 +124,9 @@ class TestDetectContradictions:
             content="Uses port 5432",
             source_priority=5,
         )
-        with patch.object(agent, "_call_llm", new_callable=AsyncMock, return_value=mock_response):
+        with patch.object(
+            agent, "_call_llm", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await agent._detect_contradictions(existing, "Uses port 5434")
         assert result is not None
         assert result.conflict_type == "factual"
@@ -139,9 +134,13 @@ class TestDetectContradictions:
     @pytest.mark.asyncio
     async def test_no_conflict(self, agent: WikiAgent) -> None:
         """LLM finds no contradiction."""
-        with patch.object(agent, "_call_llm", new_callable=AsyncMock, return_value="none"):
+        with patch.object(
+            agent, "_call_llm", new_callable=AsyncMock, return_value="none"
+        ):
             result = await agent._detect_contradictions(
-                WikiPageSection(heading="Overview", content="Same info", source_priority=5),
+                WikiPageSection(
+                    heading="Overview", content="Same info", source_priority=5
+                ),
                 "Same info from another source",
             )
         assert result is None
@@ -250,9 +249,7 @@ class TestCompileDocument:
     """Test compile_document end-to-end flow."""
 
     @pytest.mark.asyncio
-    async def test_creates_new_page(
-        self, agent: WikiAgent, mock_db: AsyncMock
-    ) -> None:
+    async def test_creates_new_page(self, agent: WikiAgent, mock_db: AsyncMock) -> None:
         """Compiling a document with new entities creates wiki pages."""
         mock_db.get = AsyncMock(return_value=make_mock_document())
         mock_db.flush = AsyncMock()
@@ -264,31 +261,56 @@ class TestCompileDocument:
         mock_job.document_id = "doc-1"
         mock_scalars = MagicMock()
         mock_scalars.first.return_value = mock_job
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+        mock_db.execute = AsyncMock(
+            return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars))
+        )
 
         # Mock _fetch_chunks to return content
         mock_chunk = MagicMock()
         mock_chunk.content = "Auth pipeline uses JWT tokens"
-        with patch.object(
-            agent, "_fetch_chunks", new_callable=AsyncMock,
-            return_value=[mock_chunk],
-        ), patch.object(
-            agent, "_identify_entities", new_callable=AsyncMock,
-            return_value=[EntityExtraction(
-                name="Auth Pipeline", entity_type="process",
-                summary="Handles auth", confidence=0.9,
-            )],
-        ), patch.object(
-            agent, "_match_existing_page", new_callable=AsyncMock,
-            return_value=None,
-        ), patch.object(
-            agent, "_generate_page", new_callable=AsyncMock,
-            return_value=(MagicMock(id="page-1"), 1),
-        ), patch.object(
-            agent, "_assemble_page_content", new_callable=AsyncMock,
-        ), patch.object(
-            agent, "_discover_cross_references", new_callable=AsyncMock,
-            return_value=0,
+        with (
+            patch.object(
+                agent,
+                "_fetch_chunks",
+                new_callable=AsyncMock,
+                return_value=[mock_chunk],
+            ),
+            patch.object(
+                agent,
+                "_identify_entities",
+                new_callable=AsyncMock,
+                return_value=[
+                    EntityExtraction(
+                        name="Auth Pipeline",
+                        entity_type="process",
+                        summary="Handles auth",
+                        confidence=0.9,
+                    )
+                ],
+            ),
+            patch.object(
+                agent,
+                "_match_existing_page",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                agent,
+                "_generate_page",
+                new_callable=AsyncMock,
+                return_value=(MagicMock(id="page-1"), 1),
+            ),
+            patch.object(
+                agent,
+                "_assemble_page_content",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                agent,
+                "_discover_cross_references",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             result = await agent.compile_document(mock_db, "doc-1")
 
@@ -306,11 +328,16 @@ class TestCompileDocument:
         mock_job.document_id = "doc-1"
         mock_scalars = MagicMock()
         mock_scalars.first.return_value = mock_job
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+        mock_db.execute = AsyncMock(
+            return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars))
+        )
         mock_db.flush = AsyncMock()
 
         with patch.object(
-            agent, "_fetch_chunks", new_callable=AsyncMock, return_value=[],
+            agent,
+            "_fetch_chunks",
+            new_callable=AsyncMock,
+            return_value=[],
         ):
             result = await agent.compile_document(mock_db, "doc-1")
 
@@ -331,16 +358,26 @@ class TestCompileDocument:
         mock_job.document_id = "doc-1"
         mock_scalars = MagicMock()
         mock_scalars.first.return_value = mock_job
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+        mock_db.execute = AsyncMock(
+            return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars))
+        )
 
         mock_chunk = MagicMock()
         mock_chunk.content = "some text"
 
-        with patch.object(
-            agent, "_fetch_chunks", new_callable=AsyncMock,
-            return_value=[mock_chunk],
-        ), patch.object(
-            agent, "_identify_entities", new_callable=AsyncMock, return_value=[],
+        with (
+            patch.object(
+                agent,
+                "_fetch_chunks",
+                new_callable=AsyncMock,
+                return_value=[mock_chunk],
+            ),
+            patch.object(
+                agent,
+                "_identify_entities",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
         ):
             result = await agent.compile_document(mock_db, "doc-1")
 
@@ -357,7 +394,9 @@ class TestCompileDocument:
         mock_job.document_id = "doc-1"
         mock_scalars = MagicMock()
         mock_scalars.first.return_value = mock_job
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+        mock_db.execute = AsyncMock(
+            return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars))
+        )
 
         result = await agent.compile_document(mock_db, "doc-1")
 
@@ -378,18 +417,27 @@ class TestCompileDocument:
         mock_job.document_id = "doc-1"
         mock_scalars = MagicMock()
         mock_scalars.first.return_value = mock_job
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+        mock_db.execute = AsyncMock(
+            return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars))
+        )
 
         mock_chunk = MagicMock()
         mock_chunk.content = "some text"
 
         # Make _identify_entities raise an exception
-        with patch.object(
-            agent, "_fetch_chunks", new_callable=AsyncMock,
-            return_value=[mock_chunk],
-        ), patch.object(
-            agent, "_identify_entities", new_callable=AsyncMock,
-            side_effect=RuntimeError("LLM unavailable"),
+        with (
+            patch.object(
+                agent,
+                "_fetch_chunks",
+                new_callable=AsyncMock,
+                return_value=[mock_chunk],
+            ),
+            patch.object(
+                agent,
+                "_identify_entities",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("LLM unavailable"),
+            ),
         ):
             result = await agent.compile_document(mock_db, "doc-1")
 
@@ -406,7 +454,9 @@ class TestCompilePending:
     ) -> None:
         """compile_pending processes all pending jobs."""
         with patch.object(
-            agent, "compile_document", new_callable=AsyncMock,
+            agent,
+            "compile_document",
+            new_callable=AsyncMock,
             return_value=CompileResult(document_id="doc-1"),
         ):
             # Mock the query for pending jobs
@@ -414,7 +464,9 @@ class TestCompilePending:
             mock_job.document_id = "doc-1"
             mock_scalars = MagicMock()
             mock_scalars.all.return_value = [mock_job]
-            mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+            mock_db.execute = AsyncMock(
+                return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars))
+            )
 
             results = await agent.compile_pending(mock_db)
 

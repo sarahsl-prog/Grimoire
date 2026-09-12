@@ -6,9 +6,9 @@ This module contains base classes and utilities that are shared across all Grimo
 
 import asyncio
 import functools
-import logging
-from typing import Any, Callable, Optional, TypeVar
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
 from loguru import logger
 
@@ -119,12 +119,13 @@ class ExecutionError(AgentError):
 # Logging setup utilities
 def setup_agent_logging(
     log_level: str = "INFO",
-    log_file: Optional[Path] = None,
+    log_file: Path | None = None,
     rotation: str = "10 MB",
     retention: str = "1 week",
 ) -> None:
     """Setup logging for agents — delegates to setup_logger() for consistent file+console output."""
     from grimoire.utils.logger import setup_logger
+
     setup_logger(level=log_level)
 
 

@@ -6,7 +6,7 @@ This preserves the semantic organization of markdown documents.
 """
 
 import re
-from typing import List, Optional, Pattern, Tuple
+from re import Pattern
 
 from pydantic import Field
 
@@ -33,7 +33,7 @@ class MarkdownChunkConfig(ChunkConfig):
 
     strategy: ChunkingStrategy = ChunkingStrategy.MARKDOWN
 
-    headers_to_split_on: List[str] = Field(
+    headers_to_split_on: list[str] = Field(
         default_factory=lambda: ["#", "##", "###"],
         description="Header levels to split on, e.g., ['#', '##', '###']",
     )
@@ -76,7 +76,7 @@ class MarkdownHeaderTextSplitter(Chunker):
         ```
     """
 
-    def __init__(self, config: Optional[MarkdownChunkConfig] = None) -> None:
+    def __init__(self, config: MarkdownChunkConfig | None = None) -> None:
         """Initialize markdown header splitter.
 
         Args:
@@ -111,7 +111,7 @@ class MarkdownHeaderTextSplitter(Chunker):
         """
         return len(header_marker)
 
-    def _build_header_context(self, header_stack: List[Tuple[int, str]]) -> str:
+    def _build_header_context(self, header_stack: list[tuple[int, str]]) -> str:
         """Build full header path from header stack.
 
         Args:
@@ -124,7 +124,7 @@ class MarkdownHeaderTextSplitter(Chunker):
             return ""
         return " > ".join(title for _, title in header_stack)
 
-    def _split_text_by_headers(self, text: str) -> List[Tuple[Optional[str], str]]:
+    def _split_text_by_headers(self, text: str) -> list[tuple[str | None, str]]:
         """Split text into (header, content) sections.
 
         Args:
@@ -137,9 +137,9 @@ class MarkdownHeaderTextSplitter(Chunker):
             return []
 
         lines = text.split("\n")
-        sections: List[Tuple[Optional[str], str]] = []
-        current_content: List[str] = []
-        current_header: Optional[str] = None
+        sections: list[tuple[str | None, str]] = []
+        current_content: list[str] = []
+        current_header: str | None = None
 
         for line in lines:
             stripped = line.strip()
@@ -149,7 +149,9 @@ class MarkdownHeaderTextSplitter(Chunker):
 
             # Check if line is a header
             is_header = False
-            for header_marker in sorted(self.config.headers_to_split_on, key=len, reverse=True):
+            for header_marker in sorted(
+                self.config.headers_to_split_on, key=len, reverse=True
+            ):
                 if stripped.startswith(header_marker + " "):
                     # Save previous section
                     if current_content:
@@ -179,8 +181,8 @@ class MarkdownHeaderTextSplitter(Chunker):
         return sections
 
     def _organize_sections(
-        self, sections: List[Tuple[Optional[str], str]]
-    ) -> List[Tuple[str, str, str, int]]:
+        self, sections: list[tuple[str | None, str]]
+    ) -> list[tuple[str, str, str, int]]:
         """Organize sections with their header context.
 
         Args:
@@ -189,8 +191,8 @@ class MarkdownHeaderTextSplitter(Chunker):
         Returns:
             List of (content, header_title, full_context, level) tuples.
         """
-        organized: List[Tuple[str, str, str, int]] = []
-        header_stack: List[Tuple[int, str]] = []
+        organized: list[tuple[str, str, str, int]] = []
+        header_stack: list[tuple[int, str]] = []
 
         header_pattern = self._header_pattern
 
@@ -225,7 +227,7 @@ class MarkdownHeaderTextSplitter(Chunker):
 
         return organized
 
-    async def chunk(self, text: str, doc_id: Optional[str] = None) -> List[Chunk]:
+    async def chunk(self, text: str, doc_id: str | None = None) -> list[Chunk]:
         """Split markdown text respecting header hierarchy.
 
         Args:
@@ -247,7 +249,7 @@ class MarkdownHeaderTextSplitter(Chunker):
         # Organize with header context
         organized = self._organize_sections(sections)
 
-        chunks: List[Chunk] = []
+        chunks: list[Chunk] = []
 
         for content, header_title, full_context, level in organized:
             if not content.strip():
@@ -276,7 +278,7 @@ class MarkdownHeaderTextSplitter(Chunker):
             chunks.append(chunk)
 
         # If chunks are too large, split them recursively
-        final_chunks: List[Chunk] = []
+        final_chunks: list[Chunk] = []
         for chunk in chunks:
             chunk_tokens = chunk.token_count
             if chunk_tokens > self.config.chunk_size:
@@ -297,7 +299,7 @@ class MarkdownHeaderTextSplitter(Chunker):
 
         return final_chunks
 
-    def _split_large_chunk(self, chunk: Chunk, current_index: int) -> List[Chunk]:
+    def _split_large_chunk(self, chunk: Chunk, current_index: int) -> list[Chunk]:
         """Split a chunk that's too large while preserving header context.
 
         Args:
@@ -324,8 +326,8 @@ class MarkdownHeaderTextSplitter(Chunker):
         # Split by paragraphs first
         paragraphs = content.split("\n\n")
 
-        sub_chunks: List[Chunk] = []
-        current_content: List[str] = []
+        sub_chunks: list[Chunk] = []
+        current_content: list[str] = []
         current_chars = 0
         chunk_index = current_index
 
@@ -348,9 +350,7 @@ class MarkdownHeaderTextSplitter(Chunker):
                 overlap_text = (
                     "\n\n".join(current_content[-2:])
                     if len(current_content) >= 2
-                    else current_content[-1]
-                    if current_content
-                    else ""
+                    else current_content[-1] if current_content else ""
                 )
                 current_content = (
                     [overlap_text, paragraph] if overlap_text else [paragraph]

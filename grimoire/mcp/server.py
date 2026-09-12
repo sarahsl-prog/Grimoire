@@ -9,17 +9,18 @@ instance with all Grimoire tools registered.  Supports both HTTP/SSE
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from loguru import logger
 from mcp.server.mcpserver import MCPServer
 
-from grimoire.db.session import initialize_db, close_db
 from grimoire.config.settings import get_settings
+from grimoire.db.session import close_db, initialize_db
 
-from .auth_stdio import authenticate_stdio_key, set_current_api_key
 from . import tools
+from .auth_stdio import authenticate_stdio_key, set_current_api_key
 from .mlflow_logging import configure_mlflow, shutdown_mlflow, trace_mcp_tool
 
 
@@ -39,6 +40,7 @@ async def _grimoire_lifespan(app: MCPServer) -> AsyncGenerator[dict[str, Any], N
     # Validate GRIMOIRE_API_KEY eagerly if set (primarily for stdio mode).
     # HTTP/SSE validates per-request in the ASGI middleware instead.
     import os as _os
+
     _raw_key = _os.getenv("GRIMOIRE_API_KEY", "")
     if _raw_key:
         try:

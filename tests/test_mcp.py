@@ -11,7 +11,7 @@ Covers:
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -33,7 +33,7 @@ def _make_api_key(tier: ApiKeyTier = ApiKeyTier.AGENT) -> ApiKey:
         tier=tier,
         key_prefix="grim_agt_tst",
         key_hash="$2b$12$fakehash",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -91,11 +91,15 @@ def client(app: Any) -> Any:
 @pytest.mark.asyncio
 async def test_stdio_lifespan_validates_api_key(mcp_server: Any) -> None:
     """The stdio lifespan validates a valid GRIMOIRE_API_KEY env var."""
-    with patch("grimoire.mcp.server.initialize_db", new_callable=AsyncMock) as mock_init, \
-         patch("grimoire.mcp.server.close_db", new_callable=AsyncMock) as mock_close, \
-         patch("grimoire.mcp.server.authenticate_stdio_key", new_callable=AsyncMock) as mock_auth, \
-         patch("grimoire.mcp.server.set_current_api_key") as mock_set, \
-         patch.dict("os.environ", {"GRIMOIRE_API_KEY": "grim_agt_testkey123"}):
+    with (
+        patch("grimoire.mcp.server.initialize_db", new_callable=AsyncMock) as mock_init,
+        patch("grimoire.mcp.server.close_db", new_callable=AsyncMock) as mock_close,
+        patch(
+            "grimoire.mcp.server.authenticate_stdio_key", new_callable=AsyncMock
+        ) as mock_auth,
+        patch("grimoire.mcp.server.set_current_api_key") as mock_set,
+        patch.dict("os.environ", {"GRIMOIRE_API_KEY": "grim_agt_testkey123"}),
+    ):
         mock_auth.return_value = _make_api_key(ApiKeyTier.AGENT)
         async with mcp_server._lowlevel_server.lifespan(None):
             mock_auth.assert_awaited_once()
@@ -107,10 +111,12 @@ async def test_stdio_lifespan_validates_api_key(mcp_server: Any) -> None:
 @pytest.mark.asyncio
 async def test_stdio_lifespan_skips_auth_without_env(mcp_server: Any) -> None:
     """The stdio lifespan skips auth when GRIMOIRE_API_KEY is not set."""
-    with patch("grimoire.mcp.server.initialize_db", new_callable=AsyncMock) as mock_init, \
-         patch("grimoire.mcp.server.close_db", new_callable=AsyncMock) as mock_close, \
-         patch("grimoire.mcp.server.authenticate_stdio_key") as mock_auth, \
-         patch.dict("os.environ", {}, clear=True):
+    with (
+        patch("grimoire.mcp.server.initialize_db", new_callable=AsyncMock) as mock_init,
+        patch("grimoire.mcp.server.close_db", new_callable=AsyncMock) as mock_close,
+        patch("grimoire.mcp.server.authenticate_stdio_key") as mock_auth,
+        patch.dict("os.environ", {}, clear=True),
+    ):
         async with mcp_server._lowlevel_server.lifespan(None):
             mock_auth.assert_not_awaited()
         mock_close.assert_awaited_once()
@@ -157,12 +163,19 @@ async def test_ask_returns_answer(mcp_server: Any) -> None:
     mock_result.cached = False
     mock_result.duration_ms = 123
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+        ),
+    ):
         mock_agent.return_value.query = AsyncMock(return_value=mock_result)
-        result = await mcp_server.call_tool("grimoire_ask", {
-            "params": {"query": "What is ML?"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_ask",
+            {
+                "params": {"query": "What is ML?"},
+            },
+        )
     assert '"status": "ok"' in result.content[0].text
     assert "Machine learning is..." in result.content[0].text
 
@@ -181,8 +194,8 @@ async def test_get_document_returns_doc(mcp_server: Any) -> None:
     mock_doc.storage_backend.value = "local"
     mock_doc.processing_status.value = "completed"
     mock_doc.size_bytes = 100
-    mock_doc.created_at = datetime.now(timezone.utc)
-    mock_doc.updated_at = datetime.now(timezone.utc)
+    mock_doc.created_at = datetime.now(UTC)
+    mock_doc.updated_at = datetime.now(UTC)
     mock_doc.tags = []
     mock_doc.chunks = []
 
@@ -195,9 +208,12 @@ async def test_get_document_returns_doc(mcp_server: Any) -> None:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
-        result = await mcp_server.call_tool("grimoire_get_document", {
-            "params": {"document_id": "doc-123"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_get_document",
+            {
+                "params": {"document_id": "doc-123"},
+            },
+        )
     assert '"status": "ok"' in result.content[0].text
     assert "Test Doc" in result.content[0].text
 
@@ -217,9 +233,12 @@ async def test_get_document_not_found(mcp_server: Any) -> None:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
-        result = await mcp_server.call_tool("grimoire_get_document", {
-            "params": {"document_id": "missing-id"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_get_document",
+            {
+                "params": {"document_id": "missing-id"},
+            },
+        )
     assert '"status": "error"' in result.content[0].text
 
 
@@ -248,9 +267,12 @@ async def test_list_documents_returns_page(mcp_server: Any) -> None:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
-        result = await mcp_server.call_tool("grimoire_list_documents", {
-            "params": {"limit": 1, "offset": 0},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_list_documents",
+            {
+                "params": {"limit": 1, "offset": 0},
+            },
+        )
     assert '"status": "ok"' in result.content[0].text
     assert "Doc One" in result.content[0].text
 
@@ -308,14 +330,26 @@ async def test_ingest_directory_allowed_for_dev_tier(mcp_server: Any) -> None:
     """DEV-tier key can call ingest_directory."""
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
 
-    with patch("grimoire.mcp.tools.get_ingestion_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
-        mock_agent.return_value.ingest_directory = AsyncMock(return_value=MagicMock(
-            model_dump=lambda: {"directory": "/nonexistent/dir", "status": "completed"},
-        ))
-        result = await mcp_server.call_tool("grimoire_ingest_directory", {
-            "params": {"directory": "/nonexistent/dir"},
-        })
+    with (
+        patch("grimoire.mcp.tools.get_ingestion_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+        ),
+    ):
+        mock_agent.return_value.ingest_directory = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {
+                    "directory": "/nonexistent/dir",
+                    "status": "completed",
+                },
+            )
+        )
+        result = await mcp_server.call_tool(
+            "grimoire_ingest_directory",
+            {
+                "params": {"directory": "/nonexistent/dir"},
+            },
+        )
         assert '"status": "ok"' in result.content[0].text
 
 
@@ -324,18 +358,27 @@ async def test_generate_summary(mcp_server: Any) -> None:
     """grimoire_generate returns content for a summary."""
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
 
-    with patch("grimoire.mcp.tools.get_content_gen_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
-        mock_agent.return_value.generate_summary = AsyncMock(return_value=MagicMock(
-            model_dump=lambda: {"content": "A summary."},
-        ))
-        result = await mcp_server.call_tool("grimoire_generate", {
-            "params": {
-                "document_ids": ["doc-1"],
-                "content_type": "summary",
-                "style": "detailed",
+    with (
+        patch("grimoire.mcp.tools.get_content_gen_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+        ),
+    ):
+        mock_agent.return_value.generate_summary = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {"content": "A summary."},
+            )
+        )
+        result = await mcp_server.call_tool(
+            "grimoire_generate",
+            {
+                "params": {
+                    "document_ids": ["doc-1"],
+                    "content_type": "summary",
+                    "style": "detailed",
+                },
             },
-        })
+        )
     assert '"status": "ok"' in result.content[0].text
     assert "A summary." in result.content[0].text
 
@@ -345,13 +388,18 @@ async def test_generate_extract_requires_query(mcp_server: Any) -> None:
     """grimoire_generate extract content_type requires a query parameter."""
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
 
-    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
-        result = await mcp_server.call_tool("grimoire_generate", {
-            "params": {
-                "document_ids": ["doc-1"],
-                "content_type": "extract",
+    with patch(
+        "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+    ):
+        result = await mcp_server.call_tool(
+            "grimoire_generate",
+            {
+                "params": {
+                    "document_ids": ["doc-1"],
+                    "content_type": "extract",
+                },
             },
-        })
+        )
     assert '"status": "error"' in result.content[0].text
     assert "query" in result.content[0].text
 
@@ -361,13 +409,18 @@ async def test_generate_invalid_content_type(mcp_server: Any) -> None:
     """grimoire_generate returns error for an invalid content_type."""
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
 
-    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
-        result = await mcp_server.call_tool("grimoire_generate", {
-            "params": {
-                "document_ids": ["doc-1"],
-                "content_type": "invalid_type",
+    with patch(
+        "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+    ):
+        result = await mcp_server.call_tool(
+            "grimoire_generate",
+            {
+                "params": {
+                    "document_ids": ["doc-1"],
+                    "content_type": "invalid_type",
+                },
             },
-        })
+        )
     assert '"status": "error"' in result.content[0].text
 
 
@@ -377,9 +430,12 @@ async def test_watch_start_requires_dev_tier(mcp_server: Any) -> None:
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
     with pytest.raises(ToolError) as exc_info:
-        await mcp_server.call_tool("grimoire_watch_start", {
-            "params": {"path": "/nonexistent/dir"},
-        })
+        await mcp_server.call_tool(
+            "grimoire_watch_start",
+            {
+                "params": {"path": "/nonexistent/dir"},
+            },
+        )
     text = str(exc_info.value)
     assert "requires API key tier" in text
 
@@ -393,9 +449,12 @@ async def test_watch_start_allowed_for_dev_tier(mcp_server: Any) -> None:
     mock_watcher.watch = AsyncMock(return_value="watch-1")
 
     with patch("grimoire.mcp.tools._get_mcp_watcher", return_value=mock_watcher):
-        result = await mcp_server.call_tool("grimoire_watch_start", {
-            "params": {"path": "/nonexistent/dir"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_watch_start",
+            {
+                "params": {"path": "/nonexistent/dir"},
+            },
+        )
     assert '"status": "ok"' in result.content[0].text
     assert "watch-1" in result.content[0].text
 
@@ -428,9 +487,12 @@ async def test_watch_stop_allowed_for_dev_tier(mcp_server: Any) -> None:
     mock_watcher.unwatch = AsyncMock(return_value=True)
 
     with patch("grimoire.mcp.tools._get_mcp_watcher", return_value=mock_watcher):
-        result = await mcp_server.call_tool("grimoire_watch_stop", {
-            "params": {"watch_id": "watch-1"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_watch_stop",
+            {
+                "params": {"watch_id": "watch-1"},
+            },
+        )
     assert '"status": "ok"' in result.content[0].text
     assert "watch-1" in result.content[0].text
 
@@ -444,9 +506,12 @@ async def test_watch_stop_returns_error_when_not_found(mcp_server: Any) -> None:
     mock_watcher.unwatch = AsyncMock(return_value=False)
 
     with patch("grimoire.mcp.tools._get_mcp_watcher", return_value=mock_watcher):
-        result = await mcp_server.call_tool("grimoire_watch_stop", {
-            "params": {"watch_id": "missing"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_watch_stop",
+            {
+                "params": {"watch_id": "missing"},
+            },
+        )
     assert '"status": "error"' in result.content[0].text
     assert "not found" in result.content[0].text
 
@@ -454,7 +519,7 @@ async def test_watch_stop_returns_error_when_not_found(mcp_server: Any) -> None:
 @pytest.mark.asyncio
 async def test_pg_query_returns_error_on_failure(mcp_server: Any) -> None:
     """grimoire_pg_query returns a structured error when the DB query fails."""
-    from grimoire.mcp.tools import grimoire_pg_query, PgQueryInput
+    from grimoire.mcp.tools import PgQueryInput, grimoire_pg_query
 
     mock_db = AsyncMock()
     mock_db.execute = AsyncMock(side_effect=RuntimeError("DB down"))
@@ -535,7 +600,7 @@ def test_pg_query_rejects_select_into(sql: str) -> None:
 @pytest.mark.asyncio
 async def test_pg_query_wraps_query_with_limit() -> None:
     """grimoire_pg_query wraps the user SQL in a bounded subquery."""
-    from grimoire.mcp.tools import grimoire_pg_query, PgQueryInput
+    from grimoire.mcp.tools import PgQueryInput, grimoire_pg_query
 
     mock_db = AsyncMock()
     mock_db.execute = AsyncMock(return_value=iter([]))
@@ -569,11 +634,20 @@ async def test_read_tools_available_to_read_tier(mcp_server: Any) -> None:
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
     with patch("grimoire.mcp.tools.get_query_agent") as mock_agent:
-        mock_agent.return_value.search = AsyncMock(return_value=MagicMock(
-            query="test", results=[], total_results=0, duration_ms=1,
-        ))
-        with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
-            result = await mcp_server.call_tool("grimoire_search", {"params": {"query": "test"}})
+        mock_agent.return_value.search = AsyncMock(
+            return_value=MagicMock(
+                query="test",
+                results=[],
+                total_results=0,
+                duration_ms=1,
+            )
+        )
+        with patch(
+            "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+        ):
+            result = await mcp_server.call_tool(
+                "grimoire_search", {"params": {"query": "test"}}
+            )
         assert '"status": "ok"' in result.content[0].text
 
 
@@ -583,9 +657,12 @@ async def test_ingest_requires_dev_tier(mcp_server: Any) -> None:
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
     with pytest.raises(ToolError) as exc_info:
-        await mcp_server.call_tool("grimoire_ingest_file", {
-            "params": {"file_path": "/nonexistent/test.txt"},
-        })
+        await mcp_server.call_tool(
+            "grimoire_ingest_file",
+            {
+                "params": {"file_path": "/nonexistent/test.txt"},
+            },
+        )
     text = str(exc_info.value)
     assert "requires API key tier" in text
     assert "rdl" in text
@@ -596,14 +673,26 @@ async def test_ingest_allowed_for_dev_tier(mcp_server: Any) -> None:
     """DEV-tier key can call ingest_file."""
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
 
-    with patch("grimoire.mcp.tools.get_ingestion_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
-        mock_agent.return_value.ingest_file = AsyncMock(return_value=MagicMock(
-            model_dump=lambda: {"file_path": "/nonexistent/test.txt", "status": "completed"},
-        ))
-        result = await mcp_server.call_tool("grimoire_ingest_file", {
-            "params": {"file_path": "/nonexistent/test.txt"},
-        })
+    with (
+        patch("grimoire.mcp.tools.get_ingestion_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+        ),
+    ):
+        mock_agent.return_value.ingest_file = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {
+                    "file_path": "/nonexistent/test.txt",
+                    "status": "completed",
+                },
+            )
+        )
+        result = await mcp_server.call_tool(
+            "grimoire_ingest_file",
+            {
+                "params": {"file_path": "/nonexistent/test.txt"},
+            },
+        )
         assert '"status": "ok"' in result.content[0].text
 
 
@@ -613,9 +702,12 @@ async def test_delete_requires_agent_tier(mcp_server: Any) -> None:
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
 
     with pytest.raises(ToolError) as exc_info:
-        await mcp_server.call_tool("grimoire_delete_document", {
-            "params": {"document_id": "doc-123"},
-        })
+        await mcp_server.call_tool(
+            "grimoire_delete_document",
+            {
+                "params": {"document_id": "doc-123"},
+            },
+        )
     text = str(exc_info.value)
     assert "requires API key tier" in text
     assert "dvl" in text
@@ -637,8 +729,8 @@ async def test_delete_allowed_for_agent_tier(mcp_server: Any) -> None:
     mock_doc.storage_backend.value = "local"
     mock_doc.processing_status.value = "completed"
     mock_doc.size_bytes = 100
-    mock_doc.created_at = datetime.now(timezone.utc)
-    mock_doc.updated_at = datetime.now(timezone.utc)
+    mock_doc.created_at = datetime.now(UTC)
+    mock_doc.updated_at = datetime.now(UTC)
 
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = mock_doc
@@ -649,9 +741,12 @@ async def test_delete_allowed_for_agent_tier(mcp_server: Any) -> None:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
-        result = await mcp_server.call_tool("grimoire_delete_document", {
-            "params": {"document_id": "doc-123"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_delete_document",
+            {
+                "params": {"document_id": "doc-123"},
+            },
+        )
     assert '"status": "ok"' in result.content[0].text
 
 
@@ -703,6 +798,7 @@ def _fake_preselect_db(doc_ids: list[str]) -> Any:
     ids_result.scalars.return_value.all.return_value = doc_ids
 
     call_count = 0
+
     async def mock_execute(self: Any) -> Any:
         nonlocal call_count
         call_count += 1
@@ -750,9 +846,12 @@ async def test_search_cve_with_exact_id(mcp_server: Any) -> None:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
-        result = await mcp_server.call_tool("grimoire_search_cve", {
-            "params": {"cve_id": "CVE-2021-44228"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_search_cve",
+            {
+                "params": {"cve_id": "CVE-2021-44228"},
+            },
+        )
     text = result.content[0].text
     assert '"status": "ok"' in text
     assert "CVE-2021-44228" in text
@@ -767,18 +866,26 @@ async def test_search_cve_semantic_filters_docs_in_sql(mcp_server: Any) -> None:
     """Severity/CVSS/year facets pre-filter via SQL and restrict vector search."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-1", "doc-2"])):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db(["doc-1", "doc-2"]),
+        ),
+    ):
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
 
-        await mcp_server.call_tool("grimoire_search_cve", {
-            "params": {
-                "query": "remote code execution",
-                "severity": "critical",
-                "min_cvss": 9.0,
-                "year": 2024,
+        await mcp_server.call_tool(
+            "grimoire_search_cve",
+            {
+                "params": {
+                    "query": "remote code execution",
+                    "severity": "critical",
+                    "min_cvss": 9.0,
+                    "year": 2024,
+                },
             },
-        })
+        )
 
         call = mock_agent.return_value.search.await_args
         filters = call.kwargs["filter_dict"]
@@ -797,25 +904,41 @@ async def test_search_cve_no_matching_docs_short_circuits(mcp_server: Any) -> No
     """Facet filters matching zero documents skip the vector search entirely."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db([]),
+        ),
+    ):
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
 
-        result = await mcp_server.call_tool("grimoire_search_cve", {
-            "params": {"query": "anything", "severity": "critical"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_search_cve",
+            {
+                "params": {"query": "anything", "severity": "critical"},
+            },
+        )
 
         mock_agent.return_value.search.assert_not_awaited()
         text = result.content[0].text
         assert '"status": "ok"' in text
         assert '"total_results": 0' in text
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db([]),
+        ),
+    ):
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
-        result = await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"mitre_technique_id": "T9999"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {"mitre_technique_id": "T9999"},
+            },
+        )
         mock_agent.return_value.search.assert_not_awaited()
         assert '"total_results": 0' in result.content[0].text
 
@@ -826,9 +949,12 @@ async def test_search_cve_validates_cve_id_format(mcp_server: Any) -> None:
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
     with pytest.raises(ToolError):
-        await mcp_server.call_tool("grimoire_search_cve", {
-            "params": {"cve_id": "not-a-cve"},
-        })
+        await mcp_server.call_tool(
+            "grimoire_search_cve",
+            {
+                "params": {"cve_id": "not-a-cve"},
+            },
+        )
 
 
 @pytest.mark.asyncio
@@ -836,7 +962,9 @@ async def test_search_cve_requires_input(mcp_server: Any) -> None:
     """Calling search_cve with neither query nor cve_id returns an error result."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
+    with patch(
+        "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+    ):
         result = await mcp_server.call_tool("grimoire_search_cve", {"params": {}})
     text = result.content[0].text
     assert '"status": "error"' in text
@@ -848,20 +976,28 @@ async def test_search_playbook_facet_filters_docs_in_sql(mcp_server: Any) -> Non
     """MITRE/platform/log-source facets pre-filter docs via SQL."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-sig"])):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db(["doc-sig"]),
+        ),
+    ):
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
 
-        await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {
-                "query": "powershell execution",
-                "mitre_technique_id": "T1059.001",
-                "severity": "high",
-                "platform": "windows",
-                "log_source": "process_creation",
-                "source_types": ["sigma_rule"],
+        await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {
+                    "query": "powershell execution",
+                    "mitre_technique_id": "T1059.001",
+                    "severity": "high",
+                    "platform": "windows",
+                    "log_source": "process_creation",
+                    "source_types": ["sigma_rule"],
+                },
             },
-        })
+        )
 
         call = mock_agent.return_value.search.await_args
         filters = call.kwargs["filter_dict"]
@@ -876,13 +1012,21 @@ async def test_search_playbook_default_covers_both_corpora(mcp_server: Any) -> N
     """Default source_types searches playbooks AND sigma rules."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-pb", "doc-sig"])):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db(["doc-pb", "doc-sig"]),
+        ),
+    ):
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
 
-        await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"query": "contain ransomware"},
-        })
+        await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {"query": "contain ransomware"},
+            },
+        )
 
         call = mock_agent.return_value.search.await_args
         filters = call.kwargs["filter_dict"]
@@ -894,13 +1038,21 @@ async def test_search_playbook_phase_facet(mcp_server: Any) -> None:
     """The phase facet pre-filters playbooks by JSONB playbook_phase."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-pb"])):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db(["doc-pb"]),
+        ),
+    ):
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
 
-        result = await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"query": "contain ransomware", "phase": "contain"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {"query": "contain ransomware", "phase": "contain"},
+            },
+        )
 
         call = mock_agent.return_value.search.await_args
         assert call.kwargs["filter_dict"]["document_id"] == {"$in": ["doc-pb"]}
@@ -912,13 +1064,21 @@ async def test_search_playbook_accepts_source_types_list(mcp_server: Any) -> Non
     """source_types accepts a list of strings; no Pydantic validation."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db([]),
+        ),
+    ):
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
         # With query present → semantic path; empty SQL results → empty results
-        result = await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"query": "x", "source_types": ["sigma_rule"]},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {"query": "x", "source_types": ["sigma_rule"]},
+            },
+        )
         text = result.content[0].text
         assert '"mode": "semantic"' in text
         assert '"total_results": 0' in text
@@ -929,10 +1089,15 @@ async def test_search_playbook_facet_only_no_matching_docs(mcp_server: Any) -> N
     """Facet-only search returns empty results when SQL pre-filter matches nothing."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])):
-        result = await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"mitre_technique_id": "T9999"},
-        })
+    with patch(
+        "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db([])
+    ):
+        result = await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {"mitre_technique_id": "T9999"},
+            },
+        )
         text = result.content[0].text
         assert '"mode": "facet_only"' in text
         assert '"sql_prefiltered_documents": 0' in text
@@ -944,16 +1109,24 @@ async def test_search_playbook_sigma_only_uses_equality(mcp_server: Any) -> None
     """sigma-only source_types produces a single-element source_type filter (== not IN)."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-sig"])):
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db(["doc-sig"]),
+        ),
+    ):
         mock_agent.return_value.search = AsyncMock(return_value=_mock_search_result())
 
-        await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {
-                "query": "anything",
-                "source_types": ["sigma_rule"],
+        await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {
+                    "query": "anything",
+                    "source_types": ["sigma_rule"],
+                },
             },
-        })
+        )
 
         call = mock_agent.return_value.search.await_args
         filters = call.kwargs["filter_dict"]
@@ -962,25 +1135,34 @@ async def test_search_playbook_sigma_only_uses_equality(mcp_server: Any) -> None
         assert filters["document_id"] == {"$in": ["doc-sig"]}
 
 
-
 @pytest.mark.asyncio
 async def test_search_playbook_technique_only(mcp_server: Any) -> None:
     """A MITRE technique alone (no query) uses the vector-bypass path."""
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
     # No query → _facet_only_search is called, not agent.search.
-    with patch("grimoire.mcp.tools.get_query_agent") as mock_agent, \
-         patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_preselect_db(["doc-sig"])):
-        result = await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"mitre_technique_id": "T1059"},
-        })
+    with (
+        patch("grimoire.mcp.tools.get_query_agent") as mock_agent,
+        patch(
+            "grimoire.mcp.tools.get_db_context",
+            new_callable=lambda: _fake_preselect_db(["doc-sig"]),
+        ),
+    ):
+        result = await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {"mitre_technique_id": "T1059"},
+            },
+        )
         text = result.content[0].text
         assert '"mode": "facet_only"' in text
         assert '"sql_prefiltered_documents": 1' in text
         mock_agent.return_value.search.assert_not_called()
 
     # Empty params → error
-    with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context):
+    with patch(
+        "grimoire.mcp.tools.get_db_context", new_callable=lambda: _fake_db_context
+    ):
         result = await mcp_server.call_tool("grimoire_search_playbook", {"params": {}})
     text = result.content[0].text
     assert '"status": "error"' in text
@@ -992,9 +1174,12 @@ async def test_search_playbook_validates_technique_id(mcp_server: Any) -> None:
     set_current_api_key(_make_api_key(ApiKeyTier.READ))
 
     with pytest.raises(ToolError):
-        await mcp_server.call_tool("grimoire_search_playbook", {
-            "params": {"mitre_technique_id": "bad-id"},
-        })
+        await mcp_server.call_tool(
+            "grimoire_search_playbook",
+            {
+                "params": {"mitre_technique_id": "bad-id"},
+            },
+        )
 
 
 @pytest.mark.asyncio
@@ -1014,9 +1199,12 @@ async def test_create_category(mcp_server: Any) -> None:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
-        result = await mcp_server.call_tool("grimoire_create_category", {
-            "params": {"name": "AI", "description": "AI stuff"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_create_category",
+            {
+                "params": {"name": "AI", "description": "AI stuff"},
+            },
+        )
     assert '"status": "ok"' in result.content[0].text
     assert "AI" in result.content[0].text
 
@@ -1036,9 +1224,12 @@ async def test_create_category_parent_not_found(mcp_server: Any) -> None:
         yield mock_db
 
     with patch("grimoire.mcp.tools.get_db_context", new_callable=lambda: _ctx):
-        result = await mcp_server.call_tool("grimoire_create_category", {
-            "params": {"name": "AI", "parent_slug": "missing"},
-        })
+        result = await mcp_server.call_tool(
+            "grimoire_create_category",
+            {
+                "params": {"name": "AI", "parent_slug": "missing"},
+            },
+        )
     assert '"status": "error"' in result.content[0].text
     assert "Parent category" in result.content[0].text
 
@@ -1051,6 +1242,7 @@ async def test_create_category_parent_not_found(mcp_server: Any) -> None:
 def test_mcp_route_present_in_app(client: TestClient) -> None:
     """The /mcp route is mounted in the FastAPI app."""
     from starlette.routing import Mount
+
     paths = [r.path for r in client.app.routes if isinstance(r, Mount)]
     assert "/mcp" in paths
 
@@ -1075,6 +1267,3 @@ def test_mcp_accepts_valid_api_key(client: TestClient) -> None:
     """Requests to /mcp with a valid X-API-Key pass auth."""
     response = client.get("/mcp/sse", headers={"X-API-Key": "grim_agt_testkey123"})
     assert response.status_code != 401
-
-
-

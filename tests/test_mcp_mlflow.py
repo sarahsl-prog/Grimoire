@@ -51,8 +51,10 @@ def test_configure_mlflow_sets_experiment() -> None:
     )
     mock_mlflow = MagicMock()
 
-    with patch.object(mlflow_logging, "_MLFLOW_AVAILABLE", True), \
-         patch.object(mlflow_logging, "mlflow", mock_mlflow):
+    with (
+        patch.object(mlflow_logging, "_MLFLOW_AVAILABLE", True),
+        patch.object(mlflow_logging, "mlflow", mock_mlflow),
+    ):
         assert mlflow_logging.configure_mlflow(config) is True
         assert mlflow_logging.is_mlflow_active() is True
         mock_mlflow.set_tracking_uri.assert_called_once_with("sqlite:///test.db")
@@ -83,14 +85,19 @@ async def test_trace_mcp_tool_wraps_when_active() -> None:
     def identity_trace(**_kwargs: object):
         def decorator(fn: object) -> object:
             return fn
+
         return decorator
 
     mock_mlflow.trace.side_effect = identity_trace
 
-    with patch.object(mlflow_logging, "_MLFLOW_AVAILABLE", True), \
-         patch.object(mlflow_logging, "mlflow", mock_mlflow), \
-         patch.object(mlflow_logging, "_attach_api_key_tags"), \
-         patch.object(mlflow_logging, "_summarize_tool_output", return_value={"status": "ok"}):
+    with (
+        patch.object(mlflow_logging, "_MLFLOW_AVAILABLE", True),
+        patch.object(mlflow_logging, "mlflow", mock_mlflow),
+        patch.object(mlflow_logging, "_attach_api_key_tags"),
+        patch.object(
+            mlflow_logging, "_summarize_tool_output", return_value={"status": "ok"}
+        ),
+    ):
         wrapped = mlflow_logging.trace_mcp_tool(sample_tool, name="grimoire_ask")
         result = await wrapped(MagicMock())
 
@@ -117,11 +124,13 @@ def test_summarize_tool_output_error() -> None:
 @pytest.mark.asyncio
 async def test_lifespan_configures_mlflow(mcp_server: object) -> None:
     """MCP lifespan calls configure_mlflow on startup and shutdown."""
-    with patch("grimoire.mcp.server.initialize_db", new_callable=AsyncMock) as mock_init, \
-         patch("grimoire.mcp.server.close_db", new_callable=AsyncMock) as mock_close, \
-         patch("grimoire.mcp.server.configure_mlflow") as mock_configure, \
-         patch("grimoire.mcp.server.shutdown_mlflow") as mock_shutdown, \
-         patch.dict("os.environ", {}, clear=True):
+    with (
+        patch("grimoire.mcp.server.initialize_db", new_callable=AsyncMock) as mock_init,
+        patch("grimoire.mcp.server.close_db", new_callable=AsyncMock) as mock_close,
+        patch("grimoire.mcp.server.configure_mlflow") as mock_configure,
+        patch("grimoire.mcp.server.shutdown_mlflow") as mock_shutdown,
+        patch.dict("os.environ", {}, clear=True),
+    ):
         async with mcp_server._lowlevel_server.lifespan(None):  # type: ignore[attr-defined]
             mock_configure.assert_called_once()
         mock_shutdown.assert_called_once()

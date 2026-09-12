@@ -12,8 +12,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -26,7 +25,6 @@ from grimoire.strategies.security.retriever import (
     _recency_multiplier,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -38,8 +36,8 @@ def _make_result(
     *,
     severity: str = "unknown",
     source_type: str = "prose",
-    content_date: Optional[datetime] = None,
-    content_date_str: Optional[str] = None,
+    content_date: datetime | None = None,
+    content_date_str: str | None = None,
 ) -> HybridResult:
     """Build a HybridResult stub with security metadata."""
     metadata = {"severity": severity, "source_type": source_type}
@@ -166,36 +164,36 @@ class TestClassifyQuery:
 
 class TestRecencyMultiplier:
     def test_disabled_when_half_life_zero(self) -> None:
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
-        old = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2025, 6, 1, tzinfo=UTC)
+        old = datetime(2020, 1, 1, tzinfo=UTC)
         assert _recency_multiplier(old, 0, now=now) == 1.0
 
     def test_null_content_date_returns_one(self) -> None:
         assert _recency_multiplier(None, 365) == 1.0
 
     def test_exponential_decay_half_life(self) -> None:
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
+        now = datetime(2025, 6, 1, tzinfo=UTC)
         # Exactly at half-life → 0.5
-        at_half = datetime(2024, 6, 1, tzinfo=timezone.utc)
+        at_half = datetime(2024, 6, 1, tzinfo=UTC)
         assert abs(_recency_multiplier(at_half, 365, now=now) - 0.5) < 0.001
 
     def test_full_recent_content(self) -> None:
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
-        today = datetime(2025, 6, 1, tzinfo=timezone.utc)
+        now = datetime(2025, 6, 1, tzinfo=UTC)
+        today = datetime(2025, 6, 1, tzinfo=UTC)
         # Very recent → close to 1.0
         mult = _recency_multiplier(today, 365, now=now)
         assert 0.9 < mult <= 1.0
 
     def test_old_content_decay(self) -> None:
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
-        two_years = datetime(2023, 6, 1, tzinfo=timezone.utc)
+        now = datetime(2025, 6, 1, tzinfo=UTC)
+        two_years = datetime(2023, 6, 1, tzinfo=UTC)
         # 2 half-lives → 0.25
         mult = _recency_multiplier(two_years, 365, now=now)
         assert abs(mult - 0.25) < 0.01
 
     def test_future_date_no_penalty(self) -> None:
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
-        future = datetime(2030, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2025, 6, 1, tzinfo=UTC)
+        future = datetime(2030, 1, 1, tzinfo=UTC)
         assert _recency_multiplier(future, 365, now=now) == 1.0
 
     def test_naive_content_date_treated_as_utc(self) -> None:
@@ -205,7 +203,7 @@ class TestRecencyMultiplier:
         strings like ``"2024-06-15"``. Without UTC normalisation, the
         subtraction from a tz-aware ``now`` raises ``TypeError``.
         """
-        now = datetime(2025, 6, 1, tzinfo=timezone.utc)
+        now = datetime(2025, 6, 1, tzinfo=UTC)
         naive_one_year_old = datetime(2024, 6, 1)  # no tzinfo
         # Should not raise; result equals the aware-half-life value.
         mult = _recency_multiplier(naive_one_year_old, 365, now=now)
@@ -254,13 +252,13 @@ class TestSecurityRerank:
                 "old",
                 score=0.5,
                 severity="high",
-                content_date=datetime(2023, 6, 1, tzinfo=timezone.utc),
+                content_date=datetime(2023, 6, 1, tzinfo=UTC),
             ),
             _make_result(
                 "new",
                 score=0.5,
                 severity="high",
-                content_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+                content_date=datetime(2025, 5, 1, tzinfo=UTC),
             ),
         ]
         reranked = self._rerank(results, settings)
@@ -276,13 +274,13 @@ class TestSecurityRerank:
                 "crit_old",
                 score=1.0,
                 severity="critical",
-                content_date=datetime(2023, 6, 1, tzinfo=timezone.utc),
+                content_date=datetime(2023, 6, 1, tzinfo=UTC),
             ),
             _make_result(
                 "low_new",
                 score=0.5,
                 severity="low",
-                content_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+                content_date=datetime(2025, 5, 1, tzinfo=UTC),
             ),
         ]
         reranked = self._rerank(results, settings)
@@ -333,13 +331,13 @@ class TestSecurityRerank:
                 "old",
                 score=0.5,
                 severity="high",
-                content_date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+                content_date=datetime(2020, 1, 1, tzinfo=UTC),
             ),
             _make_result(
                 "new",
                 score=0.5,
                 severity="high",
-                content_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+                content_date=datetime(2025, 5, 1, tzinfo=UTC),
             ),
         ]
         reranked = self._rerank(results, settings)

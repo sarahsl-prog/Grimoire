@@ -5,13 +5,11 @@ This module provides utility functions for working with file paths
 used throughout the Grimoire knowledge management system.
 """
 
-import os
 from pathlib import Path
-from typing import Union, List, Optional
 from urllib.parse import urlparse
 
 
-def normalize_path(path: Union[str, Path]) -> Path:
+def normalize_path(path: str | Path) -> Path:
     """
     Normalize a file path to a Path object.
 
@@ -50,7 +48,7 @@ def is_uri(path: str) -> bool:
         return False
 
 
-def get_uri_scheme(path: str) -> Optional[str]:
+def get_uri_scheme(path: str) -> str | None:
     """
     Extract the scheme from a URI path.
 
@@ -69,7 +67,7 @@ def get_uri_scheme(path: str) -> Optional[str]:
         return None
 
 
-def join_paths(base_path: Union[str, Path], *paths: Union[str, Path]) -> Path:
+def join_paths(base_path: str | Path, *paths: str | Path) -> Path:
     """
     Join paths safely, handling both local and URI paths.
 
@@ -97,7 +95,7 @@ def join_paths(base_path: Union[str, Path], *paths: Union[str, Path]) -> Path:
         return base.joinpath(*[str(p) for p in paths])
 
 
-def expand_user_path(path: Union[str, Path]) -> Path:
+def expand_user_path(path: str | Path) -> Path:
     """
     Expand user home directory references in a path.
 
@@ -111,7 +109,7 @@ def expand_user_path(path: Union[str, Path]) -> Path:
     return path_obj.expanduser().resolve()
 
 
-def is_subpath(child: Union[str, Path], parent: Union[str, Path]) -> bool:
+def is_subpath(child: str | Path, parent: str | Path) -> bool:
     """
     Check if child path is a subpath of parent path.
 
@@ -164,7 +162,7 @@ def sanitize_filename(filename: str) -> str:
     return filename
 
 
-def get_file_extension(file_path: Union[str, Path]) -> str:
+def get_file_extension(file_path: str | Path) -> str:
     """
     Get the file extension from a path.
 
@@ -178,7 +176,7 @@ def get_file_extension(file_path: Union[str, Path]) -> str:
     return path_obj.suffix.lower()
 
 
-def get_storage_backend_from_path(path: Union[str, Path]) -> str:
+def get_storage_backend_from_path(path: str | Path) -> str:
     """
     Determine storage backend from path.
 

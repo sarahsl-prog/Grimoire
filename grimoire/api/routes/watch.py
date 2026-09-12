@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from grimoire.api.auth import get_api_key
-from grimoire.api.schemas import WatchResponse, WatchStartRequest, WatcherStatsResponse
+from grimoire.api.schemas import WatcherStatsResponse, WatchResponse, WatchStartRequest
 from grimoire.db.models import ApiKey
 
 router = APIRouter(prefix="/watch", tags=["watch"])
@@ -22,7 +22,10 @@ def set_watcher(watcher: object) -> None:
 
 def _get_watcher():
     if _watcher is None:
-        raise HTTPException(status_code=503, detail="Watcher not initialized. Start the server with --watch.")
+        raise HTTPException(
+            status_code=503,
+            detail="Watcher not initialized. Start the server with --watch.",
+        )
     return _watcher
 
 

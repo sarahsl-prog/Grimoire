@@ -19,7 +19,13 @@ def config() -> None:
 
 
 @config.command("init")
-@click.option("--output", "-o", type=click.Path(path_type=Path), default=Path("grimoire.yaml"), help="Output config file path.")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=Path("grimoire.yaml"),
+    help="Output config file path.",
+)
 @click.pass_context
 def config_init(ctx: click.Context, output: Path) -> None:
     """Create a default configuration file.
@@ -76,7 +82,9 @@ def config_init(ctx: click.Context, output: Path) -> None:
 
 
 @config.command("show")
-@click.option("--section", "-s", type=str, default=None, help="Show only a specific section.")
+@click.option(
+    "--section", "-s", type=str, default=None, help="Show only a specific section."
+)
 @click.pass_context
 def config_show(ctx: click.Context, section: str | None) -> None:
     """Display current configuration.
@@ -99,14 +107,22 @@ def config_show(ctx: click.Context, section: str | None) -> None:
         if section in data:
             data = {section: data[section]}
         else:
-            echo_error(f"Unknown section '{section}'. Available: {', '.join(data.keys())}")
+            echo_error(
+                f"Unknown section '{section}'. Available: {', '.join(data.keys())}"
+            )
             return
 
     click.echo(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
 
 @config.command("edit")
-@click.option("--file", "-f", type=click.Path(path_type=Path), default=Path("grimoire.yaml"), help="Config file to edit.")
+@click.option(
+    "--file",
+    "-f",
+    type=click.Path(path_type=Path),
+    default=Path("grimoire.yaml"),
+    help="Config file to edit.",
+)
 @click.pass_context
 def config_edit(ctx: click.Context, file: Path) -> None:
     """Open configuration file in your editor.

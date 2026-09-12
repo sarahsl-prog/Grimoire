@@ -1,7 +1,7 @@
 """Abstract base class for vector store implementations."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class VectorStore(ABC):
@@ -37,10 +37,10 @@ class VectorStore(ABC):
     @abstractmethod
     async def add_documents(
         self,
-        ids: List[str],
-        embeddings: List[List[float]],
-        metadatas: List[Dict[str, Any]],
-        documents: List[str],
+        ids: list[str],
+        embeddings: list[list[float]],
+        metadatas: list[dict[str, Any]],
+        documents: list[str],
     ) -> None:
         """Add or update documents in the vector store.
 
@@ -59,11 +59,11 @@ class VectorStore(ABC):
     @abstractmethod
     async def search(
         self,
-        query_embedding: List[float],
-        filter_dict: Optional[Dict[str, Any]] = None,
+        query_embedding: list[float],
+        filter_dict: dict[str, Any] | None = None,
         top_k: int = 10,
-        include: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        include: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Perform vector similarity search with optional metadata filtering.
 
         Args:
@@ -82,7 +82,7 @@ class VectorStore(ABC):
         raise NotImplementedError("Subclasses must implement search()")
 
     @abstractmethod
-    async def delete(self, ids: List[str]) -> None:
+    async def delete(self, ids: list[str]) -> None:
         """Delete documents by ID.
 
         Args:
@@ -94,7 +94,7 @@ class VectorStore(ABC):
         raise NotImplementedError("Subclasses must implement delete()")
 
     @abstractmethod
-    async def get(self, ids: List[str]) -> List[Dict[str, Any]]:
+    async def get(self, ids: list[str]) -> list[dict[str, Any]]:
         """Retrieve documents by ID.
 
         Args:

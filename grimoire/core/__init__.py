@@ -21,10 +21,10 @@ __all__ = [
 from grimoire.core.dedup import (
     CHUNK_SIZE,
     ConflictDetails,
-    DedupResult,
-    DedupStrategy,
     DeduplicationAction,
     Deduplicator,
+    DedupResult,
+    DedupStrategy,
     check_duplicate,
     compute_bytes_hash,
     compute_file_hash,

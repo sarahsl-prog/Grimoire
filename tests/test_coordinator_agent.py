@@ -34,7 +34,6 @@ from grimoire.agents.ingestion import BatchIngestionResult, IngestionResult
 from grimoire.agents.query import QueryResult, SearchOnlyResult
 from grimoire.db.models import ContentType
 
-
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -120,8 +119,12 @@ def mock_content_gen_agent() -> MagicMock:
     """Mock ContentGenerationAgent."""
     agent = MagicMock()
     agent.generate_summary = AsyncMock(return_value=_make_generation_result("summary"))
-    agent.generate_flash_cards = AsyncMock(return_value=_make_generation_result("flash_card"))
-    agent.generate_cliff_notes = AsyncMock(return_value=_make_generation_result("cliff_notes"))
+    agent.generate_flash_cards = AsyncMock(
+        return_value=_make_generation_result("flash_card")
+    )
+    agent.generate_cliff_notes = AsyncMock(
+        return_value=_make_generation_result("cliff_notes")
+    )
     agent.generate_outline = AsyncMock(return_value=_make_generation_result("outline"))
     agent.generate_extract = AsyncMock(return_value=_make_generation_result("extract"))
     return agent
@@ -290,13 +293,18 @@ class TestExtractContentType:
         assert extract_content_type("give me an overview") == ContentType.SUMMARY
 
     def test_flashcard(self) -> None:
-        assert extract_content_type("create flashcards from this") == ContentType.FLASH_CARD
+        assert (
+            extract_content_type("create flashcards from this")
+            == ContentType.FLASH_CARD
+        )
 
     def test_flash_card_space(self) -> None:
         assert extract_content_type("make flash card quiz") == ContentType.FLASH_CARD
 
     def test_cliff_notes(self) -> None:
-        assert extract_content_type("cliff notes for chapter 3") == ContentType.CLIFF_NOTES
+        assert (
+            extract_content_type("cliff notes for chapter 3") == ContentType.CLIFF_NOTES
+        )
 
     def test_key_points(self) -> None:
         assert extract_content_type("list the key points") == ContentType.CLIFF_NOTES
@@ -308,7 +316,10 @@ class TestExtractContentType:
         assert extract_content_type("create a table of contents") == ContentType.OUTLINE
 
     def test_extract(self) -> None:
-        assert extract_content_type("extract the methodology section") == ContentType.EXTRACT
+        assert (
+            extract_content_type("extract the methodology section")
+            == ContentType.EXTRACT
+        )
 
     def test_unknown_defaults_to_summary(self) -> None:
         assert extract_content_type("do something with doc 42") == ContentType.SUMMARY
@@ -381,9 +392,7 @@ class TestCoordinatorHappyPath:
         mock_db: AsyncMock,
         mock_query_agent: MagicMock,
     ) -> None:
-        result = await coordinator.execute(
-            mock_db, "search for papers about BERT"
-        )
+        result = await coordinator.execute(mock_db, "search for papers about BERT")
 
         assert result.intent == IntentType.SEARCH
         assert "QueryAgent" in result.agent_used
@@ -682,7 +691,9 @@ class TestGenerateContentTypeRouting:
             document_ids=["doc-1"],
             # No content_type forced
         )
-        await coordinator.execute(mock_db, "create flashcards for this doc", context=ctx)
+        await coordinator.execute(
+            mock_db, "create flashcards for this doc", context=ctx
+        )
         mock_content_gen_agent.generate_flash_cards.assert_awaited_once()
 
 
@@ -741,7 +752,9 @@ class TestCoordinatorEdgeCases:
         coordinator: CoordinatorAgent,
         mock_db: AsyncMock,
     ) -> None:
-        result = await coordinator.execute(mock_db, "¿Qué es el aprendizaje automático?")
+        result = await coordinator.execute(
+            mock_db, "¿Qué es el aprendizaje automático?"
+        )
         assert result.error is None
 
     @pytest.mark.asyncio
@@ -1005,9 +1018,7 @@ class TestConvenienceMethods:
         mock_db: AsyncMock,
         mock_content_gen_agent: MagicMock,
     ) -> None:
-        result = await coordinator.generate(
-            mock_db, ["doc-1"], ContentType.SUMMARY
-        )
+        result = await coordinator.generate(mock_db, ["doc-1"], ContentType.SUMMARY)
         assert result.intent == IntentType.GENERATE
         assert result.error is None
         mock_content_gen_agent.generate_summary.assert_awaited_once()
@@ -1019,9 +1030,7 @@ class TestConvenienceMethods:
         mock_db: AsyncMock,
         mock_content_gen_agent: MagicMock,
     ) -> None:
-        await coordinator.generate(
-            mock_db, ["doc-1"], ContentType.FLASH_CARD, count=20
-        )
+        await coordinator.generate(mock_db, ["doc-1"], ContentType.FLASH_CARD, count=20)
         mock_content_gen_agent.generate_flash_cards.assert_awaited_once_with(
             mock_db, ["doc-1"], count=20
         )
@@ -1091,7 +1100,9 @@ class TestLLMFallback:
         )
 
         with patch.object(
-            coordinator, "_llm_classify", new_callable=AsyncMock,
+            coordinator,
+            "_llm_classify",
+            new_callable=AsyncMock,
             side_effect=Exception("network error"),
         ):
             # Should not raise; falls through to keyword result

@@ -3,14 +3,18 @@
 import os
 
 import streamlit as st
-from rag_pipeline import load_documents, create_vectorstore, load_vectorstore, ask_question
+
+from rag_pipeline import (
+    ask_question,
+    create_vectorstore,
+    load_documents,
+    load_vectorstore,
+)
 
 st.title("📚 Multi‑Document RAG Assistant")
 
 uploaded_files = st.file_uploader(
-    "Upload documents",
-    type=["pdf", "txt"],
-    accept_multiple_files=True
+    "Upload documents", type=["pdf", "txt"], accept_multiple_files=True
 )
 
 if uploaded_files:

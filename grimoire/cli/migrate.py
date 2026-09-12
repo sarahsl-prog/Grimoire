@@ -4,14 +4,12 @@ This module provides CLI commands for migrating data between different vector st
 """
 
 import asyncio
-from typing import Optional
 
 import click
 from loguru import logger
 
 from grimoire.config.settings import settings
 from grimoire.vectorstore.chromadb import ChromaDBStore
-from grimoire.vectorstore.base import VectorStore
 
 
 @click.command()

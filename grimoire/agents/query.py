@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -25,7 +25,6 @@ from grimoire.core.cache import Cache
 from grimoire.db.models import Document
 from grimoire.search.hybrid import HybridResult, HybridSearch
 from grimoire.strategies.base import BaseRetriever
-
 
 # =============================================================================
 # Data Models
@@ -45,9 +44,9 @@ class Citation(BaseModel):
     """
 
     document_id: str
-    document_title: Optional[str] = None
+    document_title: str | None = None
     chunk_id: str
-    chunk_index: Optional[int] = None
+    chunk_index: int | None = None
     content_snippet: str = ""
     relevance_score: float = 0.0
 
@@ -69,7 +68,7 @@ class QueryResult(BaseModel):
 
     query: str
     answer: str = ""
-    citations: List[Citation] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
     model_used: str = ""
     search_results_count: int = 0
     cached: bool = False
@@ -88,7 +87,7 @@ class SearchOnlyResult(BaseModel):
     """
 
     query: str
-    results: List[Dict[str, Any]] = Field(default_factory=list)
+    results: list[dict[str, Any]] = Field(default_factory=list)
     total_results: int = 0
     duration_ms: int = 0
 
@@ -132,11 +131,11 @@ class QueryAgent:
         hybrid_search: HybridSearch,
         llm_url: str = "http://localhost:11434",
         llm_model: str = "llama3:8b",
-        cache: Optional[Cache] = None,
+        cache: Cache | None = None,
         temperature: float = 0.3,
         max_tokens: int = 2048,
         max_context_chunks: int = 5,
-        retriever: Optional[BaseRetriever] = None,
+        retriever: BaseRetriever | None = None,
     ) -> None:
         self._hybrid_search = hybrid_search
         self._llm_url = llm_url.rstrip("/")
@@ -166,7 +165,7 @@ class QueryAgent:
         query: str,
         *,
         top_k: int = 5,
-        filter_dict: Optional[Dict[str, Any]] = None,
+        filter_dict: dict[str, Any] | None = None,
         use_cache: bool = True,
     ) -> QueryResult:
         """Execute a full RAG query: search, assemble context, generate answer.
@@ -239,7 +238,7 @@ class QueryAgent:
         query: str,
         *,
         top_k: int = 10,
-        filter_dict: Optional[Dict[str, Any]] = None,
+        filter_dict: dict[str, Any] | None = None,
     ) -> SearchOnlyResult:
         """Search without generating an answer.
 
@@ -280,7 +279,7 @@ class QueryAgent:
         self,
         db: AsyncSession,
         document_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get full details for a document.
 
         Args:
@@ -324,8 +323,8 @@ class QueryAgent:
         query: str,
         *,
         top_k: int,
-        filter_dict: Optional[Dict[str, Any]] = None,
-    ) -> List[HybridResult]:
+        filter_dict: dict[str, Any] | None = None,
+    ) -> list[HybridResult]:
         """Run the configured retrieval strategy.
 
         Delegates to ``self._retriever.retrieve`` when a domain-specific
@@ -345,8 +344,8 @@ class QueryAgent:
 
     def _build_citations(
         self,
-        results: List[HybridResult],
-    ) -> List[Citation]:
+        results: list[HybridResult],
+    ) -> list[Citation]:
         """Build citation objects from search results.
 
         Args:
@@ -355,7 +354,7 @@ class QueryAgent:
         Returns:
             List of Citation objects.
         """
-        citations: List[Citation] = []
+        citations: list[Citation] = []
         for r in results[: self._max_context_chunks]:
             snippet = r.content[:200] + "..." if len(r.content) > 200 else r.content
             metadata = r.metadata or {}
@@ -371,7 +370,7 @@ class QueryAgent:
             )
         return citations
 
-    def _assemble_context(self, results: List[HybridResult]) -> str:
+    def _assemble_context(self, results: list[HybridResult]) -> str:
         """Assemble search results into an LLM context string.
 
         Args:
@@ -381,7 +380,7 @@ class QueryAgent:
             Formatted context string.
         """
         chunks = results[: self._max_context_chunks]
-        parts: List[str] = []
+        parts: list[str] = []
 
         for i, result in enumerate(chunks, 1):
             title = result.document_title or "Unknown"
@@ -458,7 +457,7 @@ class QueryAgent:
     def _cache_key(
         self,
         query: str,
-        filter_dict: Optional[Dict[str, Any]],
+        filter_dict: dict[str, Any] | None,
     ) -> str:
         """Generate a cache key for a query.
 
@@ -478,8 +477,8 @@ class QueryAgent:
     async def _check_cache(
         self,
         query: str,
-        filter_dict: Optional[Dict[str, Any]],
-    ) -> Optional[QueryResult]:
+        filter_dict: dict[str, Any] | None,
+    ) -> QueryResult | None:
         """Check if a query result is cached.
 
         Args:
@@ -506,7 +505,7 @@ class QueryAgent:
     async def _store_cache(
         self,
         query: str,
-        filter_dict: Optional[Dict[str, Any]],
+        filter_dict: dict[str, Any] | None,
         result: QueryResult,
     ) -> None:
         """Store a query result in cache.

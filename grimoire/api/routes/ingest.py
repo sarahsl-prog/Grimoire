@@ -75,7 +75,9 @@ async def ingest_file(
     if not resolved.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {body.file_path}")
     if not resolved.is_file():
-        raise HTTPException(status_code=400, detail=f"Path is not a file: {body.file_path}")
+        raise HTTPException(
+            status_code=400, detail=f"Path is not a file: {body.file_path}"
+        )
 
     agent = get_ingestion_agent()
     result = await agent.ingest_file(db, str(resolved), auto_tag=body.auto_tag)
@@ -93,12 +95,19 @@ async def ingest_directory(
     resolved = _is_path_allowed(body.directory)
 
     if not resolved.exists():
-        raise HTTPException(status_code=404, detail=f"Directory not found: {body.directory}")
+        raise HTTPException(
+            status_code=404, detail=f"Directory not found: {body.directory}"
+        )
     if not resolved.is_dir():
-        raise HTTPException(status_code=400, detail=f"Path is not a directory: {body.directory}")
+        raise HTTPException(
+            status_code=400, detail=f"Path is not a directory: {body.directory}"
+        )
 
     agent = get_ingestion_agent()
     result = await agent.ingest_directory(
-        db, str(resolved), recursive=body.recursive, auto_tag=body.auto_tag,
+        db,
+        str(resolved),
+        recursive=body.recursive,
+        auto_tag=body.auto_tag,
     )
     return BatchIngestResponse(**result.model_dump())

@@ -12,7 +12,6 @@ Markers:
 from __future__ import annotations
 
 import os
-import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -31,7 +30,9 @@ pytestmark = [pytest.mark.live, pytest.mark.performance]
 # ---------------------------------------------------------------------------
 
 
-def _request_latency(client: httpx.Client, method: str, path: str, **kwargs: Any) -> float:
+def _request_latency(
+    client: httpx.Client, method: str, path: str, **kwargs: Any
+) -> float:
     start = time.perf_counter()
     resp = getattr(client, method)(path, **kwargs)
     elapsed = (time.perf_counter() - start) * 1000  # ms
@@ -71,15 +72,21 @@ class TestLatencyBenchmarks:
     def test_health_latency(self, perf_client: httpx.Client):
         latencies = [_request_latency(perf_client, "get", "/health") for _ in range(5)]
         p95 = _percentile(latencies, 95)
-        assert p95 < self.HEALTH_MAX_MS, f"Health p95 = {p95:.1f}ms (max {self.HEALTH_MAX_MS}ms)"
+        assert (
+            p95 < self.HEALTH_MAX_MS
+        ), f"Health p95 = {p95:.1f}ms (max {self.HEALTH_MAX_MS}ms)"
 
     def test_list_docs_latency(self, perf_client: httpx.Client):
         latencies = [
-            _request_latency(perf_client, "get", "/api/v1/documents", params={"limit": 10})
+            _request_latency(
+                perf_client, "get", "/api/v1/documents", params={"limit": 10}
+            )
             for _ in range(5)
         ]
         p95 = _percentile(latencies, 95)
-        assert p95 < self.LIST_MAX_MS, f"List docs p95 = {p95:.1f}ms (max {self.LIST_MAX_MS}ms)"
+        assert (
+            p95 < self.LIST_MAX_MS
+        ), f"List docs p95 = {p95:.1f}ms (max {self.LIST_MAX_MS}ms)"
 
     @pytest.mark.slow
     def test_search_latency(self, perf_client: httpx.Client):
@@ -93,7 +100,9 @@ class TestLatencyBenchmarks:
             for _ in range(3)
         ]
         p95 = _percentile(latencies, 95)
-        assert p95 < self.SEARCH_MAX_MS, f"Search p95 = {p95:.1f}ms (max {self.SEARCH_MAX_MS}ms)"
+        assert (
+            p95 < self.SEARCH_MAX_MS
+        ), f"Search p95 = {p95:.1f}ms (max {self.SEARCH_MAX_MS}ms)"
 
 
 # =============================================================================
@@ -134,7 +143,9 @@ class TestThroughput:
         rps = len(results) / (total_ms / 1000)
         p95 = _percentile([r[0] for r in ok], 95) if ok else 0
 
-        print(f"\n[health throughput] {len(results)} reqs, {len(errors)} errors, {rps:.1f} r/s, p95={p95:.1f}ms")
+        print(
+            f"\n[health throughput] {len(results)} reqs, {len(errors)} errors, {rps:.1f} r/s, p95={p95:.1f}ms"
+        )
         assert len(errors) / len(results) <= self.ERROR_RATE_MAX
         assert rps >= self.RPS_MIN
 
@@ -157,9 +168,13 @@ class TestRateLimiting:
         resp = perf_client.get("/health")
         assert resp.status_code == 200
         # Common rate-limit headers (optional — not all servers emit them)
-        assert any(
-            h in resp.headers for h in ("x-ratelimit-limit", "x-ratelimit-remaining", "retry-after")
-        ) or True  # soft assertion — we don't fail if headers are absent
+        assert (
+            any(
+                h in resp.headers
+                for h in ("x-ratelimit-limit", "x-ratelimit-remaining", "retry-after")
+            )
+            or True
+        )  # soft assertion — we don't fail if headers are absent
 
     @pytest.mark.stress
     def test_rate_limit_429_eventually(self, perf_client: httpx.Client):
@@ -172,7 +187,9 @@ class TestRateLimiting:
                 break
             time.sleep(0.05)  # 20 r/s burst
         else:
-            pytest.skip("Did not hit rate limit within 60 requests; limits may be too high for this key tier")
+            pytest.skip(
+                "Did not hit rate limit within 60 requests; limits may be too high for this key tier"
+            )
 
         assert 429 in codes
 

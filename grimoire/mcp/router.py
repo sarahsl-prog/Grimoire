@@ -40,20 +40,28 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
         if scope["type"] == "http":
             # Extract headers from ASGI scope
             raw_key = next(
-                (v.decode() for k, v in scope.get("headers", []) if k.lower() == b"x-api-key"),
+                (
+                    v.decode()
+                    for k, v in scope.get("headers", [])
+                    if k.lower() == b"x-api-key"
+                ),
                 None,
             )
 
             if not raw_key:
-                await send({
-                    "type": "http.response.start",
-                    "status": 401,
-                    "headers": [[b"content-type", b"application/json"]],
-                })
-                await send({
-                    "type": "http.response.body",
-                    "body": b'{"detail": "API key required. Pass X-API-Key header."}',
-                })
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [[b"content-type", b"application/json"]],
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b'{"detail": "API key required. Pass X-API-Key header."}',
+                    }
+                )
                 return
 
             # Validate key via existing auth logic
@@ -63,34 +71,43 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
             try:
                 db_mgr = get_db_manager()
             except RuntimeError:
-                await send({
-                    "type": "http.response.start",
-                    "status": 503,
-                    "headers": [[b"content-type", b"application/json"]],
-                })
-                await send({
-                    "type": "http.response.body",
-                    "body": b'{"detail": "Database not initialized."}',
-                })
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 503,
+                        "headers": [[b"content-type", b"application/json"]],
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b'{"detail": "Database not initialized."}',
+                    }
+                )
                 return
 
             async with db_mgr.session() as db:
                 api_key = await authenticate_api_key(raw_key, db)
                 if api_key is None:
-                    await send({
-                        "type": "http.response.start",
-                        "status": 401,
-                        "headers": [[b"content-type", b"application/json"]],
-                    })
-                    await send({
-                        "type": "http.response.body",
-                        "body": b'{"detail": "Invalid or expired API key."}',
-                    })
+                    await send(
+                        {
+                            "type": "http.response.start",
+                            "status": 401,
+                            "headers": [[b"content-type", b"application/json"]],
+                        }
+                    )
+                    await send(
+                        {
+                            "type": "http.response.body",
+                            "body": b'{"detail": "Invalid or expired API key."}',
+                        }
+                    )
                     return
 
                 # Store in scope state for downstream tools
                 scope.setdefault("state", {})["api_key"] = api_key
                 from .auth_stdio import set_current_api_key as _set_key
+
                 _set_key(api_key)
 
         await mcp_app(scope, receive, send)

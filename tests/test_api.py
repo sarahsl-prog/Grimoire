@@ -12,8 +12,7 @@ Tests cover:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -39,7 +38,7 @@ def _make_test_api_key() -> ApiKey:
         tier=ApiKeyTier.AGENT,
         key_prefix="grim_agt_tst",
         key_hash="$2b$12$fakehash",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     return key
 
@@ -166,13 +165,16 @@ class TestIngestAPI:
             mock_agent.ingest_directory = AsyncMock(return_value=mock_result)
             mock_get_agent.return_value = mock_agent
 
-            resp = client.post("/api/v1/ingest/directory", json={"directory": str(tmp_dir)})
+            resp = client.post(
+                "/api/v1/ingest/directory", json={"directory": str(tmp_dir)}
+            )
             assert resp.status_code == 200
             data = resp.json()
             assert data["total"] == 3
             assert data["succeeded"] == 2
         finally:
             import shutil
+
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 

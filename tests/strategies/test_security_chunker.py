@@ -20,7 +20,6 @@ import pytest
 
 from grimoire.strategies.security.chunker import SecurityChunker
 
-
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "security" / "sigma"
 SAMPLE_RULES = FIXTURE_DIR / "sample_rules.yml"
 
@@ -575,7 +574,9 @@ class TestPlaybookCorpusE2E:
 
         # T4: chunking end-to-end
         chunker = SecurityChunker()
-        chunks = await chunker.chunk(text, doc_id="e2e-test", source_metadata={"path": path})
+        chunks = await chunker.chunk(
+            text, doc_id="e2e-test", source_metadata={"path": path}
+        )
         assert len(chunks) == 5  # Trigger, Preparation, Actions, Containment, Recovery
         assert all(c.chunk_type == "playbook_section" for c in chunks)
         assert all(c.source_type == "playbook" for c in chunks)
@@ -648,7 +649,13 @@ class TestPlaybookCorpusE2E:
         """log_sources extracted from a Sigma rule appear in to_chromadb_metadata()."""
         from pathlib import Path
 
-        sigma_fixture = Path(__file__).parent.parent / "fixtures" / "security" / "sigma" / "sample_rules.yml"
+        sigma_fixture = (
+            Path(__file__).parent.parent
+            / "fixtures"
+            / "security"
+            / "sigma"
+            / "sample_rules.yml"
+        )
         from grimoire.strategies.security.parsers.sigma import parse_sigma
 
         text = sigma_fixture.read_text(encoding="utf-8")
@@ -660,4 +667,3 @@ class TestPlaybookCorpusE2E:
         assert "log_sources" in chroma_meta
         # Should be a string (pipe-joined or empty)
         assert isinstance(chroma_meta["log_sources"], str)
-

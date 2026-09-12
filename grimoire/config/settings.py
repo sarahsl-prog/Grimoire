@@ -15,7 +15,7 @@ from __future__ import annotations
 import enum
 import os
 from pathlib import Path
-from typing import Any, Literal, Optional, Self
+from typing import Any, Literal, Self
 
 import yaml
 from loguru import logger
@@ -113,11 +113,11 @@ class LLMConfig(BaseModel):
         default=4096, ge=1, le=128000, description="Maximum tokens per response"
     )
     timeout: int = Field(default=300, ge=1, description="Request timeout in seconds")
-    fallback_url: Optional[str] = Field(
+    fallback_url: str | None = Field(
         default=None,
         description="Fallback Ollama base URL (tried when primary is unreachable)",
     )
-    fallback_model: Optional[str] = Field(
+    fallback_model: str | None = Field(
         default=None,
         description="Fallback model name (defaults to primary model if unset)",
     )
@@ -782,7 +782,7 @@ class WikiConfig(BaseModel):
         le=100,
         description="Documents per compile batch",
     )
-    compile_model: Optional[str] = Field(
+    compile_model: str | None = Field(
         default=None,
         description="Override LLM model for wiki compilation",
     )

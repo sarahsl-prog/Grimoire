@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 from contextvars import ContextVar
-from typing import Optional
 
 from loguru import logger
 from mcp.server.mcpserver.exceptions import ToolError
@@ -21,7 +20,7 @@ from grimoire.db.session import get_db_context
 # Context variable that holds the authenticated ApiKey for the current
 # stdio session.  Populated during lifespan startup and read by tool
 # decorators that enforce tier-based access.
-_stdio_api_key: ContextVar[Optional[ApiKey]] = ContextVar("_stdio_api_key", default=None)
+_stdio_api_key: ContextVar[ApiKey | None] = ContextVar("_stdio_api_key", default=None)
 
 
 async def authenticate_stdio_key(raw_key: str | None = None) -> ApiKey:

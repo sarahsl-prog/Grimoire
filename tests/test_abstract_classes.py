@@ -13,7 +13,7 @@ import asyncio
 import inspect
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,8 +28,8 @@ from grimoire.storage.base import (
     StorageAdapter,
     StorageBackend,
 )
-from grimoire.vectorstore.base import VectorStore
 from grimoire.utils.logger import get_logger, setup_logger
+from grimoire.vectorstore.base import VectorStore
 
 # =============================================================================
 # Happy Path Tests
@@ -126,26 +126,26 @@ class TestConcreteImplementation:
 
             async def add_documents(
                 self,
-                ids: List[str],
-                embeddings: List[List[float]],
-                metadatas: List[Dict[str, Any]],
-                documents: List[str],
+                ids: list[str],
+                embeddings: list[list[float]],
+                metadatas: list[dict[str, Any]],
+                documents: list[str],
             ) -> None:
                 pass
 
             async def search(
                 self,
-                query_embedding: List[float],
-                filter_dict: Optional[Dict[str, Any]] = None,
+                query_embedding: list[float],
+                filter_dict: dict[str, Any] | None = None,
                 top_k: int = 10,
-                include: Optional[List[str]] = None,
-            ) -> List[Dict[str, Any]]:
+                include: list[str] | None = None,
+            ) -> list[dict[str, Any]]:
                 return []
 
-            async def delete(self, ids: List[str]) -> None:
+            async def delete(self, ids: list[str]) -> None:
                 pass
 
-            async def get(self, ids: List[str]) -> List[Dict[str, Any]]:
+            async def get(self, ids: list[str]) -> list[dict[str, Any]]:
                 return []
 
             async def count(self) -> int:
@@ -160,7 +160,7 @@ class TestConcreteImplementation:
         class MockStorageAdapter(StorageAdapter):
             async def list_files(
                 self, path: str, recursive: bool = False
-            ) -> List[FileInfo]:
+            ) -> list[FileInfo]:
                 return []
 
             async def read_file(self, path: str) -> bytes:
@@ -173,8 +173,8 @@ class TestConcreteImplementation:
                 return False
 
             async def list_changes(
-                self, since: datetime, path: Optional[str] = None
-            ) -> List[FileChange]:
+                self, since: datetime, path: str | None = None
+            ) -> list[FileChange]:
                 return []
 
             async def supports_watch(self) -> bool:
@@ -190,12 +190,10 @@ class TestConcreteImplementation:
         """Concrete Cache can be created and used."""
 
         class MockCache(Cache):
-            async def get(self, key: str) -> Optional[Any]:
+            async def get(self, key: str) -> Any | None:
                 return None
 
-            async def set(
-                self, key: str, value: Any, ttl: Optional[int] = None
-            ) -> None:
+            async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
                 pass
 
             async def delete(self, key: str) -> None:
@@ -212,8 +210,8 @@ class TestConcreteImplementation:
 
         class MockReranker(Reranker):
             async def rerank(
-                self, query: str, documents: List[str], top_k: int = 5
-            ) -> List[int]:
+                self, query: str, documents: list[str], top_k: int = 5
+            ) -> list[int]:
                 return list(range(min(top_k, len(documents))))
 
         instance = MockReranker()
@@ -233,8 +231,8 @@ class TestEdgeCases:
 
         class MockReranker(Reranker):
             async def rerank(
-                self, query: str, documents: List[str], top_k: int = 5
-            ) -> List[int]:
+                self, query: str, documents: list[str], top_k: int = 5
+            ) -> list[int]:
                 if not documents:
                     return []
                 return list(range(min(top_k, len(documents))))
@@ -248,8 +246,8 @@ class TestEdgeCases:
 
         class MockReranker(Reranker):
             async def rerank(
-                self, query: str, documents: List[str], top_k: int = 5
-            ) -> List[int]:
+                self, query: str, documents: list[str], top_k: int = 5
+            ) -> list[int]:
                 if not documents:
                     return []
                 return [0]
@@ -263,14 +261,12 @@ class TestEdgeCases:
 
         class MockCache(Cache):
             def __init__(self) -> None:
-                self._data: Dict[str, Any] = {}
+                self._data: dict[str, Any] = {}
 
-            async def get(self, key: str) -> Optional[Any]:
+            async def get(self, key: str) -> Any | None:
                 return self._data.get(key)
 
-            async def set(
-                self, key: str, value: Any, ttl: Optional[int] = None
-            ) -> None:
+            async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
                 self._data[key] = value
 
             async def delete(self, key: str) -> None:
@@ -295,10 +291,10 @@ class TestEdgeCases:
 
             async def add_documents(
                 self,
-                ids: List[str],
-                embeddings: List[List[float]],
-                metadatas: List[Dict[str, Any]],
-                documents: List[str],
+                ids: list[str],
+                embeddings: list[list[float]],
+                metadatas: list[dict[str, Any]],
+                documents: list[str],
             ) -> None:
                 if not ids:
                     return
@@ -306,17 +302,17 @@ class TestEdgeCases:
 
             async def search(
                 self,
-                query_embedding: List[float],
-                filter_dict: Optional[Dict[str, Any]] = None,
+                query_embedding: list[float],
+                filter_dict: dict[str, Any] | None = None,
                 top_k: int = 10,
-                include: Optional[List[str]] = None,
-            ) -> List[Dict[str, Any]]:
+                include: list[str] | None = None,
+            ) -> list[dict[str, Any]]:
                 return []
 
-            async def delete(self, ids: List[str]) -> None:
+            async def delete(self, ids: list[str]) -> None:
                 pass
 
-            async def get(self, ids: List[str]) -> List[Dict[str, Any]]:
+            async def get(self, ids: list[str]) -> list[dict[str, Any]]:
                 return []
 
             async def count(self) -> int:
@@ -332,7 +328,7 @@ class TestEdgeCases:
         class MockStorageAdapter(StorageAdapter):
             async def list_files(
                 self, path: str, recursive: bool = False
-            ) -> List[FileInfo]:
+            ) -> list[FileInfo]:
                 return []
 
             async def read_file(self, path: str) -> bytes:
@@ -345,8 +341,8 @@ class TestEdgeCases:
                 return True
 
             async def list_changes(
-                self, since: datetime, path: Optional[str] = None
-            ) -> List[FileChange]:
+                self, since: datetime, path: str | None = None
+            ) -> list[FileChange]:
                 return []
 
             async def supports_watch(self) -> bool:
@@ -373,8 +369,8 @@ class TestInputValidation:
 
         class MockReranker(Reranker):
             async def rerank(
-                self, query: str, documents: List[str], top_k: int = 5
-            ) -> List[int]:
+                self, query: str, documents: list[str], top_k: int = 5
+            ) -> list[int]:
                 if top_k < 0:
                     raise ValueError("top_k must be non-negative")
                 if top_k == 0:
@@ -393,16 +389,14 @@ class TestInputValidation:
 
         class MockCache(Cache):
             def __init__(self) -> None:
-                self._data: Dict[str, Any] = {}
+                self._data: dict[str, Any] = {}
 
-            async def get(self, key: str) -> Optional[Any]:
+            async def get(self, key: str) -> Any | None:
                 if not isinstance(key, str):
                     raise TypeError("key must be a string")
                 return self._data.get(key)
 
-            async def set(
-                self, key: str, value: Any, ttl: Optional[int] = None
-            ) -> None:
+            async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
                 if not isinstance(key, str):
                     raise TypeError("key must be a string")
                 self._data[key] = value
@@ -435,10 +429,10 @@ class TestInputValidation:
 
             async def add_documents(
                 self,
-                ids: List[str],
-                embeddings: List[List[float]],
-                metadatas: List[Dict[str, Any]],
-                documents: List[str],
+                ids: list[str],
+                embeddings: list[list[float]],
+                metadatas: list[dict[str, Any]],
+                documents: list[str],
             ) -> None:
                 for emb in embeddings:
                     if len(emb) != self._dim:
@@ -448,17 +442,17 @@ class TestInputValidation:
 
             async def search(
                 self,
-                query_embedding: List[float],
-                filter_dict: Optional[Dict[str, Any]] = None,
+                query_embedding: list[float],
+                filter_dict: dict[str, Any] | None = None,
                 top_k: int = 10,
-                include: Optional[List[str]] = None,
-            ) -> List[Dict[str, Any]]:
+                include: list[str] | None = None,
+            ) -> list[dict[str, Any]]:
                 return []
 
-            async def delete(self, ids: List[str]) -> None:
+            async def delete(self, ids: list[str]) -> None:
                 pass
 
-            async def get(self, ids: List[str]) -> List[Dict[str, Any]]:
+            async def get(self, ids: list[str]) -> list[dict[str, Any]]:
                 return []
 
             async def count(self) -> int:
@@ -485,7 +479,7 @@ class TestErrorHandling:
         class MockStorageAdapter(StorageAdapter):
             async def list_files(
                 self, path: str, recursive: bool = False
-            ) -> List[FileInfo]:
+            ) -> list[FileInfo]:
                 return []
 
             async def read_file(self, path: str) -> bytes:
@@ -498,8 +492,8 @@ class TestErrorHandling:
                 return False
 
             async def list_changes(
-                self, since: datetime, path: Optional[str] = None
-            ) -> List[FileChange]:
+                self, since: datetime, path: str | None = None
+            ) -> list[FileChange]:
                 return []
 
             async def supports_watch(self) -> bool:
@@ -516,12 +510,10 @@ class TestErrorHandling:
         """Cache handles connection errors gracefully."""
 
         class FailingCache(Cache):
-            async def get(self, key: str) -> Optional[Any]:
+            async def get(self, key: str) -> Any | None:
                 raise RuntimeError("Connection failed")
 
-            async def set(
-                self, key: str, value: Any, ttl: Optional[int] = None
-            ) -> None:
+            async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
                 raise RuntimeError("Connection failed")
 
             async def delete(self, key: str) -> None:
@@ -545,26 +537,26 @@ class TestErrorHandling:
 
             async def add_documents(
                 self,
-                ids: List[str],
-                embeddings: List[List[float]],
-                metadatas: List[Dict[str, Any]],
-                documents: List[str],
+                ids: list[str],
+                embeddings: list[list[float]],
+                metadatas: list[dict[str, Any]],
+                documents: list[str],
             ) -> None:
                 pass
 
             async def search(
                 self,
-                query_embedding: List[float],
-                filter_dict: Optional[Dict[str, Any]] = None,
+                query_embedding: list[float],
+                filter_dict: dict[str, Any] | None = None,
                 top_k: int = 10,
-                include: Optional[List[str]] = None,
-            ) -> List[Dict[str, Any]]:
+                include: list[str] | None = None,
+            ) -> list[dict[str, Any]]:
                 raise RuntimeError("Search failed")
 
-            async def delete(self, ids: List[str]) -> None:
+            async def delete(self, ids: list[str]) -> None:
                 pass
 
-            async def get(self, ids: List[str]) -> List[Dict[str, Any]]:
+            async def get(self, ids: list[str]) -> list[dict[str, Any]]:
                 return []
 
             async def count(self) -> int:
@@ -599,27 +591,27 @@ class TestAsyncBehavior:
 
             async def add_documents(
                 self,
-                ids: List[str],
-                embeddings: List[List[float]],
-                metadatas: List[Dict[str, Any]],
-                documents: List[str],
+                ids: list[str],
+                embeddings: list[list[float]],
+                metadatas: list[dict[str, Any]],
+                documents: list[str],
             ) -> None:
                 await asyncio.sleep(0.001)
 
             async def search(
                 self,
-                query_embedding: List[float],
-                filter_dict: Optional[Dict[str, Any]] = None,
+                query_embedding: list[float],
+                filter_dict: dict[str, Any] | None = None,
                 top_k: int = 10,
-                include: Optional[List[str]] = None,
-            ) -> List[Dict[str, Any]]:
+                include: list[str] | None = None,
+            ) -> list[dict[str, Any]]:
                 await asyncio.sleep(0.001)
                 return []
 
-            async def delete(self, ids: List[str]) -> None:
+            async def delete(self, ids: list[str]) -> None:
                 await asyncio.sleep(0.001)
 
-            async def get(self, ids: List[str]) -> List[Dict[str, Any]]:
+            async def get(self, ids: list[str]) -> list[dict[str, Any]]:
                 await asyncio.sleep(0.001)
                 return []
 
@@ -637,16 +629,14 @@ class TestAsyncBehavior:
 
         class AsyncCache(Cache):
             def __init__(self) -> None:
-                self._data: Dict[str, Any] = {}
+                self._data: dict[str, Any] = {}
                 self._lock = asyncio.Lock()
 
-            async def get(self, key: str) -> Optional[Any]:
+            async def get(self, key: str) -> Any | None:
                 async with self._lock:
                     return self._data.get(key)
 
-            async def set(
-                self, key: str, value: Any, ttl: Optional[int] = None
-            ) -> None:
+            async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
                 async with self._lock:
                     self._data[key] = value
 
@@ -684,7 +674,7 @@ class TestStateManagement:
 
         class StatefulVectorStore(VectorStore):
             def __init__(self) -> None:
-                self._docs: Dict[str, Dict[str, Any]] = {}
+                self._docs: dict[str, dict[str, Any]] = {}
                 self._initialized = False
                 self._collection_name: str = ""
 
@@ -696,10 +686,10 @@ class TestStateManagement:
 
             async def add_documents(
                 self,
-                ids: List[str],
-                embeddings: List[List[float]],
-                metadatas: List[Dict[str, Any]],
-                documents: List[str],
+                ids: list[str],
+                embeddings: list[list[float]],
+                metadatas: list[dict[str, Any]],
+                documents: list[str],
             ) -> None:
                 for doc_id, emb, meta, doc in zip(
                     ids, embeddings, metadatas, documents
@@ -712,18 +702,18 @@ class TestStateManagement:
 
             async def search(
                 self,
-                query_embedding: List[float],
-                filter_dict: Optional[Dict[str, Any]] = None,
+                query_embedding: list[float],
+                filter_dict: dict[str, Any] | None = None,
                 top_k: int = 10,
-                include: Optional[List[str]] = None,
-            ) -> List[Dict[str, Any]]:
+                include: list[str] | None = None,
+            ) -> list[dict[str, Any]]:
                 return list(self._docs.values())[:top_k]
 
-            async def delete(self, ids: List[str]) -> None:
+            async def delete(self, ids: list[str]) -> None:
                 for doc_id in ids:
                     self._docs.pop(doc_id, None)
 
-            async def get(self, ids: List[str]) -> List[Dict[str, Any]]:
+            async def get(self, ids: list[str]) -> list[dict[str, Any]]:
                 return [self._docs[doc_id] for doc_id in ids if doc_id in self._docs]
 
             async def count(self) -> int:
@@ -753,18 +743,16 @@ class TestStateManagement:
 
         class InvalidatableCache(Cache):
             def __init__(self) -> None:
-                self._data: Dict[str, Any] = {}
-                self._access_count: Dict[str, int] = {}
+                self._data: dict[str, Any] = {}
+                self._access_count: dict[str, int] = {}
 
-            async def get(self, key: str) -> Optional[Any]:
+            async def get(self, key: str) -> Any | None:
                 val = self._data.get(key)
                 if val is not None:
                     self._access_count[key] = self._access_count.get(key, 0) + 1
                 return val
 
-            async def set(
-                self, key: str, value: Any, ttl: Optional[int] = None
-            ) -> None:
+            async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
                 self._data[key] = value
                 self._access_count[key] = 0
 

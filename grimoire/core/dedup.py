@@ -8,10 +8,10 @@ decisions in the processing log.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,7 +64,7 @@ class DedupResult(BaseModel):
 
     action: DeduplicationAction
     file_hash: str
-    existing_document: Optional[Any] = Field(default=None)
+    existing_document: Any | None = Field(default=None)
     conflict: bool = Field(default=False)
     strategy: DedupStrategy = Field(default=DedupStrategy.AUTO)
     resolution: str = Field(default="")
@@ -84,8 +84,8 @@ class ConflictDetails(BaseModel):
 
     existing_hash: str
     new_hash: str
-    existing_mtime: Optional[datetime] = None
-    new_mtime: Optional[datetime] = None
+    existing_mtime: datetime | None = None
+    new_mtime: datetime | None = None
     existing_version: int
     strategy_used: DedupStrategy
 
@@ -190,9 +190,9 @@ class Deduplicator:
     async def check_file(
         self,
         file_path: Path | str,
-        existing_doc: Optional[Document] = None,
-        file_mtime: Optional[datetime] = None,
-        strategy: Optional[DedupStrategy] = None,
+        existing_doc: Document | None = None,
+        file_mtime: datetime | None = None,
+        strategy: DedupStrategy | None = None,
     ) -> DedupResult:
         """Check if a file needs to be processed based on deduplication logic.
 
@@ -279,7 +279,7 @@ class Deduplicator:
     def _is_version_conflict(
         self,
         existing_doc: Document,
-        file_mtime: Optional[datetime],
+        file_mtime: datetime | None,
     ) -> bool:
         """Determine if a version conflict exists.
 
@@ -305,7 +305,7 @@ class Deduplicator:
         self,
         existing_doc: Document,
         file_hash: str,
-        file_mtime: Optional[datetime],
+        file_mtime: datetime | None,
         strategy: DedupStrategy,
     ) -> DedupResult:
         """Resolve a version conflict using the specified strategy.
@@ -363,7 +363,7 @@ class Deduplicator:
         self,
         existing_doc: Document,
         new_hash: str,
-        new_mtime: Optional[datetime],
+        new_mtime: datetime | None,
         strategy: DedupStrategy,
     ) -> ConflictDetails:
         """Create conflict details for logging.
@@ -390,7 +390,7 @@ class Deduplicator:
         self,
         document_id: str,
         dedup_result: DedupResult,
-        duration_ms: Optional[int] = None,
+        duration_ms: int | None = None,
     ) -> ProcessingLog:
         """Create a processing log entry for the deduplication check.
 
@@ -439,8 +439,8 @@ class Deduplicator:
 
 async def check_duplicate(
     file_path: Path | str,
-    existing_doc: Optional[Document] = None,
-    file_mtime: Optional[datetime] = None,
+    existing_doc: Document | None = None,
+    file_mtime: datetime | None = None,
     strategy: DedupStrategy = DedupStrategy.AUTO,
 ) -> DedupResult:
     """Convenience function for one-off deduplication checks.
@@ -470,7 +470,7 @@ async def check_duplicate(
     )
 
 
-def get_file_mtime(file_path: Path | str) -> Optional[datetime]:
+def get_file_mtime(file_path: Path | str) -> datetime | None:
     """Get file modification time as a datetime object.
 
     Args:
@@ -482,6 +482,6 @@ def get_file_mtime(file_path: Path | str) -> Optional[datetime]:
     try:
         path = Path(file_path)
         mtime = path.stat().st_mtime
-        return datetime.fromtimestamp(mtime, tz=timezone.utc)
+        return datetime.fromtimestamp(mtime, tz=UTC)
     except (FileNotFoundError, OSError):
         return None

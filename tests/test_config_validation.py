@@ -31,8 +31,8 @@ from grimoire.config import (
     EmbeddingsConfig,
     GrimoireSettings,
     LLMConfig,
-    LogLevel,
     LoggingConfig,
+    LogLevel,
     ProcessingConfig,
     QueryConfig,
     RedisConfig,
@@ -82,8 +82,9 @@ class TestConfigHappyPath:
         config_file.write_text(yaml.dump(config_content))
 
         # Create settings with custom config path
-        from grimoire.config.settings import YamlConfigSource
         from pydantic_settings import PydanticBaseSettingsSource
+
+        from grimoire.config.settings import YamlConfigSource
 
         class CustomSettings(GrimoireSettings):
             @classmethod
@@ -144,8 +145,9 @@ class TestConfigEdgeCases:
         config_file = temp_directory / "grimoire.yaml"
         config_file.write_text("grimoire:\n")
 
-        from grimoire.config.settings import YamlConfigSource
         from pydantic_settings import PydanticBaseSettingsSource
+
+        from grimoire.config.settings import YamlConfigSource
 
         class TestSettings(GrimoireSettings):
             @classmethod

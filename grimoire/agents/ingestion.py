@@ -11,9 +11,9 @@ any storage backend into the vector store and metadata database.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from loguru import logger
@@ -24,21 +24,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 if TYPE_CHECKING:
     from grimoire.config.settings import GrimoireSettings
 
-from grimoire.core.chunker import Chunk, ChunkConfig, ChunkingStrategy, Chunker
+from grimoire.core.chunker import Chunk, ChunkConfig, Chunker, ChunkingStrategy
 from grimoire.core.chunker.markdown import MarkdownHeaderTextSplitter
 from grimoire.core.chunker.recursive import (
     RecursiveCharacterTextSplitter,
     RecursiveChunkConfig,
 )
 from grimoire.core.chunker.semantic import SemanticChunker
-from grimoire.core.dedup import DedupResult, DeduplicationAction, Deduplicator
+from grimoire.core.dedup import DeduplicationAction, Deduplicator, DedupResult
 from grimoire.core.embedder import Embedder
 from grimoire.core.parser import DocumentParser, ParsedDocument
 from grimoire.core.tagger import Tagger
 from grimoire.db.models import (
     ActionType,
     Category,
-    Chunk as ChunkModel,
     Document,
     FileType,
     ProcessingLog,
@@ -46,9 +45,11 @@ from grimoire.db.models import (
     StatusType,
     StorageBackend,
 )
+from grimoire.db.models import (
+    Chunk as ChunkModel,
+)
 from grimoire.strategies.security.metadata import SecurityMetadata
 from grimoire.vectorstore.base import VectorStore
-
 
 # =============================================================================
 # Data Models
@@ -72,12 +73,12 @@ class IngestionResult(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     file_path: str
-    document_id: Optional[str] = None
+    document_id: str | None = None
     status: str = "completed"
     chunks_created: int = 0
     vectors_stored: int = 0
     tags_applied: int = 0
-    error_message: Optional[str] = None
+    error_message: str | None = None
     duration_ms: int = 0
 
 
@@ -97,7 +98,7 @@ class BatchIngestionResult(BaseModel):
     succeeded: int = 0
     skipped: int = 0
     failed: int = 0
-    results: List[IngestionResult] = Field(default_factory=list)
+    results: list[IngestionResult] = Field(default_factory=list)
     duration_ms: int = 0
 
 
@@ -213,11 +214,11 @@ class IngestionAgent:
         parser: DocumentParser,
         embedder: Embedder,
         vector_store: VectorStore,
-        tagger: Optional[Tagger] = None,
-        chunk_config: Optional[ChunkConfig] = None,
+        tagger: Tagger | None = None,
+        chunk_config: ChunkConfig | None = None,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         embedding_model: str = "sentence-transformers/all-mpnet-base-v2",
-        settings: Optional["GrimoireSettings"] = None,
+        settings: GrimoireSettings | None = None,
     ) -> None:
         self._parser = parser
         self._embedder = embedder
@@ -242,10 +243,10 @@ class IngestionAgent:
         db: AsyncSession,
         file_path: str | Path,
         *,
-        storage_backend: Optional[StorageBackend] = None,
+        storage_backend: StorageBackend | None = None,
         auto_tag: bool = True,
-        categories: Optional[List[Category]] = None,
-        source_type: Optional[str] = None,
+        categories: list[Category] | None = None,
+        source_type: str | None = None,
     ) -> IngestionResult:
         """Ingest a single file through the full pipeline.
 
@@ -392,7 +393,7 @@ class IngestionAgent:
 
             # Step 9: Mark as completed
             doc.processing_status = ProcessingStatus.COMPLETED
-            doc.processed_at = datetime.now(tz=timezone.utc)
+            doc.processed_at = datetime.now(tz=UTC)
             doc.error_message = None
             await db.flush()
 
@@ -409,7 +410,7 @@ class IngestionAgent:
 
                 settings = get_settings()
                 if settings.wiki.enabled and settings.wiki.compile_on_ingest:
-                    from grimoire.db.models import WikiCompileJob, CompileStatus
+                    from grimoire.db.models import CompileStatus, WikiCompileJob
 
                     compile_job = WikiCompileJob(
                         document_id=doc.id,
@@ -446,9 +447,9 @@ class IngestionAgent:
         directory: str | Path,
         *,
         recursive: bool = True,
-        storage_backend: Optional[StorageBackend] = None,
+        storage_backend: StorageBackend | None = None,
         auto_tag: bool = True,
-        source_type: Optional[str] = None,
+        source_type: str | None = None,
     ) -> BatchIngestionResult:
         """Ingest all supported files in a directory.
 
@@ -554,8 +555,8 @@ class IngestionAgent:
         file_path: str,
         doc_id: str,
         *,
-        source_type: Optional[str] = None,
-    ) -> List[Chunk]:
+        source_type: str | None = None,
+    ) -> list[Chunk]:
         """Chunk document text using the appropriate strategy.
 
         Args:
@@ -635,8 +636,8 @@ class IngestionAgent:
         self,
         db: AsyncSession,
         doc_id: str,
-        chunks: List[Chunk],
-    ) -> List[ChunkModel]:
+        chunks: list[Chunk],
+    ) -> list[ChunkModel]:
         """Persist chunks to the database.
 
         Args:
@@ -647,7 +648,7 @@ class IngestionAgent:
         Returns:
             List of created ChunkModel instances.
         """
-        chunk_models: List[ChunkModel] = []
+        chunk_models: list[ChunkModel] = []
         for chunk in chunks:
             chunk_model = ChunkModel(
                 id=chunk.metadata.get("chunk_id", str(uuid4())),
@@ -676,8 +677,8 @@ class IngestionAgent:
         self,
         db: AsyncSession,
         doc_id: str,
-        chunks: List[Chunk],
-        chunk_models: List[ChunkModel],
+        chunks: list[Chunk],
+        chunk_models: list[ChunkModel],
     ) -> int:
         """Embed chunks and store vectors.
 
@@ -697,7 +698,7 @@ class IngestionAgent:
         embeddings = await self._embedder.embed(texts)
 
         ids = [cm.id for cm in chunk_models]
-        metadatas: List[dict[str, Any]] = []
+        metadatas: list[dict[str, Any]] = []
         for c in chunks:
             base: dict[str, Any] = {
                 "document_id": doc_id,
@@ -734,7 +735,7 @@ class IngestionAgent:
         db: AsyncSession,
         doc: Document,
         text: str,
-        categories: Optional[List[Category]],
+        categories: list[Category] | None,
     ) -> int:
         """Auto-tag a document using the LLM tagger.
 
@@ -792,8 +793,8 @@ class IngestionAgent:
         file_hash: str,
         parsed: ParsedDocument,
         status: ProcessingStatus = ProcessingStatus.PROCESSING,
-        error_message: Optional[str] = None,
-        security_metadata: Optional[SecurityMetadata] = None,
+        error_message: str | None = None,
+        security_metadata: SecurityMetadata | None = None,
     ) -> Document:
         """Create a new document record in the database.
 
@@ -835,7 +836,7 @@ class IngestionAgent:
         doc: Document,
         file_hash: str,
         parsed: ParsedDocument,
-        security_metadata: Optional[SecurityMetadata] = None,
+        security_metadata: SecurityMetadata | None = None,
     ) -> None:
         """Update an existing document record.
 
@@ -866,7 +867,7 @@ class IngestionAgent:
         doc.title = parsed.metadata.title or doc.title
         doc.processing_status = ProcessingStatus.PROCESSING
         doc.version += 1
-        doc.updated_at = datetime.now(tz=timezone.utc)
+        doc.updated_at = datetime.now(tz=UTC)
         self._apply_security_metadata(doc, security_metadata)
         await db.flush()
         logger.debug(f"Updated document record: {doc.id} (v{doc.version})")
@@ -874,7 +875,7 @@ class IngestionAgent:
     @staticmethod
     def _apply_security_metadata(
         doc: Document,
-        sec: Optional[SecurityMetadata],
+        sec: SecurityMetadata | None,
     ) -> None:
         """Persist ``SecurityMetadata`` onto the indexed columns + JSON blob.
 
@@ -901,8 +902,8 @@ class IngestionAgent:
         document_id: str,
         action: ActionType,
         status: StatusType,
-        details: Optional[dict[str, Any]] = None,
-        duration_ms: Optional[int] = None,
+        details: dict[str, Any] | None = None,
+        duration_ms: int | None = None,
     ) -> None:
         """Log a processing step to the audit trail.
 
@@ -936,7 +937,7 @@ class IngestionAgent:
         # so we skip logging here and log after the document is created.
         pass
 
-    async def _fetch_categories(self, db: AsyncSession) -> List[Category]:
+    async def _fetch_categories(self, db: AsyncSession) -> list[Category]:
         """Fetch all categories from the database.
 
         Args:
@@ -953,7 +954,7 @@ class IngestionAgent:
         self,
         directory: Path,
         recursive: bool,
-    ) -> List[Path]:
+    ) -> list[Path]:
         """Discover supported files in a directory.
 
         Args:
@@ -964,7 +965,7 @@ class IngestionAgent:
             List of file paths with supported extensions.
         """
         supported = DocumentParser.SUPPORTED_EXTENSIONS | {".md", ".txt"}
-        files: List[Path] = []
+        files: list[Path] = []
 
         if recursive:
             for path in directory.rglob("*"):

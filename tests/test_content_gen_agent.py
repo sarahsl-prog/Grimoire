@@ -10,21 +10,18 @@ Tests cover:
 
 from __future__ import annotations
 
-from typing import Any, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 from grimoire.agents.content_gen import (
+    _MAX_CONTENT_LENGTH,
+    _PROMPTS,
     ContentGenerationAgent,
     GenerationRequest,
     GenerationResult,
-    _MAX_CONTENT_LENGTH,
-    _PROMPTS,
 )
 from grimoire.db.models import ContentType, GeneratedContent
-
 
 # =============================================================================
 # Fixtures
@@ -82,11 +79,15 @@ class TestContentGenHappyPath:
 
     @pytest.mark.asyncio
     async def test_generate_summary(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """Can generate a document summary."""
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="This document discusses AI and machine learning.",
         ):
             result = await agent.generate_summary(mock_db, ["doc-1"])
@@ -98,15 +99,21 @@ class TestContentGenHappyPath:
 
     @pytest.mark.asyncio
     async def test_generate_flash_cards(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """Can generate flashcards."""
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="Q: What is AI?\nA: Artificial Intelligence.",
         ):
             result = await agent.generate_flash_cards(
-                mock_db, ["doc-1"], count=5,
+                mock_db,
+                ["doc-1"],
+                count=5,
             )
 
         assert result.content_type == "flash_card"
@@ -114,11 +121,15 @@ class TestContentGenHappyPath:
 
     @pytest.mark.asyncio
     async def test_generate_cliff_notes(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """Can generate cliff notes."""
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="- Key point 1\n- Key point 2",
         ):
             result = await agent.generate_cliff_notes(mock_db, ["doc-1"])
@@ -127,11 +138,15 @@ class TestContentGenHappyPath:
 
     @pytest.mark.asyncio
     async def test_generate_outline(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """Can generate an outline."""
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="1. Introduction\n  1.1 Background",
         ):
             result = await agent.generate_outline(mock_db, ["doc-1"])
@@ -140,15 +155,21 @@ class TestContentGenHappyPath:
 
     @pytest.mark.asyncio
     async def test_generate_extract(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """Can extract specific information."""
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="The main algorithm uses gradient descent.",
         ):
             result = await agent.generate_extract(
-                mock_db, ["doc-1"], query="What algorithm is used?",
+                mock_db,
+                ["doc-1"],
+                query="What algorithm is used?",
             )
 
         assert result.content_type == "extract"
@@ -164,16 +185,20 @@ class TestContentGenCaching:
 
     @pytest.mark.asyncio
     async def test_cache_hit(
-        self, agent: ContentGenerationAgent, mock_cache: MagicMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_cache: MagicMock,
         mock_db: AsyncMock,
     ) -> None:
         """Cached results are returned directly."""
-        mock_cache.get = AsyncMock(return_value={
-            "content": "Cached summary",
-            "content_type": "summary",
-            "document_ids": ["doc-1"],
-            "model_used": "test",
-        })
+        mock_cache.get = AsyncMock(
+            return_value={
+                "content": "Cached summary",
+                "content_type": "summary",
+                "document_ids": ["doc-1"],
+                "model_used": "test",
+            }
+        )
 
         result = await agent.generate_summary(mock_db, ["doc-1"])
         assert result.cached is True
@@ -181,12 +206,16 @@ class TestContentGenCaching:
 
     @pytest.mark.asyncio
     async def test_cache_miss_stores_result(
-        self, agent: ContentGenerationAgent, mock_cache: MagicMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_cache: MagicMock,
         mock_db: AsyncMock,
     ) -> None:
         """Cache misses store new results."""
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="Generated content",
         ):
             await agent.generate_summary(mock_db, ["doc-1"])
@@ -194,7 +223,8 @@ class TestContentGenCaching:
         mock_cache.set.assert_called_once()
 
     def test_cache_key_deterministic(
-        self, agent: ContentGenerationAgent,
+        self,
+        agent: ContentGenerationAgent,
     ) -> None:
         """Same request produces same cache key."""
         req = GenerationRequest(
@@ -206,7 +236,8 @@ class TestContentGenCaching:
         assert key1 == key2
 
     def test_cache_key_different_for_different_types(
-        self, agent: ContentGenerationAgent,
+        self,
+        agent: ContentGenerationAgent,
     ) -> None:
         """Different content types produce different cache keys."""
         req1 = GenerationRequest(
@@ -220,7 +251,8 @@ class TestContentGenCaching:
         assert agent._cache_key(req1) != agent._cache_key(req2)
 
     def test_cache_key_order_independent_doc_ids(
-        self, agent: ContentGenerationAgent,
+        self,
+        agent: ContentGenerationAgent,
     ) -> None:
         """Document ID order doesn't affect cache key."""
         req1 = GenerationRequest(
@@ -244,7 +276,9 @@ class TestContentGenPersistence:
 
     @pytest.mark.asyncio
     async def test_existing_content_reused(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """Existing generated content is returned from DB."""
         existing = MagicMock(spec=GeneratedContent)
@@ -265,7 +299,9 @@ class TestContentGenPersistence:
 
     @pytest.mark.asyncio
     async def test_generated_content_stored_in_db(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """New generated content is persisted to the database."""
         # Mock: no existing content
@@ -277,7 +313,9 @@ class TestContentGenPersistence:
         mock_db.execute.return_value = mock_no_existing
 
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="Generated text",
         ):
             await agent.generate_summary(mock_db, ["doc-1"])
@@ -296,7 +334,9 @@ class TestContentGenErrorHandling:
 
     @pytest.mark.asyncio
     async def test_no_document_content(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """Empty documents return appropriate message."""
         # Mock: no existing, no chunks
@@ -312,7 +352,9 @@ class TestContentGenErrorHandling:
 
     @pytest.mark.asyncio
     async def test_llm_connection_error(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """LLM connection failure returns error message."""
         # Mock: no existing content but has chunks
@@ -324,7 +366,9 @@ class TestContentGenErrorHandling:
         mock_db.execute.return_value = mock_result
 
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="Error: LLM service unavailable. Please check Ollama is running.",
         ):
             result = await agent.generate_summary(mock_db, ["doc-1"])
@@ -333,14 +377,18 @@ class TestContentGenErrorHandling:
 
     @pytest.mark.asyncio
     async def test_cache_error_does_not_fail_generation(
-        self, agent: ContentGenerationAgent, mock_cache: MagicMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_cache: MagicMock,
         mock_db: AsyncMock,
     ) -> None:
         """Cache errors don't prevent generation."""
         mock_cache.get = AsyncMock(side_effect=RuntimeError("Redis down"))
 
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="Generated despite cache error",
         ):
             result = await agent.generate_summary(mock_db, ["doc-1"])
@@ -368,7 +416,8 @@ class TestPromptBuilding:
         assert "Test content here" in prompt
 
     def test_flashcard_prompt_includes_count(
-        self, agent: ContentGenerationAgent,
+        self,
+        agent: ContentGenerationAgent,
     ) -> None:
         """Flashcard prompt includes the requested count."""
         req = GenerationRequest(
@@ -380,7 +429,8 @@ class TestPromptBuilding:
         assert "15" in prompt
 
     def test_extract_prompt_includes_query(
-        self, agent: ContentGenerationAgent,
+        self,
+        agent: ContentGenerationAgent,
     ) -> None:
         """Extract prompt includes the user query."""
         req = GenerationRequest(
@@ -394,8 +444,10 @@ class TestPromptBuilding:
     def test_all_content_types_have_prompts(self) -> None:
         """Every ContentType has a prompt template."""
         for ct in [
-            ContentType.SUMMARY, ContentType.FLASH_CARD,
-            ContentType.CLIFF_NOTES, ContentType.OUTLINE,
+            ContentType.SUMMARY,
+            ContentType.FLASH_CARD,
+            ContentType.CLIFF_NOTES,
+            ContentType.OUTLINE,
             ContentType.EXTRACT,
         ]:
             assert ct in _PROMPTS
@@ -411,7 +463,9 @@ class TestContentGenEdgeCases:
 
     @pytest.mark.asyncio
     async def test_multi_document_request(
-        self, agent: ContentGenerationAgent, mock_db: AsyncMock,
+        self,
+        agent: ContentGenerationAgent,
+        mock_db: AsyncMock,
     ) -> None:
         """Can generate from multiple documents."""
         # Multi-doc skips existing content check
@@ -422,18 +476,22 @@ class TestContentGenEdgeCases:
         mock_db.execute.return_value = mock_result
 
         with patch.object(
-            agent, "_call_llm", new_callable=AsyncMock,
+            agent,
+            "_call_llm",
+            new_callable=AsyncMock,
             return_value="Combined summary of both documents.",
         ):
             result = await agent.generate_summary(
-                mock_db, ["doc-1", "doc-2"],
+                mock_db,
+                ["doc-1", "doc-2"],
             )
 
         assert result.content_type == "summary"
         assert len(result.document_ids) == 2
 
     def test_content_truncation(
-        self, agent: ContentGenerationAgent,
+        self,
+        agent: ContentGenerationAgent,
     ) -> None:
         """Long content is truncated."""
         long_content = "x" * (_MAX_CONTENT_LENGTH + 1000)

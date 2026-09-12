@@ -18,7 +18,7 @@ a measurable bottleneck.
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import bcrypt
 from fastapi import Depends, HTTPException, Request, status
@@ -62,9 +62,7 @@ def generate_api_key(tier: ApiKeyTier) -> tuple[str, str, str]:
     return raw_key, key_prefix, key_hash
 
 
-async def authenticate_api_key(
-    raw_key: str, db: AsyncSession
-) -> ApiKey | None:
+async def authenticate_api_key(raw_key: str, db: AsyncSession) -> ApiKey | None:
     """Authenticate an API key against the database.
 
     Looks up the key by prefix (first 12 chars), verifies the bcrypt
@@ -93,13 +91,11 @@ async def authenticate_api_key(
         return None
 
     # Check expiration
-    if api_key.expires_at is not None and api_key.expires_at <= datetime.now(
-        timezone.utc
-    ):
+    if api_key.expires_at is not None and api_key.expires_at <= datetime.now(UTC):
         return None
 
     # Update last_used_at (fire-and-forget, don't block the request)
-    api_key.last_used_at = datetime.now(timezone.utc)
+    api_key.last_used_at = datetime.now(UTC)
     try:
         await db.flush()
     except Exception:

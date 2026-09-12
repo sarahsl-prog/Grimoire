@@ -7,7 +7,7 @@ and managing document chunks with continuity tracking.
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
@@ -60,20 +60,20 @@ class Chunk(BaseModel):
         ..., ge=0, description="Approximate token count for context planning"
     )
     index: int = Field(..., ge=0, description="Position in document sequence (0-based)")
-    prev_chunk_id: Optional[str] = Field(
+    prev_chunk_id: str | None = Field(
         default=None, description="ID of previous chunk for continuity"
     )
-    next_chunk_id: Optional[str] = Field(
+    next_chunk_id: str | None = Field(
         default=None, description="ID of next chunk for continuity"
     )
-    metadata: Dict[str, Any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata (headers, source, etc.)"
     )
-    chunk_type: Optional[str] = Field(
+    chunk_type: str | None = Field(
         default=None,
         description="Chunk shape category, e.g. 'prose', 'sigma_rule', 'cve_block'. None for legacy/default chunks.",
     )
-    source_type: Optional[str] = Field(
+    source_type: str | None = Field(
         default=None,
         description="Origin source type, e.g. 'sigma', 'nvd_cve', 'mitre_attack'. None for general docs.",
     )
@@ -158,7 +158,7 @@ class Chunker(ABC):
         ```
     """
 
-    def __init__(self, config: Optional[ChunkConfig] = None) -> None:
+    def __init__(self, config: ChunkConfig | None = None) -> None:
         """Initialize the chunker with configuration.
 
         Args:
@@ -167,7 +167,7 @@ class Chunker(ABC):
         self.config = config or ChunkConfig()
 
     @abstractmethod
-    async def chunk(self, text: str, doc_id: Optional[str] = None) -> List[Chunk]:
+    async def chunk(self, text: str, doc_id: str | None = None) -> list[Chunk]:
         """Split text into chunks with continuity tracking.
 
         Args:
@@ -203,7 +203,7 @@ class Chunker(ABC):
             # Fallback: approximate 1 token ≈ 4 characters for English text
             return len(text) // 4
 
-    def _set_continuity_links(self, chunks: List[Chunk], doc_id: str) -> List[Chunk]:
+    def _set_continuity_links(self, chunks: list[Chunk], doc_id: str) -> list[Chunk]:
         """Set prev/next chunk IDs for continuity tracking.
 
         Mutates chunks in place to establish bidirectional links.

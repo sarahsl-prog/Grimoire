@@ -17,9 +17,10 @@ import asyncio
 import json
 import os
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -177,6 +178,7 @@ class GoogleDriveAdapter(StorageAdapter):
                     data = json.loads(raw)
                 except json.JSONDecodeError:
                     from grimoire.utils.token_crypto import decrypt_tokens
+
                     data = decrypt_tokens(raw)
                 if isinstance(data, dict):
                     return data
@@ -196,7 +198,8 @@ class GoogleDriveAdapter(StorageAdapter):
 
         encrypted = False
         try:
-            from grimoire.utils.token_crypto import encrypt_tokens, TokenCryptoError
+            from grimoire.utils.token_crypto import TokenCryptoError, encrypt_tokens
+
             payload = encrypt_tokens(tokens)
             encrypted = True
         except TokenCryptoError:
@@ -840,11 +843,11 @@ class GoogleDriveAdapter(StorageAdapter):
             for change_data in result.get("changes", []):
                 change_type = FileChangeType.MODIFIED
 
-                if change_data.get("removed") or change_data.get("file", {}).get(
-                    "trashed"
+                if (
+                    change_data.get("removed")
+                    or change_data.get("file", {}).get("trashed")
+                    or not change_data.get("file")
                 ):
-                    change_type = FileChangeType.DELETED
-                elif not change_data.get("file"):
                     change_type = FileChangeType.DELETED
 
                 file_id = change_data.get("fileId", "")

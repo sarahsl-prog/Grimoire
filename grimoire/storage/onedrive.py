@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, List, Optional, cast
+from typing import Any, cast
 from urllib.parse import urljoin
 
 import httpx
@@ -57,9 +58,7 @@ class OneDriveTokenData:
         """Create from dictionary."""
         expires_at_str = data.get("expires_at", "")
         expires_at = (
-            datetime.fromisoformat(expires_at_str)
-            if expires_at_str
-            else datetime.now()
+            datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.now()
         )
         return cls(
             access_token=data.get("access_token", ""),
@@ -128,6 +127,7 @@ class OneDriveAdapter(StorageAdapter):
                     data = json.loads(raw)
                 except json.JSONDecodeError:
                     from grimoire.utils.token_crypto import decrypt_tokens
+
                     data = decrypt_tokens(raw)
                 self.token_data = OneDriveTokenData.from_dict(data)
                 logger.debug(f"Loaded OneDrive tokens from {token_path}")
@@ -148,7 +148,8 @@ class OneDriveAdapter(StorageAdapter):
             token_path.parent.mkdir(parents=True, exist_ok=True)
             encrypted = False
             try:
-                from grimoire.utils.token_crypto import encrypt_tokens, TokenCryptoError
+                from grimoire.utils.token_crypto import TokenCryptoError, encrypt_tokens
+
                 payload = encrypt_tokens(self.token_data.to_dict())
                 encrypted = True
             except TokenCryptoError:
@@ -159,7 +160,9 @@ class OneDriveAdapter(StorageAdapter):
                 payload = json.dumps(self.token_data.to_dict(), indent=2)
             token_path.write_text(payload, encoding="utf-8")
             os.chmod(token_path, 0o600)
-            logger.debug(f"Saved OneDrive tokens to {token_path} (encrypted={encrypted})")
+            logger.debug(
+                f"Saved OneDrive tokens to {token_path} (encrypted={encrypted})"
+            )
         except OSError as e:
             logger.error(f"Failed to save OneDrive tokens: {e}")
 
@@ -242,9 +245,7 @@ class OneDriveAdapter(StorageAdapter):
                 )
 
             if response.status_code == 401:
-                if self.token_data and not self.token_data.is_expired(
-                    buffer_seconds=0
-                ):
+                if self.token_data and not self.token_data.is_expired(buffer_seconds=0):
                     await self._refresh_token()
                     access_token = self.token_data.access_token
                     headers["Authorization"] = f"Bearer {access_token}"
@@ -369,9 +370,7 @@ class OneDriveAdapter(StorageAdapter):
         query = httpx.QueryParams(params)
         return f"{self.AUTH_URL}?{query}"
 
-    async def list_files(
-        self, path: str, recursive: bool = False
-    ) -> List[FileInfo]:
+    async def list_files(self, path: str, recursive: bool = False) -> list[FileInfo]:
         """List files in a OneDrive directory."""
         await self._ensure_token_valid()
 
@@ -497,8 +496,8 @@ class OneDriveAdapter(StorageAdapter):
             return False
 
     async def list_changes(
-        self, since: datetime, path: Optional[str] = None
-    ) -> List[FileChange]:
+        self, since: datetime, path: str | None = None
+    ) -> list[FileChange]:
         """List changes in OneDrive since a given timestamp."""
         await self._ensure_token_valid()
 
@@ -539,9 +538,9 @@ class OneDriveAdapter(StorageAdapter):
                     timestamp=self._parse_odt_datetime(
                         item.get("lastModifiedDateTime")
                     ),
-                    file_info=self._drive_item_to_file_info(item)
-                    if "file" in item
-                    else None,
+                    file_info=(
+                        self._drive_item_to_file_info(item) if "file" in item else None
+                    ),
                 )
                 changes.append(change)
 
@@ -555,7 +554,7 @@ class OneDriveAdapter(StorageAdapter):
         if delta_url:
             token_start = delta_url.find("token=")
             if token_start > 0:
-                extracted = delta_url[token_start + 6 :].strip("'\"\"")
+                extracted = delta_url[token_start + 6 :].strip('\'""')
                 if extracted:
                     self._delta_tokens[path or "root"] = extracted
 

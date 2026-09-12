@@ -461,7 +461,7 @@ class TestWatchdogEventHandler:
         handler = _WatchdogEventHandler(
             callback=lambda c: changes.append(c), watch_path=str(temp_directory)
         )
-        from watchdog.events import FileCreatedEvent, DirCreatedEvent
+        from watchdog.events import DirCreatedEvent, FileCreatedEvent
 
         handler.dispatch(FileCreatedEvent(src_path="/test/file.txt"))
         assert changes[-1].change_type == FileChangeType.CREATED
@@ -474,7 +474,7 @@ class TestWatchdogEventHandler:
         handler = _WatchdogEventHandler(
             callback=lambda c: changes.append(c), watch_path=str(temp_directory)
         )
-        from watchdog.events import FileDeletedEvent, DirDeletedEvent
+        from watchdog.events import DirDeletedEvent, FileDeletedEvent
 
         handler.dispatch(FileDeletedEvent(src_path="/test/file.txt"))
         assert changes[-1].change_type == FileChangeType.DELETED
@@ -487,7 +487,7 @@ class TestWatchdogEventHandler:
         handler = _WatchdogEventHandler(
             callback=lambda c: changes.append(c), watch_path=str(temp_directory)
         )
-        from watchdog.events import FileModifiedEvent, DirModifiedEvent
+        from watchdog.events import DirModifiedEvent, FileModifiedEvent
 
         handler.dispatch(FileModifiedEvent(src_path="/test/file.txt"))
         assert changes[-1].change_type == FileChangeType.MODIFIED

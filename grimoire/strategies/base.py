@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from grimoire.core.chunker.base import Chunker as BaseChunker
 
@@ -64,8 +64,8 @@ class BaseRetriever(ABC):
         query: str,
         *,
         top_k: int = 10,
-        filter_dict: Optional[Dict[str, Any]] = None,
-    ) -> List[HybridResult]:
+        filter_dict: dict[str, Any] | None = None,
+    ) -> list[HybridResult]:
         """Retrieve ranked results for ``query``.
 
         Args:
@@ -82,9 +82,9 @@ class BaseRetriever(ABC):
 
 
 def get_chunker_for(
-    file_path: Union[str, Path],
-    source_type: Optional[str] = None,
-) -> Optional[BaseChunker]:
+    file_path: str | Path,
+    source_type: str | None = None,
+) -> BaseChunker | None:
     """Return a chunker appropriate for ``file_path`` / ``source_type``.
 
     This is a stub. Real registration arrives in later phases (Phase 8

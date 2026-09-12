@@ -23,7 +23,6 @@ from grimoire.strategies.security.parsers.sigma import (
     sigma_level_to_severity,
 )
 
-
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "security" / "sigma"
 SAMPLE_RULES = FIXTURE_DIR / "sample_rules.yml"
 

@@ -18,24 +18,28 @@ All tables from DESIGN.md Section 3:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON as BaseJSON,
+)
+from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as _SQLEnum,
     Float,
     ForeignKey,
     Index,
     Integer,
-    JSON as BaseJSON,
     String,
     Text,
     UniqueConstraint,
     func,
+)
+from sqlalchemy import (
+    Enum as _SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -245,7 +249,7 @@ class Document(Base):
         unique=True,
         comment="SHA-256 hash of file content",
     )
-    title: Mapped[Optional[str]] = mapped_column(
+    title: Mapped[str | None] = mapped_column(
         String(512),
         nullable=True,
     )
@@ -258,18 +262,18 @@ class Document(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
-    processed_at: Mapped[Optional[datetime]] = mapped_column(
+    processed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
@@ -281,7 +285,7 @@ class Document(Base):
         nullable=False,
         index=True,
     )
-    error_message: Mapped[Optional[str]] = mapped_column(
+    error_message: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
@@ -299,85 +303,85 @@ class Document(Base):
     # wide-but-sparse JSONB blob carries the rest. All columns are
     # nullable so general (non-security) ingest is unchanged.
     # ------------------------------------------------------------------ #
-    source_type: Mapped[Optional[str]] = mapped_column(
+    source_type: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,
         index=True,
         comment="Detected source type, e.g. 'sigma_rule', 'nvd_cve'",
     )
-    cve_id: Mapped[Optional[str]] = mapped_column(
+    cve_id: Mapped[str | None] = mapped_column(
         String(32),
         nullable=True,
         index=True,
         comment="CVE identifier when source_type=='nvd_cve'",
     )
-    severity: Mapped[Optional[Severity]] = mapped_column(
+    severity: Mapped[Severity | None] = mapped_column(
         SQLEnum(Severity, name="severity_enum"),
         nullable=True,
         index=True,
     )
-    mitre_technique_id: Mapped[Optional[str]] = mapped_column(
+    mitre_technique_id: Mapped[str | None] = mapped_column(
         String(16),
         nullable=True,
         index=True,
         comment="ATT&CK technique ID, e.g. 'T1059.001'",
     )
-    tlp_level: Mapped[Optional[TLPLevel]] = mapped_column(
+    tlp_level: Mapped[TLPLevel | None] = mapped_column(
         SQLEnum(TLPLevel, name="tlp_level_enum"),
         nullable=True,
         default=None,
         comment="Traffic Light Protocol level",
     )
-    content_date: Mapped[Optional[datetime]] = mapped_column(
+    content_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         index=True,
         comment="Date of the underlying content (not ingest date)",
     )
-    security_metadata: Mapped[Optional[dict[str, Any]]] = mapped_column(
+    security_metadata: Mapped[dict[str, Any] | None] = mapped_column(
         PortableJSON,
         nullable=True,
         comment="Wide/sparse SecurityMetadata fields (lists, CVSS, etc.)",
     )
 
     # Relationships
-    chunks: Mapped[List["Chunk"]] = relationship(
+    chunks: Mapped[list[Chunk]] = relationship(
         "Chunk",
         back_populates="document",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    tags: Mapped[List["DocumentTag"]] = relationship(
+    tags: Mapped[list[DocumentTag]] = relationship(
         "DocumentTag",
         back_populates="document",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    generated_content: Mapped[List["GeneratedContent"]] = relationship(
+    generated_content: Mapped[list[GeneratedContent]] = relationship(
         "GeneratedContent",
         back_populates="document",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    source_relationships: Mapped[List["Relationship"]] = relationship(
+    source_relationships: Mapped[list[Relationship]] = relationship(
         "Relationship",
         foreign_keys="Relationship.source_document_id",
         back_populates="source_document",
         cascade="all, delete-orphan",
     )
-    target_relationships: Mapped[List["Relationship"]] = relationship(
+    target_relationships: Mapped[list[Relationship]] = relationship(
         "Relationship",
         foreign_keys="Relationship.target_document_id",
         back_populates="target_document",
         cascade="all, delete-orphan",
     )
-    processing_logs: Mapped[List["ProcessingLog"]] = relationship(
+    processing_logs: Mapped[list[ProcessingLog]] = relationship(
         "ProcessingLog",
         back_populates="document",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    wiki_compile_jobs: Mapped[List["WikiCompileJob"]] = relationship(
+    wiki_compile_jobs: Mapped[list[WikiCompileJob]] = relationship(
         "WikiCompileJob",
         back_populates="document",
         cascade="all, delete-orphan",
@@ -435,24 +439,24 @@ class Chunk(Base):
         Integer,
         nullable=False,
     )
-    vector_id: Mapped[Optional[str]] = mapped_column(
+    vector_id: Mapped[str | None] = mapped_column(
         String(256),
         nullable=True,
         comment="ChromaDB/Qdrant vector reference",
     )
-    embedding_model: Mapped[Optional[str]] = mapped_column(
+    embedding_model: Mapped[str | None] = mapped_column(
         String(128),
         nullable=True,
         comment="Which model generated the embedding",
     )
 
     # Continuity tracking (self-referential)
-    prev_chunk_id: Mapped[Optional[str]] = mapped_column(
+    prev_chunk_id: Mapped[str | None] = mapped_column(
         ForeignKey("chunks.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    next_chunk_id: Mapped[Optional[str]] = mapped_column(
+    next_chunk_id: Mapped[str | None] = mapped_column(
         ForeignKey("chunks.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
@@ -462,19 +466,19 @@ class Chunk(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    document: Mapped["Document"] = relationship("Document", back_populates="chunks")
-    prev_chunk: Mapped[Optional["Chunk"]] = relationship(
+    document: Mapped[Document] = relationship("Document", back_populates="chunks")
+    prev_chunk: Mapped[Chunk | None] = relationship(
         "Chunk",
         remote_side="Chunk.id",
         foreign_keys=[prev_chunk_id],
         post_update=True,
     )
-    next_chunk: Mapped[Optional["Chunk"]] = relationship(
+    next_chunk: Mapped[Chunk | None] = relationship(
         "Chunk",
         remote_side="Chunk.id",
         foreign_keys=[next_chunk_id],
@@ -516,17 +520,17 @@ class Category(Base):
     )
 
     # Self-referential parent (null = root category)
-    parent_id: Mapped[Optional[str]] = mapped_column(
+    parent_id: Mapped[str | None] = mapped_column(
         ForeignKey("categories.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
 
-    description: Mapped[Optional[str]] = mapped_column(
+    description: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
-    color: Mapped[Optional[str]] = mapped_column(
+    color: Mapped[str | None] = mapped_column(
         String(7),
         nullable=True,
         comment="Hex color code (e.g., #3498db)",
@@ -536,22 +540,22 @@ class Category(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    parent: Mapped[Optional["Category"]] = relationship(
+    parent: Mapped[Category | None] = relationship(
         "Category",
         remote_side="Category.id",
         back_populates="children",
     )
-    children: Mapped[List["Category"]] = relationship(
+    children: Mapped[list[Category]] = relationship(
         "Category",
         back_populates="parent",
         cascade="all, delete-orphan",
     )
-    document_tags: Mapped[List["DocumentTag"]] = relationship(
+    document_tags: Mapped[list[DocumentTag]] = relationship(
         "DocumentTag",
         back_populates="category",
         cascade="all, delete-orphan",
@@ -595,13 +599,13 @@ class DocumentTag(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    document: Mapped["Document"] = relationship("Document", back_populates="tags")
-    category: Mapped["Category"] = relationship(
+    document: Mapped[Document] = relationship("Document", back_populates="tags")
+    category: Mapped[Category] = relationship(
         "Category", back_populates="document_tags"
     )
 
@@ -643,7 +647,7 @@ class GeneratedContent(Base):
         nullable=False,
         comment="Model identifier (e.g., llama3:8b)",
     )
-    generation_params: Mapped[Optional[dict[str, Any]]] = mapped_column(
+    generation_params: Mapped[dict[str, Any] | None] = mapped_column(
         PortableJSON,
         nullable=True,
         comment="JSON of temperature, tokens, etc.",
@@ -665,12 +669,12 @@ class GeneratedContent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    document: Mapped["Document"] = relationship(
+    document: Mapped[Document] = relationship(
         "Document",
         back_populates="generated_content",
     )
@@ -727,17 +731,17 @@ class Relationship(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    source_document: Mapped["Document"] = relationship(
+    source_document: Mapped[Document] = relationship(
         "Document",
         foreign_keys=[source_document_id],
         back_populates="source_relationships",
     )
-    target_document: Mapped["Document"] = relationship(
+    target_document: Mapped[Document] = relationship(
         "Document",
         foreign_keys=[target_document_id],
         back_populates="target_relationships",
@@ -796,7 +800,7 @@ class WatchPath(Base):
     )
 
     # Polling (for cloud backends)
-    last_scanned_at: Mapped[Optional[datetime]] = mapped_column(
+    last_scanned_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
@@ -811,7 +815,7 @@ class WatchPath(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -854,12 +858,12 @@ class ProcessingLog(Base):
         SQLEnum(StatusType, name="status_type_enum"),
         nullable=False,
     )
-    details: Mapped[Optional[dict[str, Any]]] = mapped_column(
+    details: Mapped[dict[str, Any] | None] = mapped_column(
         PortableJSON,
         nullable=True,
         comment="JSON with action-specific details",
     )
-    duration_ms: Mapped[Optional[int]] = mapped_column(
+    duration_ms: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Processing duration in milliseconds",
@@ -869,13 +873,13 @@ class ProcessingLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
     )
 
     # Relationships
-    document: Mapped["Document"] = relationship(
+    document: Mapped[Document] = relationship(
         "Document",
         back_populates="processing_logs",
     )
@@ -935,7 +939,7 @@ class CacheEntry(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -961,35 +965,35 @@ class WikiPage(Base):
         default=WikiPageStatus.DRAFT,
         nullable=False,
     )
-    entity_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    entity_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    sections: Mapped[List["WikiPageSection"]] = relationship(
+    sections: Mapped[list[WikiPageSection]] = relationship(
         "WikiPageSection",
         back_populates="wiki_page",
         cascade="all, delete-orphan",
         order_by="WikiPageSection.section_index",
     )
-    source_refs: Mapped[List["WikiCrossReference"]] = relationship(
+    source_refs: Mapped[list[WikiCrossReference]] = relationship(
         "WikiCrossReference",
         back_populates="source_page",
         foreign_keys="WikiCrossReference.source_page_id",
         cascade="all, delete-orphan",
     )
-    target_refs: Mapped[List["WikiCrossReference"]] = relationship(
+    target_refs: Mapped[list[WikiCrossReference]] = relationship(
         "WikiCrossReference",
         back_populates="target_page",
         foreign_keys="WikiCrossReference.target_page_id",
@@ -1016,41 +1020,41 @@ class WikiPageSection(Base):
     heading: Mapped[str] = mapped_column(String(512), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     section_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    source_document_id: Mapped[Optional[str]] = mapped_column(
+    source_document_id: Mapped[str | None] = mapped_column(
         ForeignKey("documents.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     source_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    contradiction_flag: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    superseded_by_section_id: Mapped[Optional[str]] = mapped_column(
+    contradiction_flag: Mapped[str | None] = mapped_column(Text, nullable=True)
+    superseded_by_section_id: Mapped[str | None] = mapped_column(
         ForeignKey("wiki_page_sections.id", ondelete="SET NULL"),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    wiki_page: Mapped["WikiPage"] = relationship(
+    wiki_page: Mapped[WikiPage] = relationship(
         "WikiPage",
         back_populates="sections",
     )
-    source_document: Mapped[Optional["Document"]] = relationship(
+    source_document: Mapped[Document | None] = relationship(
         "Document",
         foreign_keys=[source_document_id],
     )
-    superseded_by: Mapped[Optional["WikiPageSection"]] = relationship(
+    superseded_by: Mapped[WikiPageSection | None] = relationship(
         "WikiPageSection",
         remote_side="WikiPageSection.id",
         foreign_keys=[superseded_by_section_id],
@@ -1085,21 +1089,21 @@ class WikiCrossReference(Base):
         SQLEnum(WikiRefType, name="wiki_ref_type_enum"),
         nullable=False,
     )
-    context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    context: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    source_page: Mapped["WikiPage"] = relationship(
+    source_page: Mapped[WikiPage] = relationship(
         "WikiPage",
         back_populates="source_refs",
         foreign_keys=[source_page_id],
     )
-    target_page: Mapped["WikiPage"] = relationship(
+    target_page: Mapped[WikiPage] = relationship(
         "WikiPage",
         back_populates="target_refs",
         foreign_keys=[target_page_id],
@@ -1135,20 +1139,20 @@ class WikiCompileJob(Base):
         default=CompileStatus.PENDING,
         nullable=False,
     )
-    compiled_at: Mapped[Optional[datetime]] = mapped_column(
+    compiled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relationships
-    document: Mapped["Document"] = relationship(
+    document: Mapped[Document] = relationship(
         "Document",
         foreign_keys=[document_id],
         back_populates="wiki_compile_jobs",
@@ -1186,23 +1190,23 @@ class ApiKey(Base):
         unique=True,
         comment="bcrypt hash of the full API key",
     )
-    expires_at: Mapped[Optional[datetime]] = mapped_column(
+    expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         index=True,
     )
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+    revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
-    last_used_at: Mapped[Optional[datetime]] = mapped_column(
+    last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
     )

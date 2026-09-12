@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -23,7 +23,7 @@ CLI_LOG_FORMAT = (
 
 def setup_logger(
     level: str = "INFO",
-    log_dir: Optional[Path] = None,
+    log_dir: Path | None = None,
     rotation: str = "1 week",
     retention: str = "1 month",
     console_format: str = DEFAULT_LOG_FORMAT,
@@ -44,6 +44,7 @@ def setup_logger(
     if log_dir is None:
         try:
             from grimoire.config import get_settings
+
             settings = get_settings()
             log_dir = Path(settings.logging.log_dir)
             rotation = settings.logging.rotation

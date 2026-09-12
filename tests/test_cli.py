@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -58,8 +57,20 @@ class TestCommandRegistration:
     def test_main_help(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
-        for cmd in ["ingest", "ask", "search", "generate", "category", "watch",
-                     "status", "config", "cache", "tag", "untag", "docs"]:
+        for cmd in [
+            "ingest",
+            "ask",
+            "search",
+            "generate",
+            "category",
+            "watch",
+            "status",
+            "config",
+            "cache",
+            "tag",
+            "untag",
+            "docs",
+        ]:
             assert cmd in result.output
 
     def test_version(self, runner: CliRunner) -> None:
@@ -67,19 +78,24 @@ class TestCommandRegistration:
         assert result.exit_code == 0
         assert "2.0.0" in result.output
 
-    @pytest.mark.parametrize("cmd,expected", [
-        (["ingest", "--help"], "--recursive"),
-        (["ask", "--help"], "QUESTION"),
-        (["search", "--help"], "--format"),
-        (["generate", "--help"], "summary"),
-        (["category", "--help"], "add"),
-        (["watch", "--help"], "start"),
-        (["config", "--help"], "init"),
-        (["cache", "--help"], "clear"),
-        (["status", "--help"], "--detailed"),
-        (["docs", "--help"], "list"),
-    ])
-    def test_subcommand_help(self, runner: CliRunner, cmd: list[str], expected: str) -> None:
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            (["ingest", "--help"], "--recursive"),
+            (["ask", "--help"], "QUESTION"),
+            (["search", "--help"], "--format"),
+            (["generate", "--help"], "summary"),
+            (["category", "--help"], "add"),
+            (["watch", "--help"], "start"),
+            (["config", "--help"], "init"),
+            (["cache", "--help"], "clear"),
+            (["status", "--help"], "--detailed"),
+            (["docs", "--help"], "list"),
+        ],
+    )
+    def test_subcommand_help(
+        self, runner: CliRunner, cmd: list[str], expected: str
+    ) -> None:
         result = runner.invoke(cli, cmd)
         assert result.exit_code == 0
         assert expected in result.output
@@ -98,14 +114,20 @@ class TestIngestCommand:
     @patch(f"{_INGEST}.build_ingestion_agent")
     @patch(f"{_INGEST}.get_db_context")
     def test_ingest_single_file(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
-        runner: CliRunner, tmp_path: Path,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
         test_file = tmp_path / "doc.pdf"
         test_file.write_text("test")
 
-        mock_result = MagicMock(status="completed", chunks_created=5, tags_applied=2, duration_ms=150)
+        mock_result = MagicMock(
+            status="completed", chunks_created=5, tags_applied=2, duration_ms=150
+        )
         mock_agent = MagicMock()
         mock_agent.ingest_file = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
@@ -120,15 +142,27 @@ class TestIngestCommand:
     @patch(f"{_INGEST}.build_ingestion_agent")
     @patch(f"{_INGEST}.get_db_context")
     def test_ingest_directory(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
-        runner: CliRunner, tmp_path: Path,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
         (tmp_path / "a.txt").write_text("a")
 
         mock_result = MagicMock(
-            succeeded=3, total=4, skipped=0, failed=1, duration_ms=500,
-            results=[MagicMock(status="failed", file_path="/x.pdf", error_message="parse error")],
+            succeeded=3,
+            total=4,
+            skipped=0,
+            failed=1,
+            duration_ms=500,
+            results=[
+                MagicMock(
+                    status="failed", file_path="/x.pdf", error_message="parse error"
+                )
+            ],
         )
         mock_agent = MagicMock()
         mock_agent.ingest_directory = AsyncMock(return_value=mock_result)
@@ -145,9 +179,13 @@ class TestIngestCommand:
     @patch(f"{_INGEST}.build_ingestion_agent")
     @patch(f"{_INGEST}.get_db_context")
     def test_ingest_skipped_duplicate(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
-        runner: CliRunner, tmp_path: Path,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
         test_file = tmp_path / "dup.pdf"
         test_file.write_text("test")
@@ -175,12 +213,19 @@ class TestAskCommand:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_ask_with_answer(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
-        mock_cite = MagicMock(document_title="Paper A", document_id="abc12345", relevance_score=0.92)
-        mock_result = MagicMock(answer="The key finding is X.", citations=[mock_cite], cached=False)
+        mock_cite = MagicMock(
+            document_title="Paper A", document_id="abc12345", relevance_score=0.92
+        )
+        mock_result = MagicMock(
+            answer="The key finding is X.", citations=[mock_cite], cached=False
+        )
 
         mock_agent = MagicMock()
         mock_agent.query = AsyncMock(return_value=mock_result)
@@ -197,8 +242,11 @@ class TestAskCommand:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_ask_no_results(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(answer="", citations=[])
@@ -216,8 +264,11 @@ class TestAskCommand:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_ask_with_tag_filter(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(answer="Answer.", citations=[], cached=False)
@@ -226,7 +277,9 @@ class TestAskCommand:
         mock_build.return_value = mock_agent
         mock_ctx.return_value = _mock_db_ctx()
 
-        result = runner.invoke(cli, ["ask", "test?", "--tag", "research", "--tag", "ai"])
+        result = runner.invoke(
+            cli, ["ask", "test?", "--tag", "research", "--tag", "ai"]
+        )
         assert result.exit_code == 0
         call_kwargs = mock_agent.query.call_args[1]
         assert call_kwargs["filter_dict"] == {"tags": ["research", "ai"]}
@@ -236,8 +289,11 @@ class TestAskCommand:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_ask_no_cache_flag(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(answer="Answer.", citations=[], cached=False)
@@ -260,8 +316,11 @@ class TestAskSecurityFilters:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_severity_and_tactic_flags_compose(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(answer="A.", citations=[], cached=False)
@@ -284,8 +343,11 @@ class TestAskSecurityFilters:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_all_security_flags_propagate(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(answer="A.", citations=[], cached=False)
@@ -297,15 +359,24 @@ class TestAskSecurityFilters:
         result = runner.invoke(
             cli,
             [
-                "ask", "q",
-                "--severity", "critical",
-                "--tactic", "lateral-movement",
-                "--technique", "T1021",
-                "--source-type", "sigma_rule",
-                "--cve-id", "CVE-2024-1234",
-                "--content-date-after", "2024-01-01",
-                "--platform", "windows",
-                "--platform", "linux",
+                "ask",
+                "q",
+                "--severity",
+                "critical",
+                "--tactic",
+                "lateral-movement",
+                "--technique",
+                "T1021",
+                "--source-type",
+                "sigma_rule",
+                "--cve-id",
+                "CVE-2024-1234",
+                "--content-date-after",
+                "2024-01-01",
+                "--platform",
+                "windows",
+                "--platform",
+                "linux",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -323,8 +394,11 @@ class TestAskSecurityFilters:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_no_security_flags_keeps_filter_dict_none(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(answer="A.", citations=[], cached=False)
@@ -346,13 +420,19 @@ class TestIngestSourceTypeOverride:
     @patch(f"{_INGEST}.build_ingestion_agent")
     @patch(f"{_INGEST}.get_db_context")
     def test_source_type_passed_to_ingest_file(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
-        runner: CliRunner, tmp_path,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        runner: CliRunner,
+        tmp_path,
     ) -> None:
         test_file = tmp_path / "rule.yml"
         test_file.write_text("title: x\n")
-        mock_result = MagicMock(status="completed", chunks_created=1, tags_applied=0, duration_ms=1)
+        mock_result = MagicMock(
+            status="completed", chunks_created=1, tags_applied=0, duration_ms=1
+        )
         mock_agent = MagicMock()
         mock_agent.ingest_file = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
@@ -370,11 +450,17 @@ class TestIngestSourceTypeOverride:
     @patch(f"{_INGEST}.build_ingestion_agent")
     @patch(f"{_INGEST}.get_db_context")
     def test_source_type_passed_to_ingest_directory(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
-        runner: CliRunner, tmp_path,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        runner: CliRunner,
+        tmp_path,
     ) -> None:
-        mock_result = MagicMock(succeeded=0, total=0, skipped=0, failed=0, duration_ms=1, results=[])
+        mock_result = MagicMock(
+            succeeded=0, total=0, skipped=0, failed=0, duration_ms=1, results=[]
+        )
         mock_agent = MagicMock()
         mock_agent.ingest_directory = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
@@ -387,13 +473,20 @@ class TestIngestSourceTypeOverride:
         assert result.exit_code == 0, result.output
         assert mock_agent.ingest_directory.call_args[1]["source_type"] == "nvd_cve"
 
-    def test_invalid_source_type_rejected_by_click(self, runner: CliRunner, tmp_path) -> None:
+    def test_invalid_source_type_rejected_by_click(
+        self, runner: CliRunner, tmp_path
+    ) -> None:
         """Click's Choice validator must reject unknown source_type values."""
         f = tmp_path / "a.txt"
         f.write_text("x")
-        result = runner.invoke(cli, ["ingest", str(f), "--source-type", "totally_invalid"])
+        result = runner.invoke(
+            cli, ["ingest", str(f), "--source-type", "totally_invalid"]
+        )
         assert result.exit_code != 0
-        assert "Invalid value for '--source-type'" in result.output or "Invalid value" in result.output
+        assert (
+            "Invalid value for '--source-type'" in result.output
+            or "Invalid value" in result.output
+        )
 
 
 class TestSearchCommand:
@@ -404,14 +497,22 @@ class TestSearchCommand:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_search_text_output(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(
-            total_results=2, duration_ms=42,
+            total_results=2,
+            duration_ms=42,
             results=[
-                {"document_title": "Doc A", "score": 0.95, "content": "Some content here"},
+                {
+                    "document_title": "Doc A",
+                    "score": 0.95,
+                    "content": "Some content here",
+                },
                 {"document_title": "Doc B", "score": 0.85, "content": "Other content"},
             ],
         )
@@ -430,12 +531,19 @@ class TestSearchCommand:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_search_json_output(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock()
-        mock_result.model_dump.return_value = {"query": "test", "results": [], "total_results": 0}
+        mock_result.model_dump.return_value = {
+            "query": "test",
+            "results": [],
+            "total_results": 0,
+        }
         mock_agent = MagicMock()
         mock_agent.search = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
@@ -451,14 +559,22 @@ class TestSearchCommand:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_search_markdown_output(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(
-            total_results=2, duration_ms=42,
+            total_results=2,
+            duration_ms=42,
             results=[
-                {"document_title": "Doc A", "score": 0.95, "content": "Some content here"},
+                {
+                    "document_title": "Doc A",
+                    "score": 0.95,
+                    "content": "Some content here",
+                },
                 {"document_title": "Doc B", "score": 0.85, "content": "Other content"},
             ],
         )
@@ -467,7 +583,9 @@ class TestSearchCommand:
         mock_build.return_value = mock_agent
         mock_ctx.return_value = _mock_db_ctx()
 
-        result = runner.invoke(cli, ["search", "machine learning", "--format", "markdown"])
+        result = runner.invoke(
+            cli, ["search", "machine learning", "--format", "markdown"]
+        )
         assert result.exit_code == 0
         assert "| #" in result.output
         assert "|---" in result.output
@@ -479,8 +597,11 @@ class TestSearchCommand:
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
     def test_search_no_results(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock(total_results=0, duration_ms=5, results=[])
@@ -507,11 +628,19 @@ class TestGenerateCommand:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_summary(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
-        mock_result = MagicMock(content="This is a summary.", cached=False, duration_ms=200, model_used="llama3")
+        mock_result = MagicMock(
+            content="This is a summary.",
+            cached=False,
+            duration_ms=200,
+            model_used="llama3",
+        )
         mock_agent = MagicMock()
         mock_agent.generate_summary = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
@@ -526,17 +655,24 @@ class TestGenerateCommand:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_flashcards(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
-        mock_result = MagicMock(content="Q: What?\nA: That.", cached=False, duration_ms=100, model_used="")
+        mock_result = MagicMock(
+            content="Q: What?\nA: That.", cached=False, duration_ms=100, model_used=""
+        )
         mock_agent = MagicMock()
         mock_agent.generate_flash_cards = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
         mock_ctx.return_value = _mock_db_ctx()
 
-        result = runner.invoke(cli, ["generate", "flashcards", "-d", "abc123", "-n", "5"])
+        result = runner.invoke(
+            cli, ["generate", "flashcards", "-d", "abc123", "-n", "5"]
+        )
         assert result.exit_code == 0
         assert "What?" in result.output
 
@@ -545,11 +681,16 @@ class TestGenerateCommand:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_cliff_notes(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
-        mock_result = MagicMock(content="Cliff notes content.", cached=True, duration_ms=0, model_used="")
+        mock_result = MagicMock(
+            content="Cliff notes content.", cached=True, duration_ms=0, model_used=""
+        )
         mock_agent = MagicMock()
         mock_agent.generate_cliff_notes = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
@@ -565,11 +706,16 @@ class TestGenerateCommand:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_outline(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
-        mock_result = MagicMock(content="1. Intro\n2. Methods", cached=False, duration_ms=50, model_used="")
+        mock_result = MagicMock(
+            content="1. Intro\n2. Methods", cached=False, duration_ms=50, model_used=""
+        )
         mock_agent = MagicMock()
         mock_agent.generate_outline = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
@@ -584,18 +730,26 @@ class TestGenerateCommand:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_json_output(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_result = MagicMock()
-        mock_result.model_dump.return_value = {"content": "test output", "cached": False}
+        mock_result.model_dump.return_value = {
+            "content": "test output",
+            "cached": False,
+        }
         mock_agent = MagicMock()
         mock_agent.generate_summary = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
         mock_ctx.return_value = _mock_db_ctx()
 
-        result = runner.invoke(cli, ["generate", "summary", "-d", "id1", "--format", "json"])
+        result = runner.invoke(
+            cli, ["generate", "summary", "-d", "id1", "--format", "json"]
+        )
         assert result.exit_code == 0
         parsed = json.loads(result.output)
         assert parsed["content"] == "test output"
@@ -615,11 +769,14 @@ class TestConfigCommand:
         assert result.exit_code == 0
         assert outfile.exists()
         import yaml
+
         data = yaml.safe_load(outfile.read_text())
         assert "llm" in data
         assert "database" in data
 
-    def test_config_init_overwrite_decline(self, runner: CliRunner, tmp_path: Path) -> None:
+    def test_config_init_overwrite_decline(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
         outfile = tmp_path / "grimoire.yaml"
         outfile.write_text("existing")
         result = runner.invoke(cli, ["config", "init", "-o", str(outfile)], input="n\n")
@@ -637,7 +794,9 @@ class TestConfigCommand:
         assert "llama3.2" in result.output
 
     @patch("grimoire.cli.config.get_settings")
-    def test_config_show_section(self, mock_settings: MagicMock, runner: CliRunner) -> None:
+    def test_config_show_section(
+        self, mock_settings: MagicMock, runner: CliRunner
+    ) -> None:
         mock_settings.return_value.model_dump.return_value = {
             "llm": {"model": "llama3.2"},
             "database": {"url": "sqlite:///test.db"},
@@ -647,7 +806,9 @@ class TestConfigCommand:
         assert "llama3.2" in result.output
 
     @patch("grimoire.cli.config.get_settings")
-    def test_config_show_invalid_section(self, mock_settings: MagicMock, runner: CliRunner) -> None:
+    def test_config_show_invalid_section(
+        self, mock_settings: MagicMock, runner: CliRunner
+    ) -> None:
         mock_settings.return_value.model_dump.return_value = {"llm": {}}
         result = runner.invoke(cli, ["config", "show", "-s", "nonexistent"])
         assert result.exit_code == 0
@@ -666,8 +827,10 @@ class TestStatusCommand:
     @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_STATUS}.get_db_context")
     def test_status_basic(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -688,10 +851,13 @@ class TestStatusCommand:
     @patch("grimoire.cli.status.CacheFactory")
     @patch("grimoire.cli.status.get_settings")
     def test_cache_stats(
-        self, mock_settings: MagicMock, mock_factory: MagicMock,
+        self,
+        mock_settings: MagicMock,
+        mock_factory: MagicMock,
         runner: CliRunner,
     ) -> None:
         from grimoire.core.cache import DiskCache
+
         mock_cache = MagicMock(spec=DiskCache)
         mock_cache.get_stats.return_value = {"size": 100, "volume": 1024}
         mock_factory.create.return_value = mock_cache
@@ -705,7 +871,9 @@ class TestStatusCommand:
     @patch("grimoire.cli.status.CacheFactory")
     @patch("grimoire.cli.status.get_settings")
     def test_cache_clear(
-        self, mock_settings: MagicMock, mock_factory: MagicMock,
+        self,
+        mock_settings: MagicMock,
+        mock_factory: MagicMock,
         runner: CliRunner,
     ) -> None:
         mock_cache = AsyncMock()
@@ -747,15 +915,19 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_all(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
         mock_exec = MagicMock()
         mock_exec.scalars.return_value.all.return_value = [
             _make_mock_doc(title="Doc A"),
-            _make_mock_doc(doc_id="bbbb2222-0000-0000-0000-000000000000", title="Doc B"),
+            _make_mock_doc(
+                doc_id="bbbb2222-0000-0000-0000-000000000000", title="Doc B"
+            ),
         ]
         mock_session.execute = AsyncMock(return_value=mock_exec)
 
@@ -774,8 +946,10 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_by_category(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -798,8 +972,10 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_by_search(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -822,8 +998,10 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_by_since_relative(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -846,8 +1024,10 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_by_since_absolute(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -870,8 +1050,10 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_combined_filters(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -886,9 +1068,19 @@ class TestDocsListCommand:
         ctx.__aexit__ = AsyncMock(return_value=False)
         mock_ctx.return_value = ctx
 
-        result = runner.invoke(cli, [
-            "docs", "list", "--category", "AI", "--search", "deep", "--since", "7d",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "docs",
+                "list",
+                "--category",
+                "AI",
+                "--search",
+                "deep",
+                "--since",
+                "7d",
+            ],
+        )
         assert result.exit_code == 0
         assert "Filtered Doc" in result.output
 
@@ -896,8 +1088,10 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_json_output(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -927,8 +1121,10 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_markdown_output(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -954,8 +1150,10 @@ class TestDocsListCommand:
     @patch(f"{_DOCS}.setup_db", new_callable=AsyncMock)
     @patch(f"{_DOCS}.get_db_context")
     def test_docs_list_empty(
-        self, mock_ctx: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -976,9 +1174,11 @@ class TestDocsListCommand:
         """Invalid --since value should produce a clean error."""
         # _parse_since runs before DB setup, so no mocking needed for the bad-param path
         # However, setup_db is called first, so we need to mock it
-        with patch(f"{_DOCS}.setup_db", new_callable=AsyncMock), \
-             patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock), \
-             patch(f"{_DOCS}.get_db_context") as mock_ctx:
+        with (
+            patch(f"{_DOCS}.setup_db", new_callable=AsyncMock),
+            patch(f"{_DOCS}.teardown_db", new_callable=AsyncMock),
+            patch(f"{_DOCS}.get_db_context") as mock_ctx,
+        ):
             mock_session = AsyncMock()
             mock_exec = MagicMock()
             mock_exec.scalars.return_value.all.return_value = []
@@ -1007,8 +1207,11 @@ class TestGenerateWithCategory:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_summary_with_category(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -1022,12 +1225,19 @@ class TestGenerateWithCategory:
         ctx.__aexit__ = AsyncMock(return_value=False)
         mock_ctx.return_value = ctx
 
-        mock_result = MagicMock(content="Category summary.", cached=False, duration_ms=100, model_used="llama3")
+        mock_result = MagicMock(
+            content="Category summary.",
+            cached=False,
+            duration_ms=100,
+            model_used="llama3",
+        )
         mock_agent = MagicMock()
         mock_agent.generate_summary = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
 
-        result = runner.invoke(cli, ["generate", "summary", "--category", "machine-learning"])
+        result = runner.invoke(
+            cli, ["generate", "summary", "--category", "machine-learning"]
+        )
         assert result.exit_code == 0
         assert "Category summary." in result.output
 
@@ -1036,8 +1246,11 @@ class TestGenerateWithCategory:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_flashcards_with_category(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -1050,7 +1263,9 @@ class TestGenerateWithCategory:
         ctx.__aexit__ = AsyncMock(return_value=False)
         mock_ctx.return_value = ctx
 
-        mock_result = MagicMock(content="Q: What?\nA: That.", cached=False, duration_ms=50, model_used="")
+        mock_result = MagicMock(
+            content="Q: What?\nA: That.", cached=False, duration_ms=50, model_used=""
+        )
         mock_agent = MagicMock()
         mock_agent.generate_flash_cards = AsyncMock(return_value=mock_result)
         mock_build.return_value = mock_agent
@@ -1064,15 +1279,26 @@ class TestGenerateWithCategory:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_both_flags_error(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_ctx.return_value = _mock_db_ctx()
 
-        result = runner.invoke(cli, [
-            "generate", "summary", "-d", "abc123", "--category", "AI",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "generate",
+                "summary",
+                "-d",
+                "abc123",
+                "--category",
+                "AI",
+            ],
+        )
         assert result.exit_code != 0
         assert "not both" in result.output
 
@@ -1081,8 +1307,11 @@ class TestGenerateWithCategory:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_neither_flag_error(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_ctx.return_value = _mock_db_ctx()
@@ -1096,8 +1325,11 @@ class TestGenerateWithCategory:
     @patch(f"{_GEN}.build_content_gen_agent")
     @patch(f"{_GEN}.get_db_context")
     def test_generate_category_no_docs(
-        self, mock_ctx: MagicMock, mock_build: MagicMock,
-        mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_session = AsyncMock()
@@ -1110,7 +1342,9 @@ class TestGenerateWithCategory:
         ctx.__aexit__ = AsyncMock(return_value=False)
         mock_ctx.return_value = ctx
 
-        result = runner.invoke(cli, ["generate", "summary", "--category", "empty-category"])
+        result = runner.invoke(
+            cli, ["generate", "summary", "--category", "empty-category"]
+        )
         assert result.exit_code == 0
         assert "No documents found in category" in result.output
 
@@ -1135,7 +1369,10 @@ class TestCLIEdgeCases:
     @patch(f"{_GEN}.setup_db", new_callable=AsyncMock)
     @patch(f"{_GEN}.get_db_context")
     def test_generate_no_doc_id(
-        self, mock_ctx: MagicMock, mock_setup: AsyncMock, mock_teardown: AsyncMock,
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
         runner: CliRunner,
     ) -> None:
         mock_ctx.return_value = _mock_db_ctx()

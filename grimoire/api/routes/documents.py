@@ -76,15 +76,21 @@ async def list_documents(
                 id=doc.id,
                 title=doc.title,
                 source_path=doc.source_path,
-                file_type=doc.file_type.value
-                if hasattr(doc.file_type, "value")
-                else str(doc.file_type),
-                storage_backend=doc.storage_backend.value
-                if hasattr(doc.storage_backend, "value")
-                else str(doc.storage_backend),
-                processing_status=doc.processing_status.value
-                if hasattr(doc.processing_status, "value")
-                else str(doc.processing_status),
+                file_type=(
+                    doc.file_type.value
+                    if hasattr(doc.file_type, "value")
+                    else str(doc.file_type)
+                ),
+                storage_backend=(
+                    doc.storage_backend.value
+                    if hasattr(doc.storage_backend, "value")
+                    else str(doc.storage_backend)
+                ),
+                processing_status=(
+                    doc.processing_status.value
+                    if hasattr(doc.processing_status, "value")
+                    else str(doc.processing_status)
+                ),
                 size_bytes=doc.size_bytes,
                 created_at=doc.created_at.isoformat() if doc.created_at else None,
                 updated_at=doc.updated_at.isoformat() if doc.updated_at else None,
@@ -113,15 +119,21 @@ async def get_document(
         id=doc.id,
         title=doc.title,
         source_path=doc.source_path,
-        file_type=doc.file_type.value
-        if hasattr(doc.file_type, "value")
-        else str(doc.file_type),
-        storage_backend=doc.storage_backend.value
-        if hasattr(doc.storage_backend, "value")
-        else str(doc.storage_backend),
-        processing_status=doc.processing_status.value
-        if hasattr(doc.processing_status, "value")
-        else str(doc.processing_status),
+        file_type=(
+            doc.file_type.value
+            if hasattr(doc.file_type, "value")
+            else str(doc.file_type)
+        ),
+        storage_backend=(
+            doc.storage_backend.value
+            if hasattr(doc.storage_backend, "value")
+            else str(doc.storage_backend)
+        ),
+        processing_status=(
+            doc.processing_status.value
+            if hasattr(doc.processing_status, "value")
+            else str(doc.processing_status)
+        ),
         size_bytes=doc.size_bytes,
         created_at=doc.created_at.isoformat() if doc.created_at else None,
         updated_at=doc.updated_at.isoformat() if doc.updated_at else None,
@@ -146,8 +158,8 @@ async def delete_document(
     # Gracefully handle case where vector store service doesn't exist yet
     try:
         try:
-            from grimoire.services.vector_store import get_vector_store_service
             from grimoire.config.settings import get_settings
+            from grimoire.services.vector_store import get_vector_store_service
 
             settings = get_settings()
             vector_store = get_vector_store_service(settings)

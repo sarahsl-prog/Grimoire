@@ -6,8 +6,6 @@ smaller ones. This produces high-quality chunks while respecting natural
 text boundaries.
 """
 
-from typing import List, Optional
-
 from pydantic import Field
 
 from grimoire.core.chunker.base import Chunk, ChunkConfig, Chunker, ChunkingStrategy
@@ -37,7 +35,7 @@ class RecursiveChunkConfig(ChunkConfig):
 
     strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE
 
-    separators: List[str] = Field(
+    separators: list[str] = Field(
         default_factory=lambda: [
             "\n\n",  # Paragraphs
             "\n",  # Lines
@@ -100,7 +98,7 @@ class RecursiveCharacterTextSplitter(Chunker):
         ```
     """
 
-    def __init__(self, config: Optional[RecursiveChunkConfig] = None) -> None:
+    def __init__(self, config: RecursiveChunkConfig | None = None) -> None:
         """Initialize recursive text splitter.
 
         Args:
@@ -111,7 +109,7 @@ class RecursiveCharacterTextSplitter(Chunker):
 
     def _split_text_with_separator(
         self, text: str, separator: str, keep_separator: bool = True
-    ) -> List[str]:
+    ) -> list[str]:
         """Split text using a separator, optionally keeping it.
 
         Args:
@@ -137,7 +135,7 @@ class RecursiveCharacterTextSplitter(Chunker):
             return [p for p in parts if p]
 
         # Re-attach separator to preceding chunk
-        result: List[str] = []
+        result: list[str] = []
         for i, part in enumerate(parts):
             if i < len(parts) - 1:
                 if self.config.is_separator_regex:
@@ -153,8 +151,8 @@ class RecursiveCharacterTextSplitter(Chunker):
         return [r for r in result if r]
 
     def _merge_splits_with_overlap(
-        self, splits: List[str], separator: str = ""
-    ) -> List[str]:
+        self, splits: list[str], separator: str = ""
+    ) -> list[str]:
         """Merge splits into chunks with target size and overlap.
 
         Args:
@@ -172,8 +170,8 @@ class RecursiveCharacterTextSplitter(Chunker):
         if not splits:
             return []
 
-        chunks: List[str] = []
-        current_chunk: List[str] = []
+        chunks: list[str] = []
+        current_chunk: list[str] = []
         current_chars = 0
 
         for split in splits:
@@ -185,7 +183,7 @@ class RecursiveCharacterTextSplitter(Chunker):
                 chunks.append(separator.join(current_chunk))
 
                 # Calculate overlap: keep last overlap_chars worth of content
-                overlap_splits: List[str] = []
+                overlap_splits: list[str] = []
                 overlap_len = 0
                 for prev_split in reversed(current_chunk):
                     if overlap_len + len(prev_split) <= overlap_chars:
@@ -206,7 +204,7 @@ class RecursiveCharacterTextSplitter(Chunker):
 
         return [c.strip() for c in chunks if c.strip()]
 
-    def _recursive_split(self, text: str, separators: List[str]) -> List[str]:
+    def _recursive_split(self, text: str, separators: list[str]) -> list[str]:
         """Recursively split text using hierarchical separators.
 
         Processes splits in their original order to preserve document sequence.
@@ -236,8 +234,8 @@ class RecursiveCharacterTextSplitter(Chunker):
         chars_per_token = 4
         target_chars = self.config.chunk_size * chars_per_token
 
-        result: List[str] = []
-        current_chunk: List[str] = []
+        result: list[str] = []
+        current_chunk: list[str] = []
         current_chars = 0
 
         for s in splits:
@@ -277,7 +275,7 @@ class RecursiveCharacterTextSplitter(Chunker):
 
         return result
 
-    async def chunk(self, text: str, doc_id: Optional[str] = None) -> List[Chunk]:
+    async def chunk(self, text: str, doc_id: str | None = None) -> list[Chunk]:
         """Split text recursively using hierarchical separators.
 
         Args:
@@ -297,7 +295,7 @@ class RecursiveCharacterTextSplitter(Chunker):
         chunk_texts = self._recursive_split(text, self.config.separators)
 
         # Create Chunk objects
-        chunks: List[Chunk] = []
+        chunks: list[Chunk] = []
         for i, content in enumerate(chunk_texts):
             if not content.strip():
                 continue

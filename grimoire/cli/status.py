@@ -30,8 +30,9 @@ async def status(ctx: click.Context, detailed: bool) -> None:
     """
     await setup_db()
     try:
-        from grimoire.db.models import Category, Document, ProcessingStatus
         from sqlalchemy import func, select
+
+        from grimoire.db.models import Category, Document, ProcessingStatus
 
         async with get_db_context() as db:
             # Total documents

@@ -4,12 +4,14 @@ This module provides repository classes for accessing and manipulating
 domain entities through the database.
 """
 
-from typing import TypeVar, Generic, List, Optional, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Generic, List, Optional, TypeVar
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 
-from grimoire.db.models import Document, Chunk, Category, DocumentTag, WikiPage
+from grimoire.db.models import Category, Chunk, Document, DocumentTag, WikiPage
 
 # Type variable for generic repository
 T = TypeVar("T")
@@ -41,7 +43,7 @@ class BaseRepository(Generic[T]):
         await self.session.flush()
         return entity
 
-    async def get_by_id(self, entity_id: str) -> Optional[T]:
+    async def get_by_id(self, entity_id: str) -> T | None:
         """
         Get an entity by ID.
 
@@ -55,7 +57,7 @@ class BaseRepository(Generic[T]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> List[T]:
+    async def list_all(self) -> list[T]:
         """
         List all entities.
 
@@ -112,7 +114,7 @@ class DocumentRepository(BaseRepository[Document]):
 
     model = Document
 
-    async def get_by_source_path(self, source_path: str) -> Optional[Document]:
+    async def get_by_source_path(self, source_path: str) -> Document | None:
         """
         Get document by source path.
 
@@ -126,7 +128,7 @@ class DocumentRepository(BaseRepository[Document]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_file_hash(self, file_hash: str) -> Optional[Document]:
+    async def get_by_file_hash(self, file_hash: str) -> Document | None:
         """
         Get document by file hash.
 
@@ -140,7 +142,7 @@ class DocumentRepository(BaseRepository[Document]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_by_status(self, status: str) -> List[Document]:
+    async def list_by_status(self, status: str) -> list[Document]:
         """
         List documents by processing status.
 
@@ -154,7 +156,7 @@ class DocumentRepository(BaseRepository[Document]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
-    async def list_chunks(self, document_id: str) -> List[Chunk]:
+    async def list_chunks(self, document_id: str) -> list[Chunk]:
         """
         List chunks for a document.
 
@@ -174,7 +176,7 @@ class CategoryRepository(BaseRepository[Category]):
 
     model = Category
 
-    async def get_by_slug(self, slug: str) -> Optional[Category]:
+    async def get_by_slug(self, slug: str) -> Category | None:
         """
         Get category by slug.
 
@@ -188,7 +190,7 @@ class CategoryRepository(BaseRepository[Category]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_root_categories(self) -> List[Category]:
+    async def get_root_categories(self) -> list[Category]:
         """
         Get root categories (those with no parent).
 
@@ -199,7 +201,7 @@ class CategoryRepository(BaseRepository[Category]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
-    async def get_children(self, parent_id: str) -> List[Category]:
+    async def get_children(self, parent_id: str) -> list[Category]:
         """
         Get child categories of a parent.
 
@@ -219,7 +221,7 @@ class ChunkRepository(BaseRepository[Chunk]):
 
     model = Chunk
 
-    async def list_by_document(self, document_id: str) -> List[Chunk]:
+    async def list_by_document(self, document_id: str) -> list[Chunk]:
         """
         List chunks by document ID.
 
@@ -239,7 +241,7 @@ class DocumentTagRepository(BaseRepository[DocumentTag]):
 
     model = DocumentTag
 
-    async def list_by_document(self, document_id: str) -> List[DocumentTag]:
+    async def list_by_document(self, document_id: str) -> list[DocumentTag]:
         """
         List tags by document ID.
 
@@ -253,7 +255,7 @@ class DocumentTagRepository(BaseRepository[DocumentTag]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
-    async def list_by_category(self, category_id: str) -> List[DocumentTag]:
+    async def list_by_category(self, category_id: str) -> list[DocumentTag]:
         """
         List tags by category ID.
 
@@ -273,7 +275,7 @@ class WikiPageRepository(BaseRepository[WikiPage]):
 
     model = WikiPage
 
-    async def get_by_title(self, title: str) -> Optional[WikiPage]:
+    async def get_by_title(self, title: str) -> WikiPage | None:
         """
         Get wiki page by title.
 

@@ -9,12 +9,10 @@ Tests cover:
 
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 from grimoire.agents.query import (
     Citation,
@@ -23,7 +21,6 @@ from grimoire.agents.query import (
     SearchOnlyResult,
 )
 from grimoire.search.hybrid import HybridResult, HybridSearch
-
 
 # =============================================================================
 # Fixtures
@@ -152,11 +149,15 @@ class TestHybridSearch:
 
     @pytest.mark.asyncio
     async def test_vector_search_returns_results(
-        self, hybrid_search: HybridSearch, mock_db: AsyncMock,
+        self,
+        hybrid_search: HybridSearch,
+        mock_db: AsyncMock,
     ) -> None:
         """Vector search returns scored results."""
         # Patch FTS to return nothing
-        with patch.object(hybrid_search, "_fts_search", new_callable=AsyncMock) as mock_fts:
+        with patch.object(
+            hybrid_search, "_fts_search", new_callable=AsyncMock
+        ) as mock_fts:
             mock_fts.return_value = []
 
             results = await hybrid_search.search(mock_db, "machine learning")
@@ -168,7 +169,9 @@ class TestHybridSearch:
 
     @pytest.mark.asyncio
     async def test_empty_query_returns_empty(
-        self, hybrid_search: HybridSearch, mock_db: AsyncMock,
+        self,
+        hybrid_search: HybridSearch,
+        mock_db: AsyncMock,
     ) -> None:
         """Empty query returns no results."""
         results = await hybrid_search.search(mock_db, "")
@@ -182,18 +185,26 @@ class TestHybridSearch:
         """Merging deduplicates by chunk_id and combines scores."""
         vector_results = [
             make_hybrid_result(
-                chunk_id="shared", score=0.5, vector_score=0.7,
+                chunk_id="shared",
+                score=0.5,
+                vector_score=0.7,
             ),
             make_hybrid_result(
-                chunk_id="vector-only", score=0.3, vector_score=0.4,
+                chunk_id="vector-only",
+                score=0.3,
+                vector_score=0.4,
             ),
         ]
         fts_results = [
             make_hybrid_result(
-                chunk_id="shared", score=0.2, fts_score=0.6,
+                chunk_id="shared",
+                score=0.2,
+                fts_score=0.6,
             ),
             make_hybrid_result(
-                chunk_id="fts-only", score=0.4, fts_score=0.8,
+                chunk_id="fts-only",
+                score=0.4,
+                fts_score=0.8,
             ),
         ]
 
@@ -215,11 +226,15 @@ class TestHybridSearch:
         mock_reranker: MagicMock,
     ) -> None:
         """Reranking reorders results."""
-        with patch.object(hybrid_search, "_fts_search", new_callable=AsyncMock) as mock_fts:
+        with patch.object(
+            hybrid_search, "_fts_search", new_callable=AsyncMock
+        ) as mock_fts:
             mock_fts.return_value = []
 
             results = await hybrid_search.search(
-                mock_db, "test query", rerank=True,
+                mock_db,
+                "test query",
+                rerank=True,
             )
 
         mock_reranker.rerank.assert_called_once()
@@ -232,18 +247,23 @@ class TestHybridSearch:
         mock_reranker: MagicMock,
     ) -> None:
         """Reranking is skipped when rerank=False."""
-        with patch.object(hybrid_search, "_fts_search", new_callable=AsyncMock) as mock_fts:
+        with patch.object(
+            hybrid_search, "_fts_search", new_callable=AsyncMock
+        ) as mock_fts:
             mock_fts.return_value = []
 
             results = await hybrid_search.search(
-                mock_db, "test query", rerank=False,
+                mock_db,
+                "test query",
+                rerank=False,
             )
 
         mock_reranker.rerank.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_vector_search_only(
-        self, hybrid_search: HybridSearch,
+        self,
+        hybrid_search: HybridSearch,
     ) -> None:
         """vector_search_only skips FTS."""
         results = await hybrid_search.vector_search_only("test query")
@@ -264,7 +284,8 @@ class TestHybridSearch:
 
     @pytest.mark.asyncio
     async def test_distance_to_score_conversion(
-        self, hybrid_search: HybridSearch,
+        self,
+        hybrid_search: HybridSearch,
     ) -> None:
         """ChromaDB distances are converted to similarity scores."""
         results = await hybrid_search.vector_search_only("test")
@@ -289,18 +310,24 @@ class TestQueryAgentHappyPath:
         mock_db: AsyncMock,
     ) -> None:
         """Full query pipeline produces answer with citations."""
-        with patch.object(
-            query_agent._hybrid_search, "_fts_search",
-            new_callable=AsyncMock, return_value=[],
-        ):
-            with patch.object(
-                query_agent, "_generate_answer",
+        with (
+            patch.object(
+                query_agent._hybrid_search,
+                "_fts_search",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch.object(
+                query_agent,
+                "_generate_answer",
                 new_callable=AsyncMock,
                 return_value=("Machine learning is a subset of AI [Source 1].", False),
-            ):
-                result = await query_agent.query(
-                    mock_db, "What is machine learning?",
-                )
+            ),
+        ):
+            result = await query_agent.query(
+                mock_db,
+                "What is machine learning?",
+            )
 
         assert result.query == "What is machine learning?"
         assert "Machine learning" in result.answer
@@ -315,7 +342,8 @@ class TestQueryAgentHappyPath:
     ) -> None:
         """Search without LLM generation."""
         with patch.object(
-            query_agent._hybrid_search, "search",
+            query_agent._hybrid_search,
+            "search",
             new_callable=AsyncMock,
             return_value=[
                 make_hybrid_result(content="Result 1"),
@@ -346,8 +374,10 @@ class TestQueryAgentHappyPath:
     ) -> None:
         """No search results returns an appropriate message."""
         with patch.object(
-            query_agent._hybrid_search, "search",
-            new_callable=AsyncMock, return_value=[],
+            query_agent._hybrid_search,
+            "search",
+            new_callable=AsyncMock,
+            return_value=[],
         ):
             result = await query_agent.query(mock_db, "obscure question")
 
@@ -393,17 +423,21 @@ class TestQueryCaching:
         mock_db: AsyncMock,
     ) -> None:
         """Cache misses store new results."""
-        with patch.object(
-            query_agent._hybrid_search, "search",
-            new_callable=AsyncMock,
-            return_value=[make_hybrid_result(content="Some result")],
-        ):
-            with patch.object(
-                query_agent, "_generate_answer",
+        with (
+            patch.object(
+                query_agent._hybrid_search,
+                "search",
+                new_callable=AsyncMock,
+                return_value=[make_hybrid_result(content="Some result")],
+            ),
+            patch.object(
+                query_agent,
+                "_generate_answer",
                 new_callable=AsyncMock,
                 return_value=("Generated answer", False),
-            ):
-                await query_agent.query(mock_db, "uncached question")
+            ),
+        ):
+            await query_agent.query(mock_db, "uncached question")
 
         mock_cache.set.assert_called_once()
 
@@ -416,11 +450,15 @@ class TestQueryCaching:
     ) -> None:
         """Cache can be bypassed with use_cache=False."""
         with patch.object(
-            query_agent._hybrid_search, "search",
-            new_callable=AsyncMock, return_value=[],
+            query_agent._hybrid_search,
+            "search",
+            new_callable=AsyncMock,
+            return_value=[],
         ):
             await query_agent.query(
-                mock_db, "test", use_cache=False,
+                mock_db,
+                "test",
+                use_cache=False,
             )
 
         mock_cache.get.assert_not_called()
@@ -457,13 +495,15 @@ class TestContextAssembly:
         """Citations are built from search results."""
         results = [
             make_hybrid_result(
-                chunk_id="c1", document_id="d1",
+                chunk_id="c1",
+                document_id="d1",
                 content="Short content",
                 score=0.9,
                 document_title="Doc 1",
             ),
             make_hybrid_result(
-                chunk_id="c2", document_id="d2",
+                chunk_id="c2",
+                document_id="d2",
                 content="A" * 300,
                 score=0.7,
                 document_title="Doc 2",
@@ -481,10 +521,12 @@ class TestContextAssembly:
         """Context is assembled with source labels."""
         results = [
             make_hybrid_result(
-                content="First chunk", document_title="Doc A",
+                content="First chunk",
+                document_title="Doc A",
             ),
             make_hybrid_result(
-                chunk_id="c2", content="Second chunk",
+                chunk_id="c2",
+                content="Second chunk",
                 document_title="Doc B",
             ),
         ]
@@ -527,8 +569,10 @@ class TestQueryErrorHandling:
         mock_cache.get = AsyncMock(side_effect=RuntimeError("Redis down"))
 
         with patch.object(
-            query_agent._hybrid_search, "search",
-            new_callable=AsyncMock, return_value=[],
+            query_agent._hybrid_search,
+            "search",
+            new_callable=AsyncMock,
+            return_value=[],
         ):
             result = await query_agent.query(mock_db, "test query")
 
@@ -610,11 +654,9 @@ class TestRetrieverRouting:
 
         class _FakeRetriever(BaseRetriever):
             def __init__(self) -> None:
-                self.calls: List[Any] = []
+                self.calls: list[Any] = []
 
-            async def retrieve(
-                self, db, query, *, top_k=10, filter_dict=None
-            ):
+            async def retrieve(self, db, query, *, top_k=10, filter_dict=None):
                 self.calls.append((query, top_k))
                 return []
 

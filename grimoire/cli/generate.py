@@ -60,13 +60,42 @@ async def _resolve_doc_ids(
 
 
 @generate.command()
-@click.option("--doc-id", "-d", type=str, multiple=True, required=False, help="Document ID (repeatable).")
-@click.option("--category", type=str, default=None, help="Generate from all docs in this category.")
-@click.option("--style", type=click.Choice(["concise", "detailed"]), default="concise", help="Summary style.")
-@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
+@click.option(
+    "--doc-id",
+    "-d",
+    type=str,
+    multiple=True,
+    required=False,
+    help="Document ID (repeatable).",
+)
+@click.option(
+    "--category",
+    type=str,
+    default=None,
+    help="Generate from all docs in this category.",
+)
+@click.option(
+    "--style",
+    type=click.Choice(["concise", "detailed"]),
+    default="concise",
+    help="Summary style.",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format.",
+)
 @click.pass_context
 @async_command
-async def summary(ctx: click.Context, doc_id: tuple[str, ...], category: str | None, style: str, fmt: str) -> None:
+async def summary(
+    ctx: click.Context,
+    doc_id: tuple[str, ...],
+    category: str | None,
+    style: str,
+    fmt: str,
+) -> None:
     """Generate a summary of specified documents.
 
     Examples:
@@ -92,13 +121,37 @@ async def summary(ctx: click.Context, doc_id: tuple[str, ...], category: str | N
 
 
 @generate.command("flashcards")
-@click.option("--doc-id", "-d", type=str, multiple=True, required=False, help="Document ID (repeatable).")
-@click.option("--category", type=str, default=None, help="Generate from all docs in this category.")
+@click.option(
+    "--doc-id",
+    "-d",
+    type=str,
+    multiple=True,
+    required=False,
+    help="Document ID (repeatable).",
+)
+@click.option(
+    "--category",
+    type=str,
+    default=None,
+    help="Generate from all docs in this category.",
+)
 @click.option("--count", "-n", type=int, default=10, help="Number of flash cards.")
-@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format.",
+)
 @click.pass_context
 @async_command
-async def flashcards(ctx: click.Context, doc_id: tuple[str, ...], category: str | None, count: int, fmt: str) -> None:
+async def flashcards(
+    ctx: click.Context,
+    doc_id: tuple[str, ...],
+    category: str | None,
+    count: int,
+    fmt: str,
+) -> None:
     """Generate flash cards from documents.
 
     Examples:
@@ -122,12 +175,32 @@ async def flashcards(ctx: click.Context, doc_id: tuple[str, ...], category: str 
 
 
 @generate.command("cliff-notes")
-@click.option("--doc-id", "-d", type=str, multiple=True, required=False, help="Document ID (repeatable).")
-@click.option("--category", type=str, default=None, help="Generate from all docs in this category.")
-@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
+@click.option(
+    "--doc-id",
+    "-d",
+    type=str,
+    multiple=True,
+    required=False,
+    help="Document ID (repeatable).",
+)
+@click.option(
+    "--category",
+    type=str,
+    default=None,
+    help="Generate from all docs in this category.",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format.",
+)
 @click.pass_context
 @async_command
-async def cliff_notes(ctx: click.Context, doc_id: tuple[str, ...], category: str | None, fmt: str) -> None:
+async def cliff_notes(
+    ctx: click.Context, doc_id: tuple[str, ...], category: str | None, fmt: str
+) -> None:
     """Generate cliff notes from documents.
 
     Examples:
@@ -151,12 +224,32 @@ async def cliff_notes(ctx: click.Context, doc_id: tuple[str, ...], category: str
 
 
 @generate.command()
-@click.option("--doc-id", "-d", type=str, multiple=True, required=False, help="Document ID (repeatable).")
-@click.option("--category", type=str, default=None, help="Generate from all docs in this category.")
-@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="Output format.")
+@click.option(
+    "--doc-id",
+    "-d",
+    type=str,
+    multiple=True,
+    required=False,
+    help="Document ID (repeatable).",
+)
+@click.option(
+    "--category",
+    type=str,
+    default=None,
+    help="Generate from all docs in this category.",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format.",
+)
 @click.pass_context
 @async_command
-async def outline(ctx: click.Context, doc_id: tuple[str, ...], category: str | None, fmt: str) -> None:
+async def outline(
+    ctx: click.Context, doc_id: tuple[str, ...], category: str | None, fmt: str
+) -> None:
     """Generate an outline from documents.
 
     Examples:

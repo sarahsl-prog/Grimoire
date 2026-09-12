@@ -9,7 +9,7 @@ are more important than fixed character counts.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, List, Optional
+from typing import Any
 
 import numpy as np
 from pydantic import Field, field_validator
@@ -82,7 +82,7 @@ class SemanticChunker(Chunker):
         ```
     """
 
-    def __init__(self, config: Optional[SemanticChunkConfig] = None) -> None:
+    def __init__(self, config: SemanticChunkConfig | None = None) -> None:
         """Initialize semantic chunker.
 
         Args:
@@ -90,9 +90,9 @@ class SemanticChunker(Chunker):
         """
         super().__init__(config or SemanticChunkConfig())
         self.config: SemanticChunkConfig  # Type hint for IDE
-        self._embedding_model: Optional[Any] = None
+        self._embedding_model: Any | None = None
 
-    def _get_embedding_model(self) -> Optional[Any]:
+    def _get_embedding_model(self) -> Any | None:
         """Lazy-load the embedding model.
 
         Returns:
@@ -108,7 +108,7 @@ class SemanticChunker(Chunker):
                 pass
         return self._embedding_model
 
-    def _split_into_sentences(self, text: str) -> List[str]:
+    def _split_into_sentences(self, text: str) -> list[str]:
         """Split text into sentences.
 
         Args:
@@ -124,7 +124,7 @@ class SemanticChunker(Chunker):
         sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])|(?<=[.!?])\s*$", text.strip())
         return [s.strip() for s in sentences if s.strip()]
 
-    async def _compute_embeddings(self, sentences: List[str]) -> Optional[np.ndarray]:
+    async def _compute_embeddings(self, sentences: list[str]) -> np.ndarray | None:
         """Compute embeddings for sentences.
 
         Args:
@@ -146,8 +146,8 @@ class SemanticChunker(Chunker):
             return None
 
     def _find_semantic_boundaries(
-        self, sentences: List[str], embeddings: np.ndarray
-    ) -> List[int]:
+        self, sentences: list[str], embeddings: np.ndarray
+    ) -> list[int]:
         """Find indices where semantic similarity drops below threshold.
 
         Args:
@@ -177,7 +177,7 @@ class SemanticChunker(Chunker):
 
         return boundaries
 
-    async def chunk(self, text: str, doc_id: Optional[str] = None) -> List[Chunk]:
+    async def chunk(self, text: str, doc_id: str | None = None) -> list[Chunk]:
         """Split text into semantically coherent chunks.
 
         Uses embeddings to detect topic boundaries and split accordingly.
@@ -212,7 +212,7 @@ class SemanticChunker(Chunker):
             boundaries = self._fallback_boundaries(sentences)
 
         # Create chunks from boundaries
-        chunks: List[Chunk] = []
+        chunks: list[Chunk] = []
         for i in range(len(boundaries)):
             start_idx = boundaries[i]
             end_idx = boundaries[i + 1] if i + 1 < len(boundaries) else len(sentences)
@@ -250,7 +250,7 @@ class SemanticChunker(Chunker):
 
         return chunks
 
-    def _fallback_boundaries(self, sentences: List[str]) -> List[int]:
+    def _fallback_boundaries(self, sentences: list[str]) -> list[int]:
         """Create boundaries based on min_chunk_size when embeddings unavailable.
 
         Args:

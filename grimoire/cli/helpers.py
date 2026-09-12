@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import click
 
@@ -49,12 +50,12 @@ async def teardown_db() -> None:
 
 def build_ingestion_agent() -> Any:
     """Create an IngestionAgent from current settings."""
+    from grimoire.agents.ingestion import IngestionAgent
     from grimoire.core.cache import CacheFactory
     from grimoire.core.embedder import Embedder, EmbeddingConfig
     from grimoire.core.parser import DocumentParser
     from grimoire.core.tagger import Tagger
     from grimoire.vectorstore.chromadb import ChromaDBStore
-    from grimoire.agents.ingestion import IngestionAgent
 
     settings = get_settings()
 
@@ -89,11 +90,11 @@ def build_ingestion_agent() -> Any:
 
 def build_query_agent() -> Any:
     """Create a QueryAgent from current settings."""
+    from grimoire.agents.query import QueryAgent
     from grimoire.core.cache import CacheFactory
     from grimoire.core.embedder import Embedder, EmbeddingConfig
     from grimoire.search.hybrid import HybridSearch
     from grimoire.vectorstore.chromadb import ChromaDBStore
-    from grimoire.agents.query import QueryAgent
 
     settings = get_settings()
 
@@ -138,8 +139,8 @@ def build_query_agent() -> Any:
 
 def build_content_gen_agent() -> Any:
     """Create a ContentGenerationAgent from current settings."""
-    from grimoire.core.cache import CacheFactory
     from grimoire.agents.content_gen import ContentGenerationAgent
+    from grimoire.core.cache import CacheFactory
 
     settings = get_settings()
 

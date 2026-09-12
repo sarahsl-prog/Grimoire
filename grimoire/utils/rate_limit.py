@@ -8,9 +8,9 @@ external APIs and services.
 import asyncio
 import functools
 import time
-from collections import defaultdict
-from typing import Dict, Optional, Callable, Any
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -81,7 +81,7 @@ class RateLimiter:
 
     def __init__(self):
         """Initialize rate limiter."""
-        self.buckets: Dict[str, TokenBucket] = {}
+        self.buckets: dict[str, TokenBucket] = {}
 
     def register_bucket(self, key: str, capacity: int, refill_rate: float) -> None:
         """

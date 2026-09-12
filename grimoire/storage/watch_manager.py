@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -194,7 +194,7 @@ class WatchManager:
         )
         active_watch.cloud_task = task
         active_watch.is_running = True
-        active_watch.last_poll_time = datetime.now(tz=timezone.utc)
+        active_watch.last_poll_time = datetime.now(tz=UTC)
         logger.debug(f"Started cloud polling for {active_watch.config.path}")
 
     async def _cloud_poll_loop(self, active_watch: ActiveWatch) -> None:
@@ -221,7 +221,7 @@ class WatchManager:
                                 config.callback(change)
                         except Exception as e:
                             logger.error(f"Error invoking watch callback: {e}")
-                    active_watch.last_poll_time = datetime.now(tz=timezone.utc)
+                    active_watch.last_poll_time = datetime.now(tz=UTC)
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -443,16 +443,20 @@ class CloudStoragePoller:
         try:
             if backend == StorageBackend.GOOGLE_DRIVE:
                 from grimoire.config.settings import get_settings
+
                 settings = get_settings()
                 if settings.cloud and settings.cloud.google:
                     from grimoire.storage.gdrive import GoogleDriveAdapter
+
                     self._adapters[backend] = GoogleDriveAdapter(settings.cloud.google)
                     return self._adapters[backend]
             elif backend == StorageBackend.ONE_DRIVE:
                 from grimoire.config.settings import get_settings
+
                 settings = get_settings()
                 if settings.cloud and settings.cloud.microsoft:
                     from grimoire.storage.onedrive import OneDriveAdapter
+
                     self._adapters[backend] = OneDriveAdapter(settings.cloud.microsoft)
                     return self._adapters[backend]
         except Exception as e:

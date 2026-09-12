@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import httpx
@@ -34,10 +34,17 @@ from grimoire.core.tagger import (
     TagSuggestion,
 )
 from grimoire.db.base import Base
-from grimoire.db.models import Category, Chunk, Document, DocumentTag, FileType, TaggedBy
+from grimoire.db.models import (
+    Category,
+    Chunk,
+    Document,
+    DocumentTag,
+    FileType,
+    TaggedBy,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Generator
+    from collections.abc import AsyncGenerator
 
 # =============================================================================
 # Fixtures
@@ -574,20 +581,22 @@ class TestTaggerSuggestTags:
         sample_document_text: str,
     ) -> None:
         """Test HTTP error handling."""
-        with patch.object(
-            tagger,
-            "_call_ollama",
-            side_effect=httpx.HTTPStatusError(
-                "500 Server Error",
-                request=MagicMock(),
-                response=MagicMock(status_code=500),
+        with (
+            patch.object(
+                tagger,
+                "_call_ollama",
+                side_effect=httpx.HTTPStatusError(
+                    "500 Server Error",
+                    request=MagicMock(),
+                    response=MagicMock(status_code=500),
+                ),
             ),
+            pytest.raises(httpx.HTTPStatusError),
         ):
-            with pytest.raises(httpx.HTTPStatusError):
-                await tagger.suggest_tags(
-                    document_sample=sample_document_text,
-                    categories=flat_categories,
-                )
+            await tagger.suggest_tags(
+                document_sample=sample_document_text,
+                categories=flat_categories,
+            )
 
     async def test_suggest_tags_connection_error(
         self,
@@ -596,14 +605,18 @@ class TestTaggerSuggestTags:
         sample_document_text: str,
     ) -> None:
         """Test connection error handling."""
-        with patch.object(
-            tagger, "_call_ollama", side_effect=httpx.RequestError("Connection refused")
+        with (
+            patch.object(
+                tagger,
+                "_call_ollama",
+                side_effect=httpx.RequestError("Connection refused"),
+            ),
+            pytest.raises(httpx.RequestError),
         ):
-            with pytest.raises(httpx.RequestError):
-                await tagger.suggest_tags(
-                    document_sample=sample_document_text,
-                    categories=flat_categories,
-                )
+            await tagger.suggest_tags(
+                document_sample=sample_document_text,
+                categories=flat_categories,
+            )
 
 
 @pytest.mark.asyncio
@@ -648,7 +661,9 @@ class TestTaggerTagDocument:
             tagger, "_call_ollama", return_value=json.dumps(mock_response)
         ):
             result = await tagger.tag_document(
-                mock_db_session, doc, flat_categories,
+                mock_db_session,
+                doc,
+                flat_categories,
                 sample="Machine learning and AI research document content.",
                 auto_apply=True,
             )
@@ -685,7 +700,9 @@ class TestTaggerTagDocument:
             tagger, "_call_ollama", return_value=json.dumps(mock_response)
         ):
             result = await tagger.tag_document(
-                mock_db_session, doc, flat_categories,
+                mock_db_session,
+                doc,
+                flat_categories,
                 sample="Test Document content",
                 auto_apply=False,
             )
@@ -1044,16 +1061,18 @@ class TestConcurrencyAndAsync:
 
         mock_response = {"suggestions": [{"category": "Technology", "confidence": 0.9}]}
 
-        with patch.object(
-            tagger1, "_call_ollama", return_value=json.dumps(mock_response)
-        ):
-            with patch.object(
+        with (
+            patch.object(
+                tagger1, "_call_ollama", return_value=json.dumps(mock_response)
+            ),
+            patch.object(
                 tagger2, "_call_ollama", return_value=json.dumps(mock_response)
-            ):
-                results = await asyncio.gather(
-                    tagger1.suggest_tags("Sample text 1", flat_categories),
-                    tagger2.suggest_tags("Sample text 2", flat_categories),
-                )
+            ),
+        ):
+            results = await asyncio.gather(
+                tagger1.suggest_tags("Sample text 1", flat_categories),
+                tagger2.suggest_tags("Sample text 2", flat_categories),
+            )
 
         assert len(results) == 2
         assert all(len(r.suggestions) == 1 for r in results)

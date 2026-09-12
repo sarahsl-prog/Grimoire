@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import click
 
@@ -41,7 +41,7 @@ def _parse_expires(expires: str | None) -> datetime | None:
         "d": timedelta(days=amount),
         "m": timedelta(minutes=amount),
     }[unit]
-    return datetime.now(timezone.utc) + delta
+    return datetime.now(UTC) + delta
 
 
 @click.group("key")
@@ -160,9 +160,7 @@ async def key_list(ctx: click.Context, tier: str | None, show_all: bool) -> None
         )
         for k in api_keys:
             status_str = "revoked" if k.revoked_at else "active"
-            expires_str = (
-                k.expires_at.isoformat()[:19] if k.expires_at else "Never"
-            )
+            expires_str = k.expires_at.isoformat()[:19] if k.expires_at else "Never"
             click.echo(
                 f"{k.id[:8]:<10}{k.key_prefix:<14}{k.name[:24]:<26}{k.tier.value:<7}{expires_str:<22}{status_str}"
             )
@@ -201,7 +199,7 @@ async def key_revoke(ctx: click.Context, key_id_or_prefix: str) -> None:
                 echo_error(f"Key {api_key.key_prefix} is already revoked.")
                 return
 
-            api_key.revoked_at = datetime.now(timezone.utc)
+            api_key.revoked_at = datetime.now(UTC)
             await db.commit()
 
         echo_success(f"Key {api_key.key_prefix} ({api_key.name}) revoked.")

@@ -8,10 +8,11 @@ filesystem watching (via watchdog) and cloud storage polling.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -20,7 +21,6 @@ from grimoire.agents.ingestion import IngestionAgent
 from grimoire.db.models import StorageBackend
 from grimoire.storage.base import FileChange, FileChangeType
 from grimoire.storage.watch_manager import WatchManager
-
 
 # =============================================================================
 # Data Models
@@ -46,7 +46,7 @@ class WatchStatus(BaseModel):
     is_running: bool = True
     files_processed: int = 0
     files_failed: int = 0
-    last_event_at: Optional[str] = None
+    last_event_at: str | None = None
 
 
 class WatcherStats(BaseModel):
@@ -62,7 +62,7 @@ class WatcherStats(BaseModel):
     active_watches: int = 0
     total_files_processed: int = 0
     total_files_failed: int = 0
-    watches: List[WatchStatus] = Field(default_factory=list)
+    watches: list[WatchStatus] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -79,7 +79,7 @@ class _WatchTracker:
     backend: str
     files_processed: int = 0
     files_failed: int = 0
-    last_event_at: Optional[datetime] = None
+    last_event_at: datetime | None = None
 
 
 # =============================================================================
@@ -120,21 +120,33 @@ class WatcherAgent:
         db_session_factory: Callable[..., Any],
         *,
         auto_tag: bool = True,
-        supported_extensions: Optional[set[str]] = None,
+        supported_extensions: set[str] | None = None,
     ) -> None:
         self._watch_manager = watch_manager
         self._ingestion_agent = ingestion_agent
         self._db_session_factory = db_session_factory
         self._auto_tag = auto_tag
         self._supported_extensions = supported_extensions or {
-            ".pdf", ".docx", ".doc", ".pptx", ".ppt",
-            ".xlsx", ".xls", ".html", ".htm",
-            ".md", ".txt",
-            ".png", ".jpg", ".jpeg", ".tiff", ".tif",
+            ".pdf",
+            ".docx",
+            ".doc",
+            ".pptx",
+            ".ppt",
+            ".xlsx",
+            ".xls",
+            ".html",
+            ".htm",
+            ".md",
+            ".txt",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".tiff",
+            ".tif",
         }
-        self._trackers: Dict[str, _WatchTracker] = {}
+        self._trackers: dict[str, _WatchTracker] = {}
         self._processing_queue: asyncio.Queue[tuple[str, FileChange]] = asyncio.Queue()
-        self._processor_task: Optional[asyncio.Task[None]] = None
+        self._processor_task: asyncio.Task[None] | None = None
         self._running = False
 
         logger.debug("WatcherAgent initialized")
@@ -149,7 +161,7 @@ class WatcherAgent:
         *,
         backend: str | StorageBackend = StorageBackend.LOCAL,
         recursive: bool = True,
-        poll_interval: Optional[int] = None,
+        poll_interval: int | None = None,
     ) -> str:
         """Start watching a directory for file changes.
 
@@ -272,6 +284,7 @@ class WatcherAgent:
         Returns:
             Callback function for the watch manager.
         """
+
         def on_change(change: FileChange) -> None:
             if not self._should_process(change):
                 return
@@ -316,7 +329,7 @@ class WatcherAgent:
 
         return True
 
-    def _find_watch_id(self, watch_path: str) -> Optional[str]:
+    def _find_watch_id(self, watch_path: str) -> str | None:
         """Find the watch ID for a given watch path.
 
         Args:
@@ -357,7 +370,7 @@ class WatcherAgent:
                         self._processing_queue.get(),
                         timeout=1.0,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 await self._handle_file_event(watch_id, change)
@@ -371,7 +384,9 @@ class WatcherAgent:
             logger.info("WatcherAgent: event processor stopped")
 
     async def _handle_file_event(
-        self, watch_id: str, change: FileChange,
+        self,
+        watch_id: str,
+        change: FileChange,
     ) -> None:
         """Handle a single file change event by running ingestion.
 
@@ -385,13 +400,17 @@ class WatcherAgent:
             return
 
         file_path = change.path
-        logger.info(f"WatcherAgent: processing {change.change_type.value} event for {file_path}")
-        tracker.last_event_at = datetime.now(tz=timezone.utc)
+        logger.info(
+            f"WatcherAgent: processing {change.change_type.value} event for {file_path}"
+        )
+        tracker.last_event_at = datetime.now(tz=UTC)
 
         try:
             async with self._db_session_factory() as db:
                 result = await self._ingestion_agent.ingest_file(
-                    db, file_path, auto_tag=self._auto_tag,
+                    db,
+                    file_path,
+                    auto_tag=self._auto_tag,
                 )
 
             if result.status == "completed":
