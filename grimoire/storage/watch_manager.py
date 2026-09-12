@@ -7,6 +7,7 @@ local filesystems (using watchdog) and cloud storage (using polling).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -281,10 +282,8 @@ class WatchManager:
         active_watch.is_running = False
         if active_watch.cloud_task:
             active_watch.cloud_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await active_watch.cloud_task
-            except asyncio.CancelledError:
-                pass
             active_watch.cloud_task = None
 
     async def stop_all(self) -> None:

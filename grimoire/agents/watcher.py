@@ -8,6 +8,7 @@ filesystem watching (via watchdog) and cloud storage polling.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -227,10 +228,8 @@ class WatcherAgent:
         if self._processor_task and not self._processor_task.done():
             self._running = False
             self._processor_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._processor_task
-            except asyncio.CancelledError:
-                pass
             self._processor_task = None
 
         logger.info("WatcherAgent: all watches stopped")
