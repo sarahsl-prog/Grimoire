@@ -215,9 +215,9 @@ class OneDriveAdapter(StorageAdapter):
 
         except httpx.HTTPStatusError as e:
             error_msg = f"Token refresh failed: {e.response.status_code}"
-            raise OneDriveAuthError(error_msg, e.response.status_code)
+            raise OneDriveAuthError(error_msg, e.response.status_code) from e
         except httpx.NetworkError as e:
-            raise OneDriveAuthError(f"Network error during token refresh: {e}")
+            raise OneDriveAuthError(f"Network error during token refresh: {e}") from e
 
     async def _make_request(
         self,
@@ -261,17 +261,17 @@ class OneDriveAdapter(StorageAdapter):
             error_msg = f"API request failed: {status_code}"
             if status_code == 429:
                 retry_after = int(e.response.headers.get("Retry-After", 60))
-                raise OneDriveRateLimitError(error_msg, status_code, retry_after)
+                raise OneDriveRateLimitError(error_msg, status_code, retry_after) from e
             elif status_code == 401:
-                raise OneDriveAuthError(error_msg, status_code)
+                raise OneDriveAuthError(error_msg, status_code) from e
             elif status_code == 403:
-                raise PermissionError(f"Access denied: {error_msg}")
+                raise PermissionError(f"Access denied: {error_msg}") from e
             else:
-                raise OneDriveError(error_msg, status_code)
+                raise OneDriveError(error_msg, status_code) from e
         except httpx.NetworkError as e:
-            raise OneDriveError(f"Network error: {e}")
+            raise OneDriveError(f"Network error: {e}") from e
         except httpx.TimeoutException as e:
-            raise OneDriveError(f"Request timeout: {e}")
+            raise OneDriveError(f"Request timeout: {e}") from e
 
     def _parse_odt_datetime(self, odt_string: str | None) -> datetime:
         """Parse OData datetime string to datetime object."""
@@ -348,9 +348,9 @@ class OneDriveAdapter(StorageAdapter):
 
         except httpx.HTTPStatusError as e:
             error_msg = f"Authentication failed: {e.response.status_code}"
-            raise OneDriveAuthError(error_msg, e.response.status_code)
+            raise OneDriveAuthError(error_msg, e.response.status_code) from e
         except httpx.NetworkError as e:
-            raise OneDriveAuthError(f"Network error during authentication: {e}")
+            raise OneDriveAuthError(f"Network error during authentication: {e}") from e
 
     def get_auth_url(self, redirect_uri: str, state: str | None = None) -> str:
         """Get the OAuth2 authorization URL."""
@@ -430,7 +430,7 @@ class OneDriveAdapter(StorageAdapter):
             file_data = await self._make_request("GET", endpoint)
         except OneDriveError as e:
             if e.status_code == 404:
-                raise FileNotFoundError(f"File not found: {path}")
+                raise FileNotFoundError(f"File not found: {path}") from e
             raise
         except PermissionError:
             raise
@@ -447,10 +447,12 @@ class OneDriveAdapter(StorageAdapter):
             return response.content
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise FileNotFoundError(f"File not found during download: {path}")
-            raise OneDriveError(f"Download failed: {e.response.status_code}")
+                raise FileNotFoundError(
+                    f"File not found during download: {path}"
+                ) from e
+            raise OneDriveError(f"Download failed: {e.response.status_code}") from e
         except httpx.NetworkError as e:
-            raise OneDriveError(f"Network error during download: {e}")
+            raise OneDriveError(f"Network error during download: {e}") from e
 
     async def get_metadata(self, path: str) -> FileMetadata:
         """Get detailed file metadata from OneDrive."""
@@ -463,7 +465,7 @@ class OneDriveAdapter(StorageAdapter):
             data = await self._make_request("GET", endpoint)
         except OneDriveError as e:
             if e.status_code == 404:
-                raise FileNotFoundError(f"Path not found: {path}")
+                raise FileNotFoundError(f"Path not found: {path}") from e
             raise
         except PermissionError:
             raise
