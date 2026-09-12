@@ -5,11 +5,18 @@ from __future__ import annotations
 import asyncio
 import functools
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 
 from grimoire.config.settings import get_settings
+
+if TYPE_CHECKING:
+    # Import-time cost is deliberately avoided here: this module defers its
+    # heavy imports into function bodies for CLI startup speed and testability.
+    from contextlib import AbstractAsyncContextManager
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def async_command(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -163,7 +170,6 @@ def build_watcher() -> Any:
     from grimoire.agents.watcher import WatcherAgent
     from grimoire.storage.watch_manager import WatchManager
 
-    settings = get_settings()
     watch_manager = WatchManager()
     ingestion_agent = build_ingestion_agent()
     return WatcherAgent(
@@ -249,7 +255,7 @@ def build_coordinator_agent(
     )
 
 
-def get_db_context():
+def get_db_context() -> AbstractAsyncContextManager[AsyncSession]:
     """Get async DB context manager. Import wrapper for testability."""
     from grimoire.db.session import get_db_context as _ctx
 
