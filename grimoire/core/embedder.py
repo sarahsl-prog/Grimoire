@@ -205,7 +205,7 @@ class Embedder:
 
         try:
             key = self._compute_cache_key(text)
-            cached = await self._cache.get(key)
+            cached: list[float] | None = await self._cache.get(key)
             if cached is not None:
                 logger.debug(f"Cache hit for text hash: {key[:8]}")
                 return cached
@@ -260,7 +260,7 @@ class Embedder:
                 convert_to_numpy=True,
                 normalize_embeddings=self.config.normalize_embeddings,
             )
-            result = embedding.tolist()
+            result: list[float] = embedding.tolist()
 
             # Cache the result
             await self._save_to_cache(text, result)
