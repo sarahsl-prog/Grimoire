@@ -2,6 +2,17 @@
 
 All notable changes to Grimoire are documented in this file.
 
+## [Unreleased]
+
+### Documentation
+
+- Added [`docs/UPGRADING.md`](docs/UPGRADING.md) — a full in-place upgrade
+  procedure for existing installs (backups, dependency sync, configuration
+  drift, Alembic migrations, cache invalidation, re-embedding, rollback, and
+  troubleshooting), plus a condensed `Upgrading an existing install` section
+  in the README. Per-release `Upgrading` blocks below remain the source of
+  truth for version-specific steps.
+
 ## [2.0.0] - 2026-06-18
 
 ### Added
