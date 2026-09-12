@@ -337,8 +337,15 @@ class IngestionAgent:
             await self._log_extraction(db, file_path, parsed, start_time)
 
             # Step 4: Create or update document record
-            if dedup_result.action == DeduplicationAction.UPDATE:
-                doc = dedup_result.existing_document
+            existing_doc: Document | None = dedup_result.existing_document
+            # An UPDATE action always carries the row it refers to; guard anyway
+            # so a malformed result creates a fresh record instead of passing
+            # None into the update path.
+            if (
+                dedup_result.action == DeduplicationAction.UPDATE
+                and existing_doc is not None
+            ):
+                doc = existing_doc
                 await self._update_document_record(
                     db,
                     doc,
