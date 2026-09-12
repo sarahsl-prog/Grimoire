@@ -212,6 +212,7 @@ class GoogleDriveAdapter(StorageAdapter):
         try:
             token_path.write_text(payload, encoding="utf-8")
             os.chmod(token_path, 0o600)
+            logger.debug(f"Saved Google Drive tokens to {token_path} ({encrypted=})")
         except OSError as e:
             logger.error(f"Failed to save tokens to {token_path}: {e}")
             raise AuthenticationError(f"Failed to save tokens: {e}") from e
