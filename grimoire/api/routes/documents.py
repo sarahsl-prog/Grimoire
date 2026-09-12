@@ -184,6 +184,12 @@ async def delete_document(
     await db.delete(doc)
     try:
         await db.commit()
-    except Exception:
+    except Exception as commit_error:
         await db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to delete document")
+        from loguru import logger
+
+        # Keep the cause in the logs; the client only sees the generic detail.
+        logger.error(f"Failed to delete document {document_id}: {commit_error}")
+        raise HTTPException(
+            status_code=500, detail="Failed to delete document"
+        ) from commit_error

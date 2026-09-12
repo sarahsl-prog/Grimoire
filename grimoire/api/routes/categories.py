@@ -107,9 +107,13 @@ async def create_category(
     db.add(cat)
     try:
         await db.commit()
-    except Exception:
+    except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to create category")
+        from loguru import logger
+
+        # Keep the cause in the logs; the client only sees the generic detail.
+        logger.error(f"Failed to create category '{body.name}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to create category") from e
     await db.refresh(cat)
 
     return CategoryResponse(
