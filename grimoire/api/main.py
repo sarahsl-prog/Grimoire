@@ -37,7 +37,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     # Rate limiting (must be added before CORS so it runs first in request pipeline)
     from grimoire.api.rate_limit import setup_rate_limiting
 
-    setup_rate_limiting(app)
+    limiter = setup_rate_limiting(app)
 
     # CORS — origins configurable via GRIMOIRE_AUTH__CORS_ORIGINS
     from grimoire.config.settings import get_settings
@@ -68,8 +68,6 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     from grimoire.mcp.router import mount_mcp
 
     mount_mcp(app, path="/mcp")
-
-    limiter = app.state.limiter
 
     @app.get("/health")
     @limiter.limit("60/minute")
