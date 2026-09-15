@@ -1,5 +1,6 @@
 """SQLAlchemy Base configuration for async PostgreSQL."""
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import MetaData
@@ -57,9 +58,7 @@ class UUIDMixin:
 class TimestampMixin:
     """Mixin that adds created_at timestamp."""
 
-    from datetime import datetime, timezone
-
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )

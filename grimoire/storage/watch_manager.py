@@ -7,9 +7,10 @@ local filesystems (using watchdog) and cloud storage (using polling).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from watchdog.observers.polling import PollingObserver as Observer
 from grimoire.storage.base import (
     FileChange,
     FileChangeType,
+    StorageAdapter,
     StorageBackend,
 )
 
@@ -194,7 +196,7 @@ class WatchManager:
         )
         active_watch.cloud_task = task
         active_watch.is_running = True
-        active_watch.last_poll_time = datetime.now(tz=timezone.utc)
+        active_watch.last_poll_time = datetime.now(tz=UTC)
         logger.debug(f"Started cloud polling for {active_watch.config.path}")
 
     async def _cloud_poll_loop(self, active_watch: ActiveWatch) -> None:
@@ -221,7 +223,7 @@ class WatchManager:
                                 config.callback(change)
                         except Exception as e:
                             logger.error(f"Error invoking watch callback: {e}")
-                    active_watch.last_poll_time = datetime.now(tz=timezone.utc)
+                    active_watch.last_poll_time = datetime.now(tz=UTC)
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -280,10 +282,8 @@ class WatchManager:
         active_watch.is_running = False
         if active_watch.cloud_task:
             active_watch.cloud_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await active_watch.cloud_task
-            except asyncio.CancelledError:
-                pass
             active_watch.cloud_task = None
 
     async def stop_all(self) -> None:
@@ -413,7 +413,7 @@ class CloudStoragePoller:
 
     def __init__(self) -> None:
         self._page_tokens: dict[str, str] = {}
-        self._adapters: dict[StorageBackend, Any] = {}
+        self._adapters: dict[StorageBackend, StorageAdapter] = {}
 
     async def poll_changes(
         self,
@@ -435,7 +435,7 @@ class CloudStoragePoller:
             logger.error(f"Error polling {backend.value}: {e}")
             return []
 
-    def _get_adapter(self, backend: StorageBackend) -> Any:
+    def _get_adapter(self, backend: StorageBackend) -> StorageAdapter | None:
         """Get or create a cloud storage adapter for the given backend."""
         if backend in self._adapters:
             return self._adapters[backend]
@@ -443,17 +443,21 @@ class CloudStoragePoller:
         try:
             if backend == StorageBackend.GOOGLE_DRIVE:
                 from grimoire.config.settings import get_settings
+
                 settings = get_settings()
                 if settings.cloud and settings.cloud.google:
                     from grimoire.storage.gdrive import GoogleDriveAdapter
+
                     self._adapters[backend] = GoogleDriveAdapter(settings.cloud.google)
                     return self._adapters[backend]
             elif backend == StorageBackend.ONE_DRIVE:
                 from grimoire.config.settings import get_settings
+
                 settings = get_settings()
-                if settings.cloud and settings.cloud.microsoft:
+                if settings.cloud and settings.cloud.onedrive:
                     from grimoire.storage.onedrive import OneDriveAdapter
-                    self._adapters[backend] = OneDriveAdapter(settings.cloud.microsoft)
+
+                    self._adapters[backend] = OneDriveAdapter(settings.cloud.onedrive)
                     return self._adapters[backend]
         except Exception as e:
             logger.error(f"Failed to create {backend.value} adapter: {e}")

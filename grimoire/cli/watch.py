@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+from typing import Any
 
 import click
 
@@ -25,8 +26,18 @@ def watch() -> None:
 @watch.command("start")
 @click.argument("path", type=str)
 @click.option("--recursive/--no-recursive", default=True, help="Watch subdirectories.")
-@click.option("--poll-interval", type=int, default=None, help="Poll interval in seconds (cloud backends).")
-@click.option("--backend", type=click.Choice(["local", "gdrive", "onedrive"]), default="local", help="Storage backend.")
+@click.option(
+    "--poll-interval",
+    type=int,
+    default=None,
+    help="Poll interval in seconds (cloud backends).",
+)
+@click.option(
+    "--backend",
+    type=click.Choice(["local", "gdrive", "onedrive"]),
+    default="local",
+    help="Storage backend.",
+)
 @click.pass_context
 @async_command
 async def watch_start(
@@ -48,9 +59,9 @@ async def watch_start(
     """
     await setup_db()
     try:
+        from grimoire.agents.watcher import WatcherAgent
         from grimoire.db.session import get_db_manager
         from grimoire.storage.watch_manager import WatchManager
-        from grimoire.agents.watcher import WatcherAgent
 
         agent_ingest = build_ingestion_agent()
         manager = WatchManager()
@@ -62,7 +73,7 @@ async def watch_start(
             db_session_factory=db_manager.session,
         )
 
-        watch_kwargs: dict = {"backend": backend, "recursive": recursive}
+        watch_kwargs: dict[str, Any] = {"backend": backend, "recursive": recursive}
         if poll_interval is not None:
             watch_kwargs["poll_interval"] = poll_interval
 
@@ -93,7 +104,9 @@ def watch_list(ctx: click.Context) -> None:
     Watches only persist for the lifetime of a running 'watch start' process.
     """
     click.echo("Watches are scoped to a running 'watch start' process.")
-    click.echo("To see active watches, run 'grimoire status' or check the watch start process output.")
+    click.echo(
+        "To see active watches, run 'grimoire status' or check the watch start process output."
+    )
     click.echo("Use 'grimoire watch unwatch <watch_id>' to stop a specific watch.")
 
 
@@ -113,9 +126,9 @@ async def watch_unwatch(ctx: click.Context, watch_id: str) -> None:
     """
     await setup_db()
     try:
+        from grimoire.agents.watcher import WatcherAgent
         from grimoire.db.session import get_db_manager
         from grimoire.storage.watch_manager import WatchManager
-        from grimoire.agents.watcher import WatcherAgent
 
         agent_ingest = build_ingestion_agent()
         manager = WatchManager()

@@ -12,7 +12,7 @@ Covers:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.core.reranker import Reranker
 from grimoire.search.hybrid import HybridResult, HybridSearch
-
 
 # =============================================================================
 # Helpers & Fixtures
@@ -126,7 +125,9 @@ def mock_embedder() -> MockEmbedder:
 
 
 @pytest.fixture
-def hybrid(mock_vector_store: MockVectorStore, mock_embedder: MockEmbedder) -> HybridSearch:
+def hybrid(
+    mock_vector_store: MockVectorStore, mock_embedder: MockEmbedder
+) -> HybridSearch:
     return HybridSearch(
         vector_store=mock_vector_store,
         embedder=mock_embedder,
@@ -328,9 +329,7 @@ class TestVectorSearch:
     """Test vector search component."""
 
     @pytest.mark.asyncio
-    async def test_vector_search_returns_results(
-        self, hybrid: HybridSearch
-    ) -> None:
+    async def test_vector_search_returns_results(self, hybrid: HybridSearch) -> None:
         """Vector search should return scored HybridResults."""
         results = [
             make_vector_result("c1", distance=0.2, content="python code"),
@@ -345,9 +344,7 @@ class TestVectorSearch:
         assert out[0].score == pytest.approx(0.8 * 0.7)
 
     @pytest.mark.asyncio
-    async def test_vector_search_empty_results(
-        self, hybrid: HybridSearch
-    ) -> None:
+    async def test_vector_search_empty_results(self, hybrid: HybridSearch) -> None:
         """Empty vector store should return empty list."""
         hybrid._vector_store = MockVectorStore([])
 
@@ -355,9 +352,7 @@ class TestVectorSearch:
         assert len(out) == 0
 
     @pytest.mark.asyncio
-    async def test_vector_search_handles_exception(
-        self, hybrid: HybridSearch
-    ) -> None:
+    async def test_vector_search_handles_exception(self, hybrid: HybridSearch) -> None:
         """Vector search should return empty list on failure, not raise."""
 
         class FailingVectorStore(MockVectorStore):
@@ -405,11 +400,10 @@ class TestFtsSearch:
             document_title="Test Doc",
         )
 
-        with patch.object(
-            type(hybrid), "_fts_search", hybrid._fts_search
-        ), patch(
-            "grimoire.search.hybrid.FulltextSearch"
-        ) as MockFTS:
+        with (
+            patch.object(type(hybrid), "_fts_search", hybrid._fts_search),
+            patch("grimoire.search.hybrid.FulltextSearch") as MockFTS,
+        ):
             mock_fts_instance = MagicMock()
             mock_fts_instance.search = AsyncMock(return_value=[fts_result])
             MockFTS.return_value = mock_fts_instance
@@ -424,9 +418,7 @@ class TestFtsSearch:
         self, hybrid: HybridSearch, mock_db: AsyncMock
     ) -> None:
         """FTS search with no matches should return empty list."""
-        with patch(
-            "grimoire.search.hybrid.FulltextSearch"
-        ) as MockFTS:
+        with patch("grimoire.search.hybrid.FulltextSearch") as MockFTS:
             mock_fts_instance = MagicMock()
             mock_fts_instance.search = AsyncMock(return_value=[])
             MockFTS.return_value = mock_fts_instance
@@ -444,7 +436,9 @@ class TestHybridSearch:
     """Test the main search() method."""
 
     @pytest.mark.asyncio
-    async def test_search_empty_query(self, hybrid: HybridSearch, mock_db: AsyncMock) -> None:
+    async def test_search_empty_query(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
         """Empty query should return empty results."""
         result = await hybrid.search(mock_db, "", top_k=10)
         assert result == []
@@ -474,9 +468,7 @@ class TestHybridSearch:
         ) as mock_fts:
             mock_fts.return_value = []
 
-            results = await hybrid_with_reranker.search(
-                mock_db, "test query", top_k=5
-            )
+            results = await hybrid_with_reranker.search(mock_db, "test query", top_k=5)
             assert len(results) > 0
 
     @pytest.mark.asyncio
@@ -489,9 +481,7 @@ class TestHybridSearch:
         ]
         hybrid._vector_store = MockVectorStore(vector_results)
 
-        with patch.object(
-            hybrid, "_fts_search", new_callable=AsyncMock
-        ) as mock_fts:
+        with patch.object(hybrid, "_fts_search", new_callable=AsyncMock) as mock_fts:
             mock_fts.return_value = []
 
             results = await hybrid.search(mock_db, "query", top_k=3)
@@ -532,9 +522,7 @@ class TestHybridSearch:
             document_title="Python Guide",
         )
 
-        with patch.object(
-            hybrid, "_fts_search", new_callable=AsyncMock
-        ) as mock_fts:
+        with patch.object(hybrid, "_fts_search", new_callable=AsyncMock) as mock_fts:
             mock_fts.return_value = [
                 HybridResult(
                     chunk_id="c1",

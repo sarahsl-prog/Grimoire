@@ -13,7 +13,6 @@ import pytest
 
 from grimoire.strategies.security.corpus import SourceType, detect_source_type
 
-
 # ---------------------------------------------------------------------------
 # 1. Path hints
 # ---------------------------------------------------------------------------
@@ -220,7 +219,10 @@ class TestPlaybookDetection:
         ],
     )
     def test_path_hints(self, path: str) -> None:
-        assert detect_source_type("Body content here.", {"path": path}) is SourceType.PLAYBOOK
+        assert (
+            detect_source_type("Body content here.", {"path": path})
+            is SourceType.PLAYBOOK
+        )
 
     def test_frontmatter_playbook_keys(self) -> None:
         """Front matter with playbook/phase/trigger keys is a playbook."""

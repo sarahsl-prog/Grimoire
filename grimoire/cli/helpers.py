@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import click
 
 from grimoire.config.settings import get_settings
+
+if TYPE_CHECKING:
+    # Import-time cost is deliberately avoided here: this module defers its
+    # heavy imports into function bodies for CLI startup speed and testability.
+    from contextlib import AbstractAsyncContextManager
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def async_command(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -49,12 +57,12 @@ async def teardown_db() -> None:
 
 def build_ingestion_agent() -> Any:
     """Create an IngestionAgent from current settings."""
+    from grimoire.agents.ingestion import IngestionAgent
     from grimoire.core.cache import CacheFactory
     from grimoire.core.embedder import Embedder, EmbeddingConfig
     from grimoire.core.parser import DocumentParser
     from grimoire.core.tagger import Tagger
     from grimoire.vectorstore.chromadb import ChromaDBStore
-    from grimoire.agents.ingestion import IngestionAgent
 
     settings = get_settings()
 
@@ -89,11 +97,11 @@ def build_ingestion_agent() -> Any:
 
 def build_query_agent() -> Any:
     """Create a QueryAgent from current settings."""
+    from grimoire.agents.query import QueryAgent
     from grimoire.core.cache import CacheFactory
     from grimoire.core.embedder import Embedder, EmbeddingConfig
     from grimoire.search.hybrid import HybridSearch
     from grimoire.vectorstore.chromadb import ChromaDBStore
-    from grimoire.agents.query import QueryAgent
 
     settings = get_settings()
 
@@ -138,8 +146,8 @@ def build_query_agent() -> Any:
 
 def build_content_gen_agent() -> Any:
     """Create a ContentGenerationAgent from current settings."""
-    from grimoire.core.cache import CacheFactory
     from grimoire.agents.content_gen import ContentGenerationAgent
+    from grimoire.core.cache import CacheFactory
 
     settings = get_settings()
 
@@ -162,7 +170,6 @@ def build_watcher() -> Any:
     from grimoire.agents.watcher import WatcherAgent
     from grimoire.storage.watch_manager import WatchManager
 
-    settings = get_settings()
     watch_manager = WatchManager()
     ingestion_agent = build_ingestion_agent()
     return WatcherAgent(
@@ -248,7 +255,7 @@ def build_coordinator_agent(
     )
 
 
-def get_db_context():
+def get_db_context() -> AbstractAsyncContextManager[AsyncSession]:
     """Get async DB context manager. Import wrapper for testability."""
     from grimoire.db.session import get_db_context as _ctx
 

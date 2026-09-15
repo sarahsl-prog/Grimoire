@@ -1,7 +1,8 @@
 """Database session management utilities."""
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Optional
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -17,8 +18,8 @@ class DatabaseSessionManager:
 
     def __init__(self) -> None:
         """Initialize session manager (not connected yet)."""
-        self._engine: Optional[Any] = None
-        self._session_maker: Optional[async_sessionmaker[AsyncSession]] = None
+        self._engine: Any | None = None
+        self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
     async def initialize(self, database_url: str, pool_size: int = 10) -> None:
         """Initialize the database engine and session maker.
@@ -88,12 +89,12 @@ class DatabaseSessionManager:
                 await session.close()
 
     @property
-    def engine(self) -> Optional[Any]:
+    def engine(self) -> Any | None:
         """Get the SQLAlchemy engine (if initialized)."""
         return self._engine
 
 
-_db_manager: Optional[DatabaseSessionManager] = None
+_db_manager: DatabaseSessionManager | None = None
 
 
 def get_db_manager() -> DatabaseSessionManager:

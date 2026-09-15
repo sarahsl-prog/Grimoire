@@ -20,7 +20,7 @@ Design notes:
 from __future__ import annotations
 
 import re
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 import yaml
 from loguru import logger
@@ -54,7 +54,7 @@ _RE_TAG_TACTIC = re.compile(r"^attack\.([a-z_]+)$", re.IGNORECASE)
 # ---------------------------------------------------------------------------
 
 
-def sigma_level_to_severity(level: Optional[str]) -> Severity:
+def sigma_level_to_severity(level: str | None) -> Severity:
     """Map a Sigma ``level`` string to :class:`Severity`.
 
     Args:
@@ -70,14 +70,14 @@ def sigma_level_to_severity(level: Optional[str]) -> Severity:
     return _LEVEL_MAP.get(level.lower().strip(), Severity.UNKNOWN)
 
 
-def _extract_technique_ids(tags: List[str]) -> List[str]:
+def _extract_technique_ids(tags: list[str]) -> list[str]:
     """Scrape MITRE technique ids from Sigma tags.
 
     Sigma convention is ``attack.t1059`` or ``attack.t1059.001``.
     Returns upper-case ids (``T1059``, ``T1059.001``).
     """
 
-    out: List[str] = []
+    out: list[str] = []
     for tag in tags:
         m = _RE_TAG_TECHNIQUE.match(tag)
         if m:
@@ -85,14 +85,14 @@ def _extract_technique_ids(tags: List[str]) -> List[str]:
     return out
 
 
-def _extract_tactics(tags: List[str]) -> List[str]:
+def _extract_tactics(tags: list[str]) -> list[str]:
     """Scrape MITRE tactics from Sigma tags.
 
     Any ``attack.<word>`` tag that is NOT a technique id is treated as a
     tactic (e.g. ``attack.execution``, ``attack.persistence``).
     """
 
-    out: List[str] = []
+    out: list[str] = []
     for tag in tags:
         if _RE_TAG_TECHNIQUE.match(tag):
             continue
@@ -102,7 +102,7 @@ def _extract_tactics(tags: List[str]) -> List[str]:
     return out
 
 
-def _pluck_logsource(rule: dict[str, Any]) -> Tuple[List[str], List[str]]:
+def _pluck_logsource(rule: dict[str, Any]) -> tuple[list[str], list[str]]:
     """Extract ``platforms`` and ``log_sources`` from the ``logsource`` block.
 
     Returns:
@@ -113,8 +113,8 @@ def _pluck_logsource(rule: dict[str, Any]) -> Tuple[List[str], List[str]]:
     if not isinstance(logsource, dict):
         return [], []
 
-    platforms: List[str] = []
-    log_sources: List[str] = []
+    platforms: list[str] = []
+    log_sources: list[str] = []
 
     product = logsource.get("product")
     if isinstance(product, str) and product:
@@ -134,14 +134,14 @@ def _pluck_logsource(rule: dict[str, Any]) -> Tuple[List[str], List[str]]:
     return platforms, log_sources
 
 
-def _pluck_detection_categories(rule: dict[str, Any]) -> List[str]:
+def _pluck_detection_categories(rule: dict[str, Any]) -> list[str]:
     """Collect false-positives and condition notes.
 
     Returns a list of human-readable strings suitable for
     ``SecurityMetadata.detection_categories``.
     """
 
-    out: List[str] = []
+    out: list[str] = []
 
     falsepositives = rule.get("falsepositives")
     if isinstance(falsepositives, list):
@@ -167,7 +167,7 @@ def _build_rule_text(rule: dict[str, Any]) -> str:
     It is intentionally concise but contains all salient fields.
     """
 
-    parts: List[str] = []
+    parts: list[str] = []
 
     title = rule.get("title")
     if isinstance(title, str) and title:
@@ -195,7 +195,7 @@ def _build_rule_text(rule: dict[str, Any]) -> str:
 
     logsource = rule.get("logsource")
     if isinstance(logsource, dict):
-        ls_parts: List[str] = []
+        ls_parts: list[str] = []
         for key in ("product", "service", "category"):
             val = logsource.get(key)
             if isinstance(val, str) and val:
@@ -206,7 +206,7 @@ def _build_rule_text(rule: dict[str, Any]) -> str:
     detection = rule.get("detection")
     if isinstance(detection, dict):
         # Render the detection selectors (everything except "condition")
-        selectors: List[str] = []
+        selectors: list[str] = []
         for key, value in detection.items():
             if key == "condition":
                 continue
@@ -234,7 +234,7 @@ def _build_rule_text(rule: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def parse_sigma(text: str) -> List[Tuple[str, SecurityMetadata]]:
+def parse_sigma(text: str) -> list[tuple[str, SecurityMetadata]]:
     """Parse a Sigma rule file (possibly multi-doc) into structured metadata.
 
     Args:
@@ -250,7 +250,7 @@ def parse_sigma(text: str) -> List[Tuple[str, SecurityMetadata]]:
     if not text or not text.strip():
         return []
 
-    results: List[Tuple[str, SecurityMetadata]] = []
+    results: list[tuple[str, SecurityMetadata]] = []
 
     # yaml.safe_load_all handles both single-doc and multi-doc YAML.
     try:
@@ -278,7 +278,7 @@ def parse_sigma(text: str) -> List[Tuple[str, SecurityMetadata]]:
             continue
 
         # Extract structured metadata.
-        tags: List[str] = []
+        tags: list[str] = []
         raw_tags = rule.get("tags")
         if isinstance(raw_tags, list):
             tags = [str(t) for t in raw_tags if t]

@@ -16,10 +16,11 @@ Typical usage::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from loguru import logger
@@ -69,17 +70,17 @@ class LLMExtractionResult(BaseModel):
 
     model_config = {"extra": "ignore"}
 
-    severity: Optional[str] = Field(default=None)
-    mitre_technique_id: Optional[str] = Field(default=None)
-    threat_actors: List[str] = Field(default_factory=list)
-    malware_families: List[str] = Field(default_factory=list)
-    platforms: List[str] = Field(default_factory=list)
-    ioc_types: List[str] = Field(default_factory=list)
-    content_date: Optional[str] = Field(default=None)
+    severity: str | None = Field(default=None)
+    mitre_technique_id: str | None = Field(default=None)
+    threat_actors: list[str] = Field(default_factory=list)
+    malware_families: list[str] = Field(default_factory=list)
+    platforms: list[str] = Field(default_factory=list)
+    ioc_types: list[str] = Field(default_factory=list)
+    content_date: str | None = Field(default=None)
 
     @field_validator("severity", mode="before")
     @classmethod
-    def _validate_severity(cls, v: Any) -> Optional[str]:
+    def _validate_severity(cls, v: Any) -> str | None:
         if v is None:
             return None
         s = str(v).strip().lower()
@@ -88,7 +89,7 @@ class LLMExtractionResult(BaseModel):
 
     @field_validator("mitre_technique_id", mode="before")
     @classmethod
-    def _validate_tid(cls, v: Any) -> Optional[str]:
+    def _validate_tid(cls, v: Any) -> str | None:
         if v is None:
             return None
         s = str(v).strip()
@@ -98,7 +99,7 @@ class LLMExtractionResult(BaseModel):
 
     @field_validator("content_date", mode="before")
     @classmethod
-    def _validate_date(cls, v: Any) -> Optional[str]:
+    def _validate_date(cls, v: Any) -> str | None:
         if v is None:
             return None
         s = str(v).strip()
@@ -111,15 +112,13 @@ class LLMExtractionResult(BaseModel):
 
         severity = Severity.UNKNOWN
         if self.severity:
-            try:
+            with contextlib.suppress(ValueError):
                 severity = Severity(self.severity)
-            except ValueError:
-                pass
 
-        content_dt: Optional[datetime] = None
+        content_dt: datetime | None = None
         if self.content_date:
             content_dt = datetime.strptime(self.content_date, "%Y-%m-%d").replace(
-                tzinfo=timezone.utc
+                tzinfo=UTC
             )
 
         return SecurityMetadata(
@@ -144,7 +143,7 @@ class SecurityMetadataExtractor:
     def __init__(self, settings: GrimoireSettings) -> None:
         self.settings = settings
         self.llm_config = settings.llm
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -198,7 +197,7 @@ class SecurityMetadataExtractor:
         client = await self._get_client()
 
         url = f"{self.llm_config.url.rstrip('/')}/api/generate"
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": self.llm_config.model,
             "prompt": prompt,
             "stream": False,

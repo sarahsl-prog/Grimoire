@@ -11,13 +11,13 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any
 
 import httpx
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.db.models import (
@@ -31,7 +31,6 @@ from grimoire.db.models import (
     WikiPageStatus,
     WikiRefType,
 )
-
 
 # ============================================================================
 # Data Models
@@ -104,7 +103,9 @@ class WikiAgent:
     ) -> None:
         self._llm_url = llm_url.rstrip("/")
         self._llm_model = llm_model
-        self._fallback_llm_url = fallback_llm_url.rstrip("/") if fallback_llm_url else None
+        self._fallback_llm_url = (
+            fallback_llm_url.rstrip("/") if fallback_llm_url else None
+        )
         self._fallback_llm_model = fallback_llm_model or llm_model
         self._source_priorities = source_priorities or {}
         self._max_sections_per_page = max_sections_per_page
@@ -112,7 +113,9 @@ class WikiAgent:
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._llm_timeout = llm_timeout
-        logger.debug(f"WikiAgent initialized (model={llm_model}, fallback_url={fallback_llm_url})")
+        logger.debug(
+            f"WikiAgent initialized (model={llm_model}, fallback_url={fallback_llm_url})"
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -137,9 +140,11 @@ class WikiAgent:
         try:
             chunks = await self._fetch_chunks(db, document_id)
             if not chunks:
-                logger.warning(f"No chunks found for document {document_id} — was it ingested?")
+                logger.warning(
+                    f"No chunks found for document {document_id} — was it ingested?"
+                )
                 job.status = CompileStatus.COMPLETED
-                job.compiled_at = datetime.now(timezone.utc)
+                job.compiled_at = datetime.now(UTC)
                 await db.flush()
                 return result
 
@@ -147,7 +152,9 @@ class WikiAgent:
             source_priority = self._resolve_source_priority(
                 doc.source_path if doc else ""
             )
-            logger.debug(f"Document {document_id}: {len(chunks)} chunks, source_priority={source_priority}")
+            logger.debug(
+                f"Document {document_id}: {len(chunks)} chunks, source_priority={source_priority}"
+            )
 
             chunk_texts = [c.content for c in chunks if c.content]
             entities = await self._identify_entities(chunk_texts)
@@ -157,7 +164,7 @@ class WikiAgent:
                     "LLM may have failed or returned unparseable output"
                 )
                 job.status = CompileStatus.COMPLETED
-                job.compiled_at = datetime.now(timezone.utc)
+                job.compiled_at = datetime.now(UTC)
                 await db.flush()
                 return result
 
@@ -167,7 +174,9 @@ class WikiAgent:
                 existing_page = await self._match_existing_page(db, entity.name)
 
                 if existing_page is None:
-                    logger.debug(f"Creating new wiki page: '{entity.name}' ({entity.entity_type})")
+                    logger.debug(
+                        f"Creating new wiki page: '{entity.name}' ({entity.entity_type})"
+                    )
                     page, sections_added = await self._generate_page(
                         db, entity, document_id, source_priority, chunk_texts
                     )
@@ -176,8 +185,12 @@ class WikiAgent:
                 else:
                     logger.debug(f"Updating existing wiki page: '{entity.name}'")
                     updated = await self._update_page(
-                        db, existing_page, entity, document_id,
-                        source_priority, chunk_texts,
+                        db,
+                        existing_page,
+                        entity,
+                        document_id,
+                        source_priority,
+                        chunk_texts,
                     )
                     result.pages_updated += 1
                     result.sections_added += updated.sections_added
@@ -193,7 +206,7 @@ class WikiAgent:
                     result.cross_references_added += refs
 
             job.status = CompileStatus.COMPLETED
-            job.compiled_at = datetime.now(timezone.utc)
+            job.compiled_at = datetime.now(UTC)
             await db.flush()
             logger.info(
                 f"Compiled {document_id}: {result.pages_created} created, "
@@ -232,9 +245,7 @@ class WikiAgent:
     # Entity Extraction
     # ------------------------------------------------------------------
 
-    async def _identify_entities(
-        self, chunks: list[str]
-    ) -> list[EntityExtraction]:
+    async def _identify_entities(self, chunks: list[str]) -> list[EntityExtraction]:
         """Use LLM to identify entities/concepts in document chunks."""
         combined = "\n\n".join(chunks[:5])
         prompt = (
@@ -485,7 +496,7 @@ class WikiAgent:
                     stats.sections_added += 1
 
         existing_page.version += 1
-        existing_page.updated_at = datetime.now(timezone.utc)
+        existing_page.updated_at = datetime.now(UTC)
         await db.flush()
         await self._assemble_page_content(db, existing_page)
         return stats
@@ -536,7 +547,11 @@ class WikiAgent:
         entity_names: list[str],
     ) -> int:
         """Discover and create cross-references from a page to other pages."""
-        slugs = [self._slugify(name) for name in entity_names if self._slugify(name) != page.slug]
+        slugs = [
+            self._slugify(name)
+            for name in entity_names
+            if self._slugify(name) != page.slug
+        ]
         if not slugs:
             return 0
 
@@ -572,9 +587,7 @@ class WikiAgent:
     # Page Assembly
     # ------------------------------------------------------------------
 
-    async def _assemble_page_content(
-        self, db: AsyncSession, page: WikiPage
-    ) -> None:
+    async def _assemble_page_content(self, db: AsyncSession, page: WikiPage) -> None:
         """Assemble section rows into the page's content field."""
         stmt = (
             select(WikiPageSection)
@@ -595,7 +608,7 @@ class WikiAgent:
         lines.append(
             f"> Entity type: {page.entity_type or 'unknown'} | "
             f"Version: {page.version} | "
-            f"Last compiled: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n"
+            f"Last compiled: {datetime.now(UTC).strftime('%Y-%m-%d')}\n"
         )
 
         for section in sections:
@@ -609,8 +622,16 @@ class WikiAgent:
             else:
                 lines.append(f"## {section.heading}\n")
                 lines.append(f"{section.content}\n")
-                priority_note = f"Priority: {section.source_priority}" if section.source_priority else ""
-                source_note = f"Source document: {section.source_document_id}" if section.source_document_id else ""
+                priority_note = (
+                    f"Priority: {section.source_priority}"
+                    if section.source_priority
+                    else ""
+                )
+                source_note = (
+                    f"Source document: {section.source_document_id}"
+                    if section.source_document_id
+                    else ""
+                )
                 attribution = " | ".join(filter(None, [source_note, priority_note]))
                 if attribution:
                     lines.append(f"*{attribution}*\n")
@@ -635,9 +656,7 @@ class WikiAgent:
         self, db: AsyncSession, document_id: str
     ) -> WikiCompileJob:
         """Get existing compile job or create a new one."""
-        stmt = select(WikiCompileJob).where(
-            WikiCompileJob.document_id == document_id
-        )
+        stmt = select(WikiCompileJob).where(WikiCompileJob.document_id == document_id)
         result = await db.execute(stmt)
         job = result.scalars().first()
         if job:
@@ -648,9 +667,7 @@ class WikiAgent:
         await db.flush()
         return job
 
-    async def _fetch_chunks(
-        self, db: AsyncSession, document_id: str
-    ) -> list[Chunk]:
+    async def _fetch_chunks(self, db: AsyncSession, document_id: str) -> list[Chunk]:
         """Fetch chunks for a document."""
         stmt = (
             select(Chunk)
@@ -743,10 +760,14 @@ class WikiAgent:
             logger.warning(f"Cannot connect to {label} LLM at {url}")
             return None
         except httpx.HTTPStatusError as e:
-            logger.warning(f"{label} LLM returned HTTP {e.response.status_code} from {url}")
+            logger.warning(
+                f"{label} LLM returned HTTP {e.response.status_code} from {url}"
+            )
             return None
         except Exception as e:
-            logger.exception(f"{label} LLM call failed unexpectedly ({type(e).__name__})")
+            logger.exception(
+                f"{label} LLM call failed unexpectedly ({type(e).__name__})"
+            )
             return None
 
     # ------------------------------------------------------------------

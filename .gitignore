@@ -263,3 +263,4 @@ tests/fixtures/sample_docs/large_*
 *.old
 *.orig
 *.rej
+.entire/

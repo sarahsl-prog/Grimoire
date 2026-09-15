@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Dict, List, Optional
 
 import httpx
 from loguru import logger
@@ -23,7 +22,6 @@ from grimoire.db.models import (
     ContentType,
     GeneratedContent,
 )
-
 
 # =============================================================================
 # Data Models
@@ -41,10 +39,10 @@ class GenerationRequest(BaseModel):
         count: Number of items to generate (for flashcards).
     """
 
-    document_ids: List[str]
+    document_ids: list[str]
     content_type: ContentType
-    query: Optional[str] = None
-    style: Optional[str] = None
+    query: str | None = None
+    style: str | None = None
     count: int = 10
 
 
@@ -65,10 +63,10 @@ class GenerationResult(BaseModel):
 
     content: str = ""
     content_type: str = ""
-    document_ids: List[str] = Field(default_factory=list)
+    document_ids: list[str] = Field(default_factory=list)
     model_used: str = ""
     cached: bool = False
-    generation_id: Optional[str] = None
+    generation_id: str | None = None
     duration_ms: int = 0
 
 
@@ -76,7 +74,7 @@ class GenerationResult(BaseModel):
 # Prompt Templates
 # =============================================================================
 
-_PROMPTS: Dict[ContentType, str] = {
+_PROMPTS: dict[ContentType, str] = {
     ContentType.SUMMARY: (
         "Write a {style} summary of the following document content. "
         "Capture the key ideas, main arguments, and conclusions.\n\n"
@@ -149,7 +147,7 @@ class ContentGenerationAgent:
         self,
         llm_url: str = "http://localhost:11434",
         llm_model: str = "llama3:8b",
-        cache: Optional[Cache] = None,
+        cache: Cache | None = None,
         temperature: float = 0.5,
         max_tokens: int = 4096,
     ) -> None:
@@ -168,7 +166,7 @@ class ContentGenerationAgent:
     async def generate_summary(
         self,
         db: AsyncSession,
-        document_ids: List[str],
+        document_ids: list[str],
         *,
         style: str = "concise",
     ) -> GenerationResult:
@@ -192,7 +190,7 @@ class ContentGenerationAgent:
     async def generate_flash_cards(
         self,
         db: AsyncSession,
-        document_ids: List[str],
+        document_ids: list[str],
         *,
         count: int = 10,
     ) -> GenerationResult:
@@ -216,7 +214,7 @@ class ContentGenerationAgent:
     async def generate_cliff_notes(
         self,
         db: AsyncSession,
-        document_ids: List[str],
+        document_ids: list[str],
     ) -> GenerationResult:
         """Generate cliff notes (bullet-point summary) from documents.
 
@@ -236,7 +234,7 @@ class ContentGenerationAgent:
     async def generate_outline(
         self,
         db: AsyncSession,
-        document_ids: List[str],
+        document_ids: list[str],
     ) -> GenerationResult:
         """Generate a hierarchical outline from documents.
 
@@ -256,7 +254,7 @@ class ContentGenerationAgent:
     async def generate_extract(
         self,
         db: AsyncSession,
-        document_ids: List[str],
+        document_ids: list[str],
         query: str,
     ) -> GenerationResult:
         """Extract specific information from documents.
@@ -337,7 +335,9 @@ class ContentGenerationAgent:
 
         # Store in database
         generation_id = await self._store_generated_content(
-            db, request, generated_text,
+            db,
+            request,
+            generated_text,
         )
 
         result = GenerationResult(
@@ -364,7 +364,9 @@ class ContentGenerationAgent:
     # -------------------------------------------------------------------------
 
     async def _fetch_document_content(
-        self, db: AsyncSession, document_ids: List[str],
+        self,
+        db: AsyncSession,
+        document_ids: list[str],
     ) -> str:
         """Fetch and combine document chunk content.
 
@@ -392,7 +394,9 @@ class ContentGenerationAgent:
         return combined
 
     def _build_prompt(
-        self, request: GenerationRequest, content: str,
+        self,
+        request: GenerationRequest,
+        content: str,
     ) -> str:
         """Build an LLM prompt from the request and content.
 
@@ -437,7 +441,12 @@ class ContentGenerationAgent:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data.get("response", "").strip()
+                # Ollama's payload is external input: don't assume the shape.
+                if not isinstance(data, dict):
+                    logger.error(f"LLM returned a non-object payload: {type(data)}")
+                    return "Error: LLM returned an unexpected response format."
+                generated = data.get("response", "")
+                return generated.strip() if isinstance(generated, str) else ""
 
         except httpx.ConnectError:
             logger.error(f"Cannot connect to LLM at {self._llm_url}")
@@ -451,7 +460,7 @@ class ContentGenerationAgent:
         db: AsyncSession,
         request: GenerationRequest,
         content: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Store generated content in the database.
 
         Stores one record per document ID in the request.
@@ -464,7 +473,7 @@ class ContentGenerationAgent:
         Returns:
             ID of the first generated content record.
         """
-        first_id: Optional[str] = None
+        first_id: str | None = None
 
         for doc_id in request.document_ids:
             is_err = content.startswith("Error:")
@@ -495,7 +504,7 @@ class ContentGenerationAgent:
         self,
         db: AsyncSession,
         request: GenerationRequest,
-    ) -> Optional[GeneratedContent]:
+    ) -> GeneratedContent | None:
         """Check if content has already been generated.
 
         Args:
@@ -546,7 +555,7 @@ class ContentGenerationAgent:
         )
         return f"gen:{hashlib.sha256(key_data.encode()).hexdigest()}"
 
-    async def _check_cache(self, key: str) -> Optional[GenerationResult]:
+    async def _check_cache(self, key: str) -> GenerationResult | None:
         """Check cache for existing result."""
         if not self._cache:
             return None
@@ -565,7 +574,8 @@ class ContentGenerationAgent:
             return
         try:
             await self._cache.set(
-                key, result.model_dump(),
+                key,
+                result.model_dump(),
                 ttl=2592000,  # 30 days
             )
         except Exception as e:

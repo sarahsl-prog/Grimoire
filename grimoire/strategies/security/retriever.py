@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from loguru import logger
 
@@ -168,9 +168,9 @@ def _classify_query(query: str) -> QueryIntent:
 
 
 def _recency_multiplier(
-    content_date: Optional[datetime],
+    content_date: datetime | None,
     half_life_days: int,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> float:
     """Return a 0..1 multiplier applying exponential recency decay.
 
@@ -188,9 +188,9 @@ def _recency_multiplier(
     if content_date is None:
         return 1.0
 
-    effective_now = now or datetime.now(timezone.utc)
+    effective_now = now or datetime.now(UTC)
     if effective_now.tzinfo is None:
-        effective_now = effective_now.replace(tzinfo=timezone.utc)
+        effective_now = effective_now.replace(tzinfo=UTC)
 
     # Normalise naive content_date values to UTC — ChromaDB / FTS often
     # stores date-only ISO strings (e.g. "2024-06-15") and
@@ -198,7 +198,7 @@ def _recency_multiplier(
     # would raise ``TypeError: can't subtract offset-naive and offset-aware
     # datetimes`` and crash retrieval on tz-less metadata.
     if content_date.tzinfo is None:
-        content_date = content_date.replace(tzinfo=timezone.utc)
+        content_date = content_date.replace(tzinfo=UTC)
 
     age_days = (effective_now - content_date).total_seconds() / 86400.0
     if age_days < 0:
@@ -243,8 +243,8 @@ class SecurityRetriever(BaseRetriever):
         query: str,
         *,
         top_k: int = 10,
-        filter_dict: Optional[Dict[str, Any]] = None,
-    ) -> List[HybridResult]:
+        filter_dict: dict[str, Any] | None = None,
+    ) -> list[HybridResult]:
         """Retrieve ranked security results for ``query``.
 
         Args:
@@ -278,9 +278,9 @@ class SecurityRetriever(BaseRetriever):
 
     def _security_rerank(
         self,
-        results: List[HybridResult],
+        results: list[HybridResult],
         intent: IntentLike,
-    ) -> List[HybridResult]:
+    ) -> list[HybridResult]:
         """Apply severity boost + recency decay + intent-source alignment.
 
         The transforms are multiplicative and commutative, so they can be
@@ -318,7 +318,7 @@ class SecurityRetriever(BaseRetriever):
 
             # 2. Recency decay.
             content_date_raw = metadata.get("content_date")
-            content_date: Optional[datetime] = None
+            content_date: datetime | None = None
             if content_date_raw:
                 try:
                     if isinstance(content_date_raw, datetime):

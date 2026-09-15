@@ -14,7 +14,7 @@ Features:
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import numpy as np
 from loguru import logger
@@ -63,8 +63,8 @@ class Embedder:
 
     def __init__(
         self,
-        config: Optional[EmbeddingConfig] = None,
-        cache: Optional[Cache] = None,
+        config: EmbeddingConfig | None = None,
+        cache: Cache | None = None,
     ) -> None:
         """Initialize the embedding service.
 
@@ -74,9 +74,9 @@ class Embedder:
                 if None and caching is available.
         """
         self.config = config or EmbeddingConfig()
-        self._model: Optional[Any] = None  # sentence_transformers model
+        self._model: Any | None = None  # sentence_transformers model
         self._cache = cache
-        self._embedding_dim: Optional[int] = None
+        self._embedding_dim: int | None = None
 
     def _get_device(self) -> str:
         """Determine the best available compute device.
@@ -191,7 +191,7 @@ class Embedder:
         key_content = f"{self.config.model}:{text}"
         return hashlib.sha256(key_content.encode()).hexdigest()
 
-    async def _get_from_cache(self, text: str) -> Optional[List[float]]:
+    async def _get_from_cache(self, text: str) -> list[float] | None:
         """Try to get embedding from cache.
 
         Args:
@@ -205,7 +205,7 @@ class Embedder:
 
         try:
             key = self._compute_cache_key(text)
-            cached = await self._cache.get(key)
+            cached: list[float] | None = await self._cache.get(key)
             if cached is not None:
                 logger.debug(f"Cache hit for text hash: {key[:8]}")
                 return cached
@@ -214,7 +214,7 @@ class Embedder:
 
         return None
 
-    async def _save_to_cache(self, text: str, embedding: List[float]) -> None:
+    async def _save_to_cache(self, text: str, embedding: list[float]) -> None:
         """Save embedding to cache.
 
         Args:
@@ -231,7 +231,7 @@ class Embedder:
         except Exception as e:
             logger.warning(f"Cache save failed: {e}")
 
-    async def embed_single(self, text: str) -> List[float]:
+    async def embed_single(self, text: str) -> list[float]:
         """Embed a single text string.
 
         Args:
@@ -260,7 +260,7 @@ class Embedder:
                 convert_to_numpy=True,
                 normalize_embeddings=self.config.normalize_embeddings,
             )
-            result = embedding.tolist()
+            result: list[float] = embedding.tolist()
 
             # Cache the result
             await self._save_to_cache(text, result)
@@ -271,7 +271,7 @@ class Embedder:
             logger.error(f"Embedding generation failed: {e}")
             raise RuntimeError(f"Failed to generate embedding: {e}") from e
 
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts with batch processing.
 
         Processes texts in batches according to config.batch_size.
@@ -299,7 +299,8 @@ class Embedder:
 
         # Validate all texts (check for non-strings or empty/whitespace-only)
         invalid_items = [
-            (i, t) for i, t in enumerate(texts)
+            (i, t)
+            for i, t in enumerate(texts)
             if not isinstance(t, str) or not t.strip()
         ]
         if invalid_items:
@@ -307,9 +308,9 @@ class Embedder:
             raise ValueError(f"Invalid texts at indices: {indices}")
 
         # Check for cached embeddings
-        results: List[Optional[List[float]]] = [None] * len(texts)
-        uncached_indices: List[int] = []
-        uncached_texts: List[str] = []
+        results: list[list[float] | None] = [None] * len(texts)
+        uncached_indices: list[int] = []
+        uncached_texts: list[str] = []
 
         for i, text in enumerate(texts):
             cached = await self._get_from_cache(text)
@@ -329,13 +330,15 @@ class Embedder:
                 model = self._load_model()
 
                 # Process in batches with progress logging
-                batch_embeddings: List[List[float]] = []
+                batch_embeddings: list[list[float]] = []
                 total_batches = (len(uncached_texts) + self.config.batch_size - 1) // (
                     self.config.batch_size
                 )
 
                 for batch_idx in range(0, len(uncached_texts), self.config.batch_size):
-                    batch = uncached_texts[batch_idx : batch_idx + self.config.batch_size]
+                    batch = uncached_texts[
+                        batch_idx : batch_idx + self.config.batch_size
+                    ]
                     current_batch = batch_idx // self.config.batch_size + 1
 
                     logger.debug(
@@ -375,8 +378,8 @@ class Embedder:
 
     def get_similarity(
         self,
-        embedding1: List[float],
-        embedding2: List[float],
+        embedding1: list[float],
+        embedding2: list[float],
     ) -> float:
         """Compute cosine similarity between two embeddings.
 
@@ -449,11 +452,11 @@ class EmbedderFactory:
     @classmethod
     def create(
         cls,
-        model: Optional[str] = None,
+        model: str | None = None,
         device: str = "auto",
         batch_size: int = 32,
-        cache: Optional[Cache] = None,
-        cache_path: Optional[Union[str, Path]] = None,
+        cache: Cache | None = None,
+        cache_path: str | Path | None = None,
         **kwargs: Any,
     ) -> Embedder:
         """Create an Embedder instance.

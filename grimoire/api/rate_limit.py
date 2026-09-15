@@ -60,7 +60,9 @@ def setup_rate_limiting(app: FastAPI) -> Limiter:
     except Exception:
         from loguru import logger
 
-        logger.debug("Rate limiting falling back to in-memory storage (Redis unavailable)")
+        logger.debug(
+            "Rate limiting falling back to in-memory storage (Redis unavailable)"
+        )
 
     limiter = Limiter(
         key_func=_get_rate_limit_key,

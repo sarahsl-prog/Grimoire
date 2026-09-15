@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import click
@@ -15,6 +16,12 @@ from grimoire.cli.helpers import (
     teardown_db,
 )
 
+if TYPE_CHECKING:
+    # Type-only: the CLI defers model imports to keep startup fast.
+    from collections.abc import Sequence
+
+    from grimoire.db.models import Category
+
 
 @click.group("category")
 def categories() -> None:
@@ -23,7 +30,9 @@ def categories() -> None:
 
 @categories.command("add")
 @click.argument("name", type=str)
-@click.option("--description", "-d", type=str, default=None, help="Category description.")
+@click.option(
+    "--description", "-d", type=str, default=None, help="Category description."
+)
 @click.option("--parent", type=str, default=None, help="Parent category slug.")
 @click.option("--color", type=str, default=None, help="Display color (hex).")
 @click.pass_context
@@ -52,9 +61,9 @@ async def category_add(
             return text.lower().replace(" ", "-")
 
     try:
-        from grimoire.db.models import Category
-
         from sqlalchemy import select
+
+        from grimoire.db.models import Category
 
         async with get_db_context() as db:
             parent_id = None
@@ -97,9 +106,9 @@ async def category_list(ctx: click.Context, tree: bool) -> None:
     """
     await setup_db()
     try:
-        from grimoire.db.models import Category
-
         from sqlalchemy import select
+
+        from grimoire.db.models import Category
 
         async with get_db_context() as db:
             stmt = select(Category).order_by(Category.name)
@@ -137,9 +146,9 @@ async def category_remove(ctx: click.Context, slug: str, force: bool) -> None:
     """
     await setup_db()
     try:
-        from grimoire.db.models import Category, DocumentTag
-
         from sqlalchemy import func, select
+
+        from grimoire.db.models import Category, DocumentTag
 
         async with get_db_context() as db:
             stmt = select(Category).where(Category.slug == slug)
@@ -185,9 +194,9 @@ async def tag(ctx: click.Context, doc_id: str, tags: tuple[str, ...]) -> None:
     """
     await setup_db()
     try:
-        from grimoire.db.models import Category, Document, DocumentTag, TaggedBy
-
         from sqlalchemy import select
+
+        from grimoire.db.models import Category, Document, DocumentTag, TaggedBy
 
         async with get_db_context() as db:
             doc = await db.get(Document, doc_id)
@@ -232,9 +241,9 @@ async def untag(ctx: click.Context, doc_id: str, tags: tuple[str, ...]) -> None:
     """
     await setup_db()
     try:
-        from grimoire.db.models import Category, DocumentTag
-
         from sqlalchemy import select
+
+        from grimoire.db.models import Category, DocumentTag
 
         async with get_db_context() as db:
             for tag_name in tags:
@@ -260,7 +269,9 @@ async def untag(ctx: click.Context, doc_id: str, tags: tuple[str, ...]) -> None:
         await teardown_db()
 
 
-def _print_tree(cats: list, indent: int = 0, parent_id: str | None = None) -> None:
+def _print_tree(
+    cats: Sequence[Category], indent: int = 0, parent_id: str | None = None
+) -> None:
     """Print categories as an indented tree."""
     for cat in cats:
         if cat.parent_id == parent_id:

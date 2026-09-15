@@ -15,8 +15,8 @@ The schema is pure data — no I/O, no DB. These tests cover:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -26,7 +26,6 @@ from grimoire.strategies.security.metadata import (
     Severity,
     TLPLevel,
 )
-
 
 # ---------------------------------------------------------------------------
 # 1. Defaults
@@ -85,12 +84,12 @@ class TestJsonRoundTrip:
             severity=Severity.CRITICAL,
             cwe_ids=["CWE-79", "CWE-89"],
             affected_products=["Acme Widget 1.0"],
-            published_date=datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc),
+            published_date=datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC),
             mitre_technique_id="T1059.001",
             mitre_tactic="execution",
             threat_actors=["APT-Foo"],
             platforms=["windows", "linux"],
-            content_date=datetime(2024, 6, 7, 8, 9, 10, tzinfo=timezone.utc),
+            content_date=datetime(2024, 6, 7, 8, 9, 10, tzinfo=UTC),
         )
         as_json = original.model_dump_json()
         restored = SecurityMetadata.model_validate_json(as_json)
@@ -140,7 +139,7 @@ class TestValidators:
         naive = datetime(2024, 1, 2, 3, 4, 5)
         meta = SecurityMetadata(content_date=naive)
         assert meta.content_date is not None
-        assert meta.content_date.tzinfo is timezone.utc
+        assert meta.content_date.tzinfo is UTC
 
     def test_extra_field_rejected(self) -> None:
         with pytest.raises(ValueError):
@@ -160,13 +159,13 @@ class TestToChromaDBMetadata:
             cwe_ids=["CWE-1", "CWE-2"],
             threat_actors=["APT-A"],
             platforms=["windows"],
-            content_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            content_date=datetime(2024, 1, 1, tzinfo=UTC),
         )
         out = meta.to_chromadb_metadata()
         for key, value in out.items():
-            assert isinstance(value, (str, int, float, bool)), (
-                f"{key!r} must be a ChromaDB scalar, got {type(value)}"
-            )
+            assert isinstance(
+                value, (str, int, float, bool)
+            ), f"{key!r} must be a ChromaDB scalar, got {type(value)}"
             assert not isinstance(value, list), f"{key!r} must not be a list"
 
     def test_lists_are_pipe_joined(self) -> None:
@@ -207,7 +206,7 @@ class TestToChromaDBMetadata:
         assert out["platforms"] == ""
 
     def test_datetime_serialised_iso8601(self) -> None:
-        when = datetime(2024, 6, 7, 8, 9, 10, tzinfo=timezone.utc)
+        when = datetime(2024, 6, 7, 8, 9, 10, tzinfo=UTC)
         meta = SecurityMetadata(content_date=when)
         out = meta.to_chromadb_metadata()
         # Pydantic / stdlib isoformat: '2024-06-07T08:09:10+00:00'
@@ -241,13 +240,13 @@ class TestToChromaDBMetadata:
 class _StubDoc:
     """Minimal stand-in for a SQLAlchemy ``Document`` row."""
 
-    source_type: Optional[str] = None
-    cve_id: Optional[str] = None
-    severity: Optional[Severity] = None
-    mitre_technique_id: Optional[str] = None
-    content_date: Optional[datetime] = None
-    tlp_level: Optional[TLPLevel] = None
-    security_metadata: Optional[dict[str, Any]] = field(default=None)
+    source_type: str | None = None
+    cve_id: str | None = None
+    severity: Severity | None = None
+    mitre_technique_id: str | None = None
+    content_date: datetime | None = None
+    tlp_level: TLPLevel | None = None
+    security_metadata: dict[str, Any] | None = field(default=None)
 
 
 class TestDbColumnsRoundTrip:
@@ -259,7 +258,7 @@ class TestDbColumnsRoundTrip:
             cve_id="CVE-2024-1",
             severity=Severity.CRITICAL,
             mitre_technique_id="T1059.001",
-            content_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            content_date=datetime(2024, 1, 1, tzinfo=UTC),
             tlp_level=TLPLevel.AMBER,
         )
         cols = meta.to_db_columns()
@@ -276,7 +275,7 @@ class TestDbColumnsRoundTrip:
         assert cols["severity"] is Severity.CRITICAL
         assert cols["mitre_technique_id"] == "T1059.001"
         assert cols["tlp_level"] is TLPLevel.AMBER
-        assert cols["content_date"] == datetime(2024, 1, 1, tzinfo=timezone.utc)
+        assert cols["content_date"] == datetime(2024, 1, 1, tzinfo=UTC)
 
     def test_from_db_row_round_trip(self) -> None:
         original = SecurityMetadata(
@@ -284,7 +283,7 @@ class TestDbColumnsRoundTrip:
             mitre_technique_id="T1059",
             severity=Severity.HIGH,
             tlp_level=TLPLevel.GREEN,
-            content_date=datetime(2024, 5, 1, tzinfo=timezone.utc),
+            content_date=datetime(2024, 5, 1, tzinfo=UTC),
             cwe_ids=["CWE-1"],
             threat_actors=["APT-Round"],
         )

@@ -11,15 +11,10 @@ Tests cover:
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from pathlib import Path
-from typing import Any, List
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 
 from grimoire.agents.ingestion import (
     BatchIngestionResult,
@@ -28,18 +23,13 @@ from grimoire.agents.ingestion import (
     _select_chunking_strategy,
     detect_file_type,
 )
-from grimoire.core.chunker.base import Chunk, ChunkConfig, ChunkingStrategy
+from grimoire.core.chunker.base import Chunk, ChunkingStrategy
 from grimoire.core.dedup import DeduplicationAction, DedupResult
 from grimoire.core.parser import DocumentMetadata, ParsedDocument
 from grimoire.db.models import (
-    ActionType,
-    Category,
     Document,
     FileType,
-    ProcessingStatus,
-    StorageBackend,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -118,7 +108,7 @@ def mock_db() -> AsyncMock:
 
 
 @pytest.fixture
-def sample_chunks() -> List[Chunk]:
+def sample_chunks() -> list[Chunk]:
     """Create sample chunks for testing."""
     return [
         Chunk(
@@ -236,7 +226,7 @@ class TestIngestionHappyPath:
         agent: IngestionAgent,
         mock_db: AsyncMock,
         mock_parser: MagicMock,
-        sample_chunks: List[Chunk],
+        sample_chunks: list[Chunk],
         tmp_path: Path,
     ) -> None:
         """Can ingest a new file through the full pipeline."""
@@ -384,7 +374,7 @@ class TestIngestionErrorHandling:
         mock_db: AsyncMock,
         mock_parser: MagicMock,
         tmp_path: Path,
-        sample_chunks: List[Chunk],
+        sample_chunks: list[Chunk],
     ) -> None:
         """Embedding failures are handled gracefully."""
         test_file = tmp_path / "test.txt"
@@ -415,7 +405,7 @@ class TestIngestionErrorHandling:
         mock_db: AsyncMock,
         mock_parser: MagicMock,
         tmp_path: Path,
-        sample_chunks: List[Chunk],
+        sample_chunks: list[Chunk],
     ) -> None:
         """Auto-tagging failure should not fail the whole ingestion."""
         test_file = tmp_path / "test.txt"
@@ -522,7 +512,7 @@ class TestIngestionEdgeCases:
         mock_vector_store: MagicMock,
         mock_db: AsyncMock,
         tmp_path: Path,
-        sample_chunks: List[Chunk],
+        sample_chunks: list[Chunk],
     ) -> None:
         """Agent works without a tagger (auto_tag has no effect)."""
         agent = IngestionAgent(

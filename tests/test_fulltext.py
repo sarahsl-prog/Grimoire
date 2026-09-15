@@ -11,16 +11,13 @@ Comprehensive tests covering:
 
 from __future__ import annotations
 
-import asyncio
-import re
-from typing import Any, AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock, patch
+from collections.abc import AsyncGenerator
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.search.fulltext import (
     FTSQuery,
@@ -31,7 +28,6 @@ from grimoire.search.fulltext import (
     search_chunks,
     search_with_title,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -380,9 +376,7 @@ class TestAsyncBehavior:
         mock_result.scalar_one_or_none.return_value = "Highlighted content"
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        result = await fts.highlight(
-            "123e4567-e89b-12d3-a456-426614174000", "test"
-        )
+        result = await fts.highlight("123e4567-e89b-12d3-a456-426614174000", "test")
         assert result is not None
 
 
@@ -474,9 +468,7 @@ class TestSearchIntegration:
 
         # Mock for ts_headline
         headline_result = MagicMock()
-        headline_result.scalar_one_or_none.return_value = (
-            "<mark>Python</mark> is great"
-        )
+        headline_result.scalar_one_or_none.return_value = "<mark>Python</mark> is great"
 
         # Set up side effect for multiple executes
         session.execute = AsyncMock(side_effect=[content_result, headline_result])
@@ -648,6 +640,7 @@ class TestQueryCoverage:
 # =============================================================================
 # Coverage and Metrics
 # =============================================================================
+
 
 def test_module_has_all_exports() -> None:
     """Test that module exports expected functions and classes."""

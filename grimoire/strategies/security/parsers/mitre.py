@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from grimoire.strategies.security.corpus import SourceType
 from grimoire.strategies.security.metadata import SecurityMetadata, Severity
@@ -25,20 +25,22 @@ __all__ = ["parse_mitre"]
 _RE_MITRE_TECHNIQUE_ID = re.compile(r"^T\d{4}(?:\.\d{3})?$")
 
 
-def _extract_mitre_id(
-    text: str, stix_obj: Optional[Dict[str, Any]] = None
-) -> Optional[str]:
+def _extract_mitre_id(text: str, stix_obj: dict[str, Any] | None = None) -> str | None:
     r"""Try to find a ``T\d{4}(\.\d{3})?`` id from STIX external_references or text."""
 
     if stix_obj is not None:
         refs = stix_obj.get("external_references", [])
         for ref in refs:
             if isinstance(ref, dict):
+                # STIX is untrusted input: a non-string here would make the
+                # regex calls raise instead of simply not matching.
                 ext_id = ref.get("external_id", "")
-                if _RE_MITRE_TECHNIQUE_ID.match(ext_id):
+                if isinstance(ext_id, str) and _RE_MITRE_TECHNIQUE_ID.match(ext_id):
                     return ext_id
                 # URL fallback — MITRE urls use /techniques/TXXXX or /techniques/TXXXX/NNN
                 url = ref.get("url", "")
+                if not isinstance(url, str):
+                    continue
                 m = re.search(r"/techniques/([T\d\.]+)", url)
                 if m:
                     tid = m.group(1)
@@ -51,7 +53,7 @@ def _extract_mitre_id(
     return None
 
 
-def _extract_tactic(stix_obj: Dict[str, Any]) -> Optional[str]:
+def _extract_tactic(stix_obj: dict[str, Any]) -> str | None:
     """Return the first tactic from ``kill_chain_phases`` or ``x_mitre_tactic_type``."""
 
     # kill_chain_phases is the canonical STIX location.
@@ -70,7 +72,7 @@ def _extract_tactic(stix_obj: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _extract_platforms(stix_obj: Dict[str, Any]) -> List[str]:
+def _extract_platforms(stix_obj: dict[str, Any]) -> list[str]:
     """Return platforms from ``x_mitre_platforms`` as lower-case strings."""
 
     raw = stix_obj.get("x_mitre_platforms", [])
@@ -83,7 +85,7 @@ def _extract_platforms(stix_obj: Dict[str, Any]) -> List[str]:
     return []
 
 
-def _extract_detection(stix_obj: Dict[str, Any]) -> Optional[str]:
+def _extract_detection(stix_obj: dict[str, Any]) -> str | None:
     """Return detection guidance if present."""
 
     det = stix_obj.get("x_mitre_detection")
@@ -92,7 +94,7 @@ def _extract_detection(stix_obj: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _extract_name(stix_obj: Dict[str, Any]) -> Optional[str]:
+def _extract_name(stix_obj: dict[str, Any]) -> str | None:
     """Return the ATT&CK technique name."""
 
     name = stix_obj.get("name")
@@ -101,7 +103,7 @@ def _extract_name(stix_obj: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _extract_description(stix_obj: Dict[str, Any]) -> Optional[str]:
+def _extract_description(stix_obj: dict[str, Any]) -> str | None:
     """Return the technique description."""
 
     desc = stix_obj.get("description")
@@ -110,7 +112,7 @@ def _extract_description(stix_obj: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _extract_mitigations(stix_obj: Dict[str, Any]) -> List[str]:
+def _extract_mitigations(stix_obj: dict[str, Any]) -> list[str]:
     """Return mitigation guidance if present in ``x_mitre_mitigations``."""
 
     raw = stix_obj.get("x_mitre_mitigations")
@@ -120,8 +122,8 @@ def _extract_mitigations(stix_obj: Dict[str, Any]) -> List[str]:
 
 
 def _parse_stix_attack_pattern(
-    obj: Dict[str, Any],
-) -> List[Tuple[str, SecurityMetadata]]:
+    obj: dict[str, Any],
+) -> list[tuple[str, SecurityMetadata]]:
     """Parse a single STIX ``attack-pattern`` object into section tuples."""
 
     mitre_id = _extract_mitre_id("", stix_obj=obj)
@@ -140,7 +142,7 @@ def _parse_stix_attack_pattern(
         severity=Severity.UNKNOWN,  # ATT&CK doesn't assign severity natively.
     )
 
-    results: List[Tuple[str, SecurityMetadata]] = []
+    results: list[tuple[str, SecurityMetadata]] = []
 
     if description:
         text = (
@@ -164,7 +166,7 @@ def _parse_stix_attack_pattern(
     return results
 
 
-def _parse_stix_bundle(text: str) -> Optional[List[Tuple[str, SecurityMetadata]]]:
+def _parse_stix_bundle(text: str) -> list[tuple[str, SecurityMetadata]] | None:
     """Attempt to parse ``text`` as a STIX 2.1 bundle."""
 
     try:
@@ -179,7 +181,7 @@ def _parse_stix_bundle(text: str) -> Optional[List[Tuple[str, SecurityMetadata]]
     if not isinstance(objects, list):
         return None
 
-    results: List[Tuple[str, SecurityMetadata]] = []
+    results: list[tuple[str, SecurityMetadata]] = []
     for obj in objects:
         if isinstance(obj, dict) and obj.get("type") == "attack-pattern":
             results.extend(_parse_stix_attack_pattern(obj))
@@ -187,7 +189,7 @@ def _parse_stix_bundle(text: str) -> Optional[List[Tuple[str, SecurityMetadata]]
     return results if results else None
 
 
-def _parse_mitre_markdown(text: str) -> Optional[List[Tuple[str, SecurityMetadata]]]:
+def _parse_mitre_markdown(text: str) -> list[tuple[str, SecurityMetadata]] | None:
     """Attempt to parse ``text`` as a Markdown file with YAML frontmatter."""
 
     if not text.startswith("---\n"):
@@ -252,7 +254,7 @@ def _parse_mitre_markdown(text: str) -> Optional[List[Tuple[str, SecurityMetadat
             return [(text, base_meta)]
         return None
 
-    results: List[Tuple[str, SecurityMetadata]] = []
+    results: list[tuple[str, SecurityMetadata]] = []
     # Include the leading text before the first H2 as a "Description" section.
     first_start = splits[0].start()
     if first_start > 0:
@@ -282,7 +284,7 @@ def _parse_mitre_markdown(text: str) -> Optional[List[Tuple[str, SecurityMetadat
     return results if results else None
 
 
-def parse_mitre(text: str) -> List[Tuple[str, SecurityMetadata]]:
+def parse_mitre(text: str) -> list[tuple[str, SecurityMetadata]]:
     """Parse MITRE ATT&CK content in either STIX or Markdown form.
 
     Args:

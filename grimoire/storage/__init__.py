@@ -1,5 +1,7 @@
 """Storage adapters for Grimoire."""
 
+import contextlib
+
 from grimoire.storage.base import (
     FileChange,
     FileChangeType,
@@ -17,7 +19,7 @@ from grimoire.storage.watch_manager import (
     WatchType,
 )
 
-try:
+with contextlib.suppress(ImportError):
     from grimoire.storage.gdrive import (
         AuthenticationError,
         GoogleDriveAdapter,
@@ -25,8 +27,6 @@ try:
         RateLimitError,
         TokenRefreshError,
     )
-except ImportError:
-    pass
 
 __all__ = [
     "StorageAdapter",

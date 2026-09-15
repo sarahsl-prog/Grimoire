@@ -21,9 +21,19 @@ def wiki() -> None:
 
 
 @wiki.command("compile")
-@click.option("--doc-id", "-d", type=str, default=None, help="Compile a specific document.")
-@click.option("--category", type=str, default=None, help="Compile all docs in a category.")
-@click.option("--all", "compile_all", is_flag=True, default=False, help="Compile all completed documents.")
+@click.option(
+    "--doc-id", "-d", type=str, default=None, help="Compile a specific document."
+)
+@click.option(
+    "--category", type=str, default=None, help="Compile all docs in a category."
+)
+@click.option(
+    "--all",
+    "compile_all",
+    is_flag=True,
+    default=False,
+    help="Compile all completed documents.",
+)
 @click.pass_context
 @async_command
 async def wiki_compile(
@@ -34,7 +44,7 @@ async def wiki_compile(
     try:
         from sqlalchemy import select
 
-        from grimoire.db.models import Document, ProcessingStatus, WikiCompileJob
+        from grimoire.db.models import Document, ProcessingStatus
 
         agent = build_wiki_agent()
 
@@ -212,9 +222,7 @@ async def wiki_status(ctx: click.Context) -> None:
         async with get_db_context() as db:
             job_counts = {}
             for status_val in ["pending", "compiling", "completed", "failed"]:
-                stmt = select(func.count()).where(
-                    WikiCompileJob.status == status_val
-                )
+                stmt = select(func.count()).where(WikiCompileJob.status == status_val)
                 result = await db.execute(stmt)
                 job_counts[status_val] = result.scalar() or 0
 
@@ -223,7 +231,7 @@ async def wiki_status(ctx: click.Context) -> None:
 
         click.echo("Wiki Status:")
         click.echo(f"  Pages: {total_pages}")
-        click.echo(f"  Compile queue:")
+        click.echo("  Compile queue:")
         click.echo(f"    Pending:   {job_counts['pending']}")
         click.echo(f"    Compiling: {job_counts['compiling']}")
         click.echo(f"    Completed: {job_counts['completed']}")

@@ -16,16 +16,19 @@ from grimoire.api.schemas import SECURITY_FILTER_KEYS, warn_unknown_filter_keys
 class TestSecurityFilterKeys:
     def test_constant_lists_documented_keys(self) -> None:
         """The plan calls out these specific keys — guard the contract."""
-        assert SECURITY_FILTER_KEYS == frozenset(
-            {
-                "severity",
-                "mitre_tactic",
-                "mitre_technique_id",
-                "source_type",
-                "cve_id",
-                "content_date_after",
-                "platforms",
-            }
+        assert (
+            frozenset(
+                {
+                    "severity",
+                    "mitre_tactic",
+                    "mitre_technique_id",
+                    "source_type",
+                    "cve_id",
+                    "content_date_after",
+                    "platforms",
+                }
+            )
+            == SECURITY_FILTER_KEYS
         )
 
     def test_constant_is_frozen(self) -> None:

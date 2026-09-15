@@ -12,7 +12,7 @@ import json
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 from loguru import logger
 
@@ -56,7 +56,7 @@ class Cache(ABC):
     """
 
     @abstractmethod
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get a value from the cache.
 
         Args:
@@ -75,7 +75,7 @@ class Cache(ABC):
         self,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         """Store a value in the cache.
 
@@ -172,8 +172,8 @@ class RedisCache(Cache):
         host: str = "localhost",
         port: int = 6379,
         db: int = 0,
-        password: Optional[str] = None,
-        namespace: Union[str, CacheKeyPrefix] = CacheKeyPrefix.DEFAULT,
+        password: str | None = None,
+        namespace: str | CacheKeyPrefix = CacheKeyPrefix.DEFAULT,
         socket_connect_timeout: float = 5.0,
         socket_timeout: float = 5.0,
         max_connections: int = 10,
@@ -200,8 +200,8 @@ class RedisCache(Cache):
         self._socket_connect_timeout = socket_connect_timeout
         self._socket_timeout = socket_timeout
         self._max_connections = max_connections
-        self._client: Optional[Any] = None
-        self._pool: Optional[Any] = None
+        self._client: Any | None = None
+        self._pool: Any | None = None
 
         logger.debug(
             f"RedisCache initialized with host={host}, port={port}, db={db}, "
@@ -246,7 +246,7 @@ class RedisCache(Cache):
             logger.error(f"Failed to serialize value: {e}")
             raise TypeError(f"Value not JSON-serializable: {e}") from e
 
-    def _deserialize(self, data: Union[str, bytes, None]) -> Optional[Any]:
+    def _deserialize(self, data: str | bytes | None) -> Any | None:
         """Deserialize JSON string to Python object.
 
         Args:
@@ -343,7 +343,7 @@ class RedisCache(Cache):
         """
         await self.disconnect()
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get a value from the cache.
 
         Args:
@@ -380,7 +380,7 @@ class RedisCache(Cache):
         self,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         """Store a value in the cache.
 
@@ -458,7 +458,7 @@ class RedisCache(Cache):
             cursor = 0
             deleted = 0
             while True:
-                cursor, keys = await self._client.scan(
+                cursor, keys = await self._client.scan(  # type: ignore[union-attr]
                     cursor=cursor, match=pattern, count=100
                 )
                 if keys:
@@ -547,7 +547,7 @@ class DiskCache(Cache):
 
     def __init__(
         self,
-        path: Union[str, Path] = ".cache",
+        path: str | Path = ".cache",
         size_limit: int = 1024 * 1024 * 1024,  # 1GB
     ) -> None:
         """Initialize disk cache.
@@ -558,7 +558,7 @@ class DiskCache(Cache):
         """
         self.path = Path(path)
         self.size_limit = size_limit
-        self._cache: Optional[Any] = None
+        self._cache: Any | None = None
 
     def _get_cache(self) -> Any:
         """Lazy initialization of diskcache.
@@ -602,7 +602,7 @@ class DiskCache(Cache):
             return hashlib.sha256(key.encode()).hexdigest()
         return key
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get a value from disk cache.
 
         Args:
@@ -632,7 +632,7 @@ class DiskCache(Cache):
         self,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         """Store a value in disk cache.
 

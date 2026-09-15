@@ -9,11 +9,11 @@ Tests cover:
 - State management: Cache invalidation, model switching
 """
 
-import hashlib
 import sys
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator, List, Optional
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
@@ -101,7 +101,7 @@ class MockCache(Cache):
         self.set_calls: int = 0
         self.delete_calls: int = 0
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         self.get_calls += 1
         return self._data.get(key)
 
@@ -109,7 +109,7 @@ class MockCache(Cache):
         self,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         self.set_calls += 1
         self._data[key] = value
@@ -490,7 +490,9 @@ class TestEmbedderDeviceDetection:
         assert device == "cpu"
 
     @pytest.mark.skipif(
-        not getattr(getattr(__import__("torch"), "cuda", None), "is_available", lambda: False)(),
+        not getattr(
+            getattr(__import__("torch"), "cuda", None), "is_available", lambda: False
+        )(),
         reason="CUDA not available",
     )
     def test_explicit_cuda_device(self) -> None:
@@ -536,9 +538,7 @@ class TestEmbedderBatchProcessing:
             assert len(result) == 768
 
     @pytest.mark.asyncio
-    async def test_exact_batch_size(
-        self, mock_sentence_transformer: Mock
-    ) -> None:
+    async def test_exact_batch_size(self, mock_sentence_transformer: Mock) -> None:
         """Batch exactly matching batch_size."""
         config = EmbeddingConfig(batch_size=5, device="cpu")
         embedder = Embedder(config=config)
@@ -549,9 +549,7 @@ class TestEmbedderBatchProcessing:
         assert len(results) == 5
 
     @pytest.mark.asyncio
-    async def test_batch_size_one(
-        self, mock_sentence_transformer: Mock
-    ) -> None:
+    async def test_batch_size_one(self, mock_sentence_transformer: Mock) -> None:
         """Batch size of 1 processes correctly."""
         config = EmbeddingConfig(batch_size=1, device="cpu")
         embedder = Embedder(config=config)

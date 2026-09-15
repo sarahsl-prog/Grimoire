@@ -100,11 +100,24 @@ class TokenCrypto:
 
         try:
             payload = self._f.decrypt(token.encode("ascii"))
-            return json.loads(payload)
+            decoded = json.loads(payload)
         except InvalidToken as exc:
-            raise TokenCryptoError("Token decryption failed — invalid key or corrupted token") from exc
+            raise TokenCryptoError(
+                "Token decryption failed — invalid key or corrupted token"
+            ) from exc
         except json.JSONDecodeError as exc:
-            raise TokenCryptoError("Token decryption succeeded but payload is not valid JSON") from exc
+            raise TokenCryptoError(
+                "Token decryption succeeded but payload is not valid JSON"
+            ) from exc
+
+        # Valid JSON is not necessarily a token mapping — a list or scalar here
+        # would otherwise flow out under a dict annotation.
+        if not isinstance(decoded, dict):
+            raise TokenCryptoError(
+                "Token payload decoded to "
+                f"{type(decoded).__name__}, expected a JSON object"
+            )
+        return decoded
 
 
 def encrypt_tokens(data: dict[str, Any]) -> str:

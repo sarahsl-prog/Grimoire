@@ -10,26 +10,22 @@ Comprehensive test coverage for:
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Generator
-from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
 
 from grimoire.core.dedup import (
     CHUNK_SIZE,
     ConflictDetails,
-    DedupResult,
-    DedupStrategy,
     DeduplicationAction,
     Deduplicator,
+    DedupResult,
+    DedupStrategy,
     check_duplicate,
     compute_bytes_hash,
     compute_file_hash,
@@ -39,7 +35,6 @@ from grimoire.db.models import (
     ActionType,
     Document,
     FileType,
-    ProcessingLog,
     ProcessingStatus,
     StatusType,
     StorageBackend,
@@ -625,7 +620,7 @@ class TestUtilityFunctions:
 
         assert isinstance(mtime, datetime)
         # Should be recent (mtime is timezone-aware, so compare with UTC)
-        assert datetime.now(timezone.utc) - mtime < timedelta(minutes=1)
+        assert datetime.now(UTC) - mtime < timedelta(minutes=1)
 
     def test_get_file_mtime_nonexistent(self) -> None:
         """None returned for non-existent file."""

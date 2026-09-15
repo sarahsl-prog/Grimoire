@@ -18,7 +18,7 @@ event loop so the caller isn't blocked.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -38,7 +38,7 @@ __all__ = ["SecurityChunker"]
 
 
 def _as_recursive_chunk_config(
-    config: Optional[ChunkConfig],
+    config: ChunkConfig | None,
 ) -> RecursiveChunkConfig:
     """Promote a generic ``ChunkConfig`` to a ``RecursiveChunkConfig``.
 
@@ -75,9 +75,9 @@ class SecurityChunker(Chunker):
 
     def __init__(
         self,
-        config: Optional[ChunkConfig] = None,
+        config: ChunkConfig | None = None,
         *,
-        settings: Optional[GrimoireSettings] = None,
+        settings: GrimoireSettings | None = None,
     ) -> None:
         """Initialize the security chunker.
 
@@ -98,15 +98,15 @@ class SecurityChunker(Chunker):
         recursive_config = _as_recursive_chunk_config(config)
         self._prose_chunker = RecursiveCharacterTextSplitter(recursive_config)
         self._settings = settings
-        self._extractor: Optional[Any] = None
+        self._extractor: Any | None = None
 
     async def chunk(
         self,
         text: str,
-        doc_id: Optional[str] = None,
+        doc_id: str | None = None,
         *,
-        source_metadata: Optional[Dict[str, Any]] = None,
-    ) -> List[Chunk]:
+        source_metadata: dict[str, Any] | None = None,
+    ) -> list[Chunk]:
         """Chunk security-domain text using source-type dispatch.
 
         Args:
@@ -135,7 +135,7 @@ class SecurityChunker(Chunker):
 
         # PROSE, UNKNOWN, IOC_LIST → prose fallback.
         # If settings.security.llm_extract_enabled, try LLM extraction first.
-        sec_meta: Optional[SecurityMetadata] = None
+        sec_meta: SecurityMetadata | None = None
         if self._settings is not None and self._settings.security.llm_extract_enabled:
             from grimoire.strategies.security.extractor import SecurityMetadataExtractor
 
@@ -152,9 +152,7 @@ class SecurityChunker(Chunker):
     # Sigma
     # ------------------------------------------------------------------ #
 
-    async def _chunk_sigma(
-        self, text: str, doc_id: Optional[str] = None
-    ) -> List[Chunk]:
+    async def _chunk_sigma(self, text: str, doc_id: str | None = None) -> list[Chunk]:
         """Chunk Sigma rules: one chunk per rule.
 
         Each chunk's ``metadata`` contains the rule's
@@ -167,7 +165,7 @@ class SecurityChunker(Chunker):
         if not parsed:
             return []
 
-        chunks: List[Chunk] = []
+        chunks: list[Chunk] = []
         for rule_text, sec_meta in parsed:
             token_count = self._count_tokens(rule_text)
             chunk = Chunk(
@@ -192,8 +190,8 @@ class SecurityChunker(Chunker):
     # ------------------------------------------------------------------ #
 
     async def _chunk_playbook(
-        self, text: str, doc_id: Optional[str] = None
-    ) -> List[Chunk]:
+        self, text: str, doc_id: str | None = None
+    ) -> list[Chunk]:
         """Chunk playbooks: one chunk per ``##`` section.
 
         Each chunk carries the document-level front-matter metadata so
@@ -205,7 +203,7 @@ class SecurityChunker(Chunker):
         if not parsed:
             return []
 
-        chunks: List[Chunk] = []
+        chunks: list[Chunk] = []
         for section_text, sec_meta in parsed:
             token_count = self._count_tokens(section_text)
             chunk = Chunk(
@@ -229,7 +227,7 @@ class SecurityChunker(Chunker):
     # NVD CVE
     # ------------------------------------------------------------------ #
 
-    async def _chunk_nvd(self, text: str, doc_id: Optional[str] = None) -> List[Chunk]:
+    async def _chunk_nvd(self, text: str, doc_id: str | None = None) -> list[Chunk]:
         """Chunk NVD CVE records: two chunks per CVE.
 
         * Chunk A (``chunk_type="cve_description"``): description, CVSS,
@@ -244,7 +242,7 @@ class SecurityChunker(Chunker):
         if not parsed:
             return []
 
-        chunks: List[Chunk] = []
+        chunks: list[Chunk] = []
         for cve_text, sec_meta in parsed:
             chroma_meta = sec_meta.to_chromadb_metadata()
             shared_meta = {
@@ -299,9 +297,7 @@ class SecurityChunker(Chunker):
     # MITRE ATT&CK
     # ------------------------------------------------------------------ #
 
-    async def _chunk_mitre(
-        self, text: str, doc_id: Optional[str] = None
-    ) -> List[Chunk]:
+    async def _chunk_mitre(self, text: str, doc_id: str | None = None) -> list[Chunk]:
         """Chunk MITRE ATT&CK content: one chunk per section.
 
         Each section (Description, Detection, Mitigations) becomes its own
@@ -316,7 +312,7 @@ class SecurityChunker(Chunker):
         if not parsed:
             return []
 
-        chunks: List[Chunk] = []
+        chunks: list[Chunk] = []
         for section_text, sec_meta in parsed:
             chunk = Chunk(
                 content=section_text,
@@ -342,10 +338,10 @@ class SecurityChunker(Chunker):
     async def _chunk_prose(
         self,
         text: str,
-        doc_id: Optional[str] = None,
+        doc_id: str | None = None,
         *,
-        sec_meta: Optional[SecurityMetadata] = None,
-    ) -> List[Chunk]:
+        sec_meta: SecurityMetadata | None = None,
+    ) -> list[Chunk]:
         """Chunk prose content via ``RecursiveCharacterTextSplitter``.
 
         Stamps each chunk with ``chunk_type="prose"`` and

@@ -8,8 +8,9 @@ and proper initialization with metadata schema.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Union, cast
+from typing import Any, cast
 
 import chromadb
 from chromadb.api import ClientAPI
@@ -50,12 +51,12 @@ class ChromaDBStore(VectorStore):
 
     def __init__(
         self,
-        persist_directory: Union[str, Path],
+        persist_directory: str | Path,
         collection_name: str = "documents",
         distance_metric: str = "cosine",
         anonymized_telemetry: bool = False,
-        host: Optional[str] = None,
-        port: Optional[int] = None,
+        host: str | None = None,
+        port: int | None = None,
     ):
         """Initialize ChromaDBStore with configuration.
 
@@ -76,8 +77,8 @@ class ChromaDBStore(VectorStore):
         self.anonymized_telemetry = anonymized_telemetry
         self.host = host
         self.port = port
-        self._client: Optional[ClientAPI] = None
-        self._collection: Optional[Collection] = None
+        self._client: ClientAPI | None = None
+        self._collection: Collection | None = None
         self._embedding_dim: int = 0
 
     def _validate_distance_metric(self, metric: str) -> str:
@@ -127,13 +128,21 @@ class ChromaDBStore(VectorStore):
         try:
             if self.host is not None:
                 # Use HttpClient for remote ChromaDB server
-                self._client = chromadb.HttpClient(host=self.host, port=self.port or 8000)
-                logger.info(f"ChromaDB HTTP client initialized at {self.host}:{self.port}")
+                self._client = chromadb.HttpClient(
+                    host=self.host, port=self.port or 8000
+                )
+                logger.info(
+                    f"ChromaDB HTTP client initialized at {self.host}:{self.port}"
+                )
             else:
                 # Use PersistentClient for local persistence
                 self.persist_directory.mkdir(parents=True, exist_ok=True)
-                logger.debug(f"ChromaDB persistence directory: {self.persist_directory}")
-                self._client = chromadb.PersistentClient(path=str(self.persist_directory))
+                logger.debug(
+                    f"ChromaDB persistence directory: {self.persist_directory}"
+                )
+                self._client = chromadb.PersistentClient(
+                    path=str(self.persist_directory)
+                )
                 logger.info(f"ChromaDB client initialized at {self.persist_directory}")
 
             # Get or create collection with metadata schema
@@ -166,10 +175,10 @@ class ChromaDBStore(VectorStore):
 
     async def add_documents(
         self,
-        ids: List[str],
-        embeddings: List[List[float]],
-        metadatas: List[Dict[str, Any]],
-        documents: List[str],
+        ids: list[str],
+        embeddings: list[list[float]],
+        metadatas: list[dict[str, Any]],
+        documents: list[str],
     ) -> None:
         """Add or update documents in the vector store.
 
@@ -211,7 +220,7 @@ class ChromaDBStore(VectorStore):
 
         # Normalize metadata for ChromaDB compatibility
         # ChromaDB requires at least one metadata attribute per document
-        normalized_metadatas: List[Dict[str, Union[str, int, float, bool]]] = []
+        normalized_metadatas: list[dict[str, str | int | float | bool]] = []
         for meta in metadatas:
             if not meta:
                 # ChromaDB doesn't allow empty metadata dictionaries
@@ -233,8 +242,8 @@ class ChromaDBStore(VectorStore):
             raise RuntimeError(msg) from e
 
     def _normalize_single_metadata(
-        self, meta: Dict[str, Any]
-    ) -> Dict[str, Union[str, int, float, bool]]:
+        self, meta: dict[str, Any]
+    ) -> dict[str, str | int | float | bool]:
         """Normalize single metadata dict for ChromaDB compatibility.
 
         ChromaDB requires metadata values to be str, int, float, or bool.
@@ -247,7 +256,7 @@ class ChromaDBStore(VectorStore):
         Returns:
             Normalized metadata dictionary.
         """
-        norm_meta: Dict[str, Union[str, int, float, bool]] = {}
+        norm_meta: dict[str, str | int | float | bool] = {}
         for key, value in meta.items():
             if isinstance(value, (str, int, float, bool)):
                 norm_meta[key] = value
@@ -264,11 +273,11 @@ class ChromaDBStore(VectorStore):
 
     async def search(
         self,
-        query_embedding: List[float],
-        filter_dict: Optional[Dict[str, Any]] = None,
+        query_embedding: list[float],
+        filter_dict: dict[str, Any] | None = None,
         top_k: int = 10,
-        include: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        include: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Perform vector similarity search with optional metadata filtering.
 
         Supports ChromaDB's Where filter syntax for metadata filtering.
@@ -312,7 +321,7 @@ class ChromaDBStore(VectorStore):
 
         # ChromaDB uses specific include format
         include_params = set(include)
-        chroma_include: List[str] = []
+        chroma_include: list[str] = []
         if "metadatas" in include_params:
             chroma_include.append("metadatas")
         if "documents" in include_params:
@@ -335,7 +344,7 @@ class ChromaDBStore(VectorStore):
             logger.error(msg)
             raise RuntimeError(msg) from e
 
-    def _parse_filter(self, filter_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def _parse_filter(self, filter_dict: dict[str, Any]) -> dict[str, Any]:
         """Parse filter dictionary to ChromaDB where clause format.
 
         Supports ChromaDB operators: $eq, $ne, $gt, $gte, $lt, $lte,
@@ -388,7 +397,7 @@ class ChromaDBStore(VectorStore):
                 return parsed
             return {"$eq": value}
 
-        where_clause: Dict[str, Any] = {}
+        where_clause: dict[str, Any] = {}
 
         for key, value in filter_dict.items():
             if key in ("$and", "$or"):
@@ -401,7 +410,9 @@ class ChromaDBStore(VectorStore):
 
         # ChromaDB requires exactly one operator in `where`.
         # If we have multiple top-level field filters, wrap them in $and.
-        if len(where_clause) > 1 and not any(k in ("$and", "$or") for k in where_clause):
+        if len(where_clause) > 1 and not any(
+            k in ("$and", "$or") for k in where_clause
+        ):
             where_clause = {"$and": [{k: v} for k, v in where_clause.items()]}
 
         return where_clause
@@ -410,7 +421,7 @@ class ChromaDBStore(VectorStore):
         self,
         results: Mapping[str, Any],
         include_params: set[str],
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Format ChromaDB query results to standardized format.
 
         Args:
@@ -420,7 +431,7 @@ class ChromaDBStore(VectorStore):
         Returns:
             List of formatted result dictionaries.
         """
-        formatted_results: List[Dict[str, Any]] = []
+        formatted_results: list[dict[str, Any]] = []
 
         # ChromaDB returns results as nested lists: result[0] is first query
         ids = results.get("ids", [[]])[0] if results.get("ids") else []
@@ -435,7 +446,7 @@ class ChromaDBStore(VectorStore):
         )
 
         for i, doc_id in enumerate(ids):
-            result: Dict[str, Any] = {"id": doc_id}
+            result: dict[str, Any] = {"id": doc_id}
 
             if "documents" in include_params and i < len(documents):
                 result["document"] = documents[i]
@@ -460,7 +471,7 @@ class ChromaDBStore(VectorStore):
 
         return formatted_results
 
-    async def delete(self, ids: List[str]) -> None:
+    async def delete(self, ids: list[str]) -> None:
         """Delete documents by ID.
 
         Args:
@@ -490,7 +501,7 @@ class ChromaDBStore(VectorStore):
             logger.error(msg)
             raise RuntimeError(msg) from e
 
-    async def get(self, ids: List[str]) -> List[Dict[str, Any]]:
+    async def get(self, ids: list[str]) -> list[dict[str, Any]]:
         """Retrieve documents by ID.
 
         Args:
@@ -518,25 +529,25 @@ class ChromaDBStore(VectorStore):
             )
 
             # Handle None values from ChromaDB API
-            result_ids: List[str] = cast(List[str], results.get("ids") or [])
+            result_ids: list[str] = cast(list[str], results.get("ids") or [])
             raw_docs = results.get("documents")
             raw_meta = results.get("metadatas")
             raw_emb = results.get("embeddings")
 
-            documents: Sequence[Optional[str]] = (
-                cast(List[Any], raw_docs) if raw_docs is not None else []
+            documents: Sequence[str | None] = (
+                cast(list[Any], raw_docs) if raw_docs is not None else []
             )
-            metadatas: Sequence[Optional[Dict[str, Any]]] = (
-                cast(List[Any], raw_meta) if raw_meta is not None else []
+            metadatas: Sequence[dict[str, Any] | None] = (
+                cast(list[Any], raw_meta) if raw_meta is not None else []
             )
             embeddings: Sequence[Any] = (
-                cast(List[Any], raw_emb) if raw_emb is not None else []
+                cast(list[Any], raw_emb) if raw_emb is not None else []
             )
 
-            formatted: List[Dict[str, Any]] = []
+            formatted: list[dict[str, Any]] = []
 
             for i, doc_id in enumerate(result_ids):
-                record: Dict[str, Any] = {"id": doc_id}
+                record: dict[str, Any] = {"id": doc_id}
 
                 if i < len(documents) and documents[i] is not None:
                     record["document"] = documents[i]

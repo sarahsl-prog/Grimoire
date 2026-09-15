@@ -57,19 +57,23 @@ async def create_category(
 ) -> CategoryResponse:
     """Create a new category."""
     from slugify import slugify
-    
+
     slug = slugify(body.name)
-    
+
     # Check for existing slug and handle collision
     existing = (
-        await db.execute(select(Category).where(Category.slug == slug))
-    ).scalars().first()
+        (await db.execute(select(Category).where(Category.slug == slug)))
+        .scalars()
+        .first()
+    )
     if existing:
         counter = 1
         new_slug = f"{slug}-{counter}"
         while (
-            await db.execute(select(Category).where(Category.slug == new_slug))
-        ).scalars().first():
+            (await db.execute(select(Category).where(Category.slug == new_slug)))
+            .scalars()
+            .first()
+        ):
             counter += 1
             new_slug = f"{slug}-{counter}"
         slug = new_slug
@@ -77,10 +81,19 @@ async def create_category(
     parent_id = None
     if body.parent_slug:
         parent = (
-            await db.execute(select(Category).where(Category.slug == body.parent_slug))
-        ).scalars().first()
+            (
+                await db.execute(
+                    select(Category).where(Category.slug == body.parent_slug)
+                )
+            )
+            .scalars()
+            .first()
+        )
         if not parent:
-            raise HTTPException(status_code=404, detail=f"Parent category '{body.parent_slug}' not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Parent category '{body.parent_slug}' not found",
+            )
         parent_id = parent.id
 
     cat = Category(
@@ -94,9 +107,13 @@ async def create_category(
     db.add(cat)
     try:
         await db.commit()
-    except Exception:
+    except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to create category")
+        from loguru import logger
+
+        # Keep the cause in the logs; the client only sees the generic detail.
+        logger.error(f"Failed to create category '{body.name}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to create category") from e
     await db.refresh(cat)
 
     return CategoryResponse(

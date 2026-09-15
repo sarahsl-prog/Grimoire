@@ -14,12 +14,14 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -177,6 +179,7 @@ class GoogleDriveAdapter(StorageAdapter):
                     data = json.loads(raw)
                 except json.JSONDecodeError:
                     from grimoire.utils.token_crypto import decrypt_tokens
+
                     data = decrypt_tokens(raw)
                 if isinstance(data, dict):
                     return data
@@ -196,7 +199,8 @@ class GoogleDriveAdapter(StorageAdapter):
 
         encrypted = False
         try:
-            from grimoire.utils.token_crypto import encrypt_tokens, TokenCryptoError
+            from grimoire.utils.token_crypto import TokenCryptoError, encrypt_tokens
+
             payload = encrypt_tokens(tokens)
             encrypted = True
         except TokenCryptoError:
@@ -209,6 +213,7 @@ class GoogleDriveAdapter(StorageAdapter):
         try:
             token_path.write_text(payload, encoding="utf-8")
             os.chmod(token_path, 0o600)
+            logger.debug(f"Saved Google Drive tokens to {token_path} ({encrypted=})")
         except OSError as e:
             logger.error(f"Failed to save tokens to {token_path}: {e}")
             raise AuthenticationError(f"Failed to save tokens: {e}") from e
@@ -297,11 +302,11 @@ class GoogleDriveAdapter(StorageAdapter):
         if tokens.get("refresh_token"):
             try:
                 return await self._refresh_access_token()
-            except TokenRefreshError:
+            except TokenRefreshError as e:
                 logger.warning(
                     "Token refresh failed, re-authentication may be required"
                 )
-                raise AuthenticationError("Token expired and refresh failed")
+                raise AuthenticationError("Token expired and refresh failed") from e
 
         raise AuthenticationError("No valid access token available")
 
@@ -439,10 +444,8 @@ class GoogleDriveAdapter(StorageAdapter):
 
         size_bytes = 0
         if "size" in file_data:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 size_bytes = int(file_data["size"])
-            except (ValueError, TypeError):
-                pass
 
         return FileInfo(
             path=f"gdrive://{file_data.get('id', '')}",
@@ -535,13 +538,13 @@ class GoogleDriveAdapter(StorageAdapter):
 
         except httpx.HTTPStatusError as e:
             error_text = e.response.text
-            try:
+            # Best effort: enrich the message from the JSON body when there is
+            # one, otherwise fall back to the raw response text set above.
+            with contextlib.suppress(Exception):
                 error_json = e.response.json()
                 error_text = error_json.get(
                     "error_description", error_json.get("error", error_text)
                 )
-            except Exception:
-                pass
             raise AuthenticationError(f"Token exchange failed: {error_text}") from e
         except httpx.NetworkError as e:
             raise AuthenticationError(
@@ -746,10 +749,8 @@ class GoogleDriveAdapter(StorageAdapter):
 
         size_bytes = 0
         if "size" in result:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 size_bytes = int(result["size"])
-            except (ValueError, TypeError):
-                pass
 
         owners = result.get("owners", [])
         owner = owners[0].get("displayName") if owners else None
@@ -840,11 +841,11 @@ class GoogleDriveAdapter(StorageAdapter):
             for change_data in result.get("changes", []):
                 change_type = FileChangeType.MODIFIED
 
-                if change_data.get("removed") or change_data.get("file", {}).get(
-                    "trashed"
+                if (
+                    change_data.get("removed")
+                    or change_data.get("file", {}).get("trashed")
+                    or not change_data.get("file")
                 ):
-                    change_type = FileChangeType.DELETED
-                elif not change_data.get("file"):
                     change_type = FileChangeType.DELETED
 
                 file_id = change_data.get("fileId", "")
@@ -912,7 +913,6 @@ class GoogleDriveAdapter(StorageAdapter):
 
     def __del__(self) -> None:
         """Cleanup when the adapter is garbage collected."""
-        try:
+        # Don't raise during garbage collection
+        with contextlib.suppress(Exception):
             asyncio.get_event_loop().create_task(self.close())
-        except Exception:
-            pass  # Don't raise during garbage collection

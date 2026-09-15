@@ -12,7 +12,7 @@ Covers the public surface introduced by ``grimoire.strategies``:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,8 +51,8 @@ async def test_base_retriever_subclass_works() -> None:
             query: str,
             *,
             top_k: int = 10,
-            filter_dict: Optional[Dict[str, Any]] = None,
-        ) -> List[HybridResult]:
+            filter_dict: dict[str, Any] | None = None,
+        ) -> list[HybridResult]:
             return []
 
     retriever = _NoopRetriever()

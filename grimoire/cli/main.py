@@ -7,7 +7,6 @@ knowledge management system.
 from pathlib import Path
 
 import click
-from loguru import logger
 
 # Import version from package
 from grimoire import __version__
@@ -41,23 +40,24 @@ def cli(ctx: click.Context, config: Path | None, verbose: bool) -> None:
 
     # Configure logging — always includes file sink via setup_logger()
     from grimoire.utils.logger import CLI_LOG_FORMAT, setup_logger
+
     log_level = "DEBUG" if verbose else "INFO"
     setup_logger(level=log_level, console_format=CLI_LOG_FORMAT)
 
 
 # Register subcommands
 from grimoire.cli.categories import categories, tag, untag
-from grimoire.cli.docs import docs
 from grimoire.cli.config import config as config_cmd
+from grimoire.cli.docs import docs
 from grimoire.cli.generate import generate
 from grimoire.cli.ingest import ingest
 from grimoire.cli.keys import keys
+from grimoire.cli.mcp import mcp
 from grimoire.cli.migrate import migrate
 from grimoire.cli.query import ask, search
 from grimoire.cli.status import cache_group, status
 from grimoire.cli.watch import watch
 from grimoire.cli.wiki import wiki
-from grimoire.cli.mcp import mcp
 
 cli.add_command(ingest)
 cli.add_command(watch)

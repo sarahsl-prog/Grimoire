@@ -25,7 +25,7 @@ Design notes:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -41,8 +41,8 @@ __all__ = ["load_chunker", "load_retriever"]
 def load_chunker(
     settings: GrimoireSettings,
     *,
-    chunk_config: Optional[ChunkConfig] = None,
-) -> Optional[Chunker]:
+    chunk_config: ChunkConfig | None = None,
+) -> Chunker | None:
     """Return a domain-specific chunker, or ``None`` for the general pipeline.
 
     When ``settings.security.domain == "security"`` this returns a
@@ -78,7 +78,7 @@ def load_chunker(
 def load_retriever(
     settings: GrimoireSettings,
     hybrid_search: HybridSearch,
-) -> Optional[BaseRetriever]:
+) -> BaseRetriever | None:
     """Return a domain-specific retriever, or ``None`` for the general pipeline.
 
     When ``settings.security.domain == "security"`` this returns a

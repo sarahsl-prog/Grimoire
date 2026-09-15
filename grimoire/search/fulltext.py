@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional
 
 from sqlalchemy import func, literal_column, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.db.models import Chunk, Document
-
 
 # =============================================================================
 # Pydantic Models
@@ -36,7 +34,7 @@ class FTSQuery:
     is_phrase: bool = False
 
     @classmethod
-    def create(cls, query: str, operators: bool = True) -> "FTSQuery":
+    def create(cls, query: str, operators: bool = True) -> FTSQuery:
         """Create an FTSQuery from a raw query string.
 
         Args:
@@ -67,7 +65,7 @@ class FTSResult:
     document_id: str
     content: str
     rank: float
-    document_title: Optional[str] = None
+    document_title: str | None = None
 
 
 # =============================================================================
@@ -92,8 +90,8 @@ def escape_special_chars(query: str) -> str:
     # Escape single quotes (doubling them for SQL)
     escaped = escaped.replace("'", "''")
     # Escape FTS operators: ! & | ( ) : *
-    for char in ('!', '&', '|', '(', ')', ':', '*'):
-        escaped = escaped.replace(char, '\\' + char)
+    for char in ("!", "&", "|", "(", ")", ":", "*"):
+        escaped = escaped.replace(char, "\\" + char)
     return escaped
 
 
@@ -149,31 +147,33 @@ def parse_query(query: str, operators: bool = True) -> str:
     query = re.sub(r'\s*"([^"]*)"\s*', replace_phrase, query)
 
     # Normalize whitespace
-    query = re.sub(r'\s+', ' ', query).strip()
+    query = re.sub(r"\s+", " ", query).strip()
 
     # Replace OR with | (case insensitive) - with spaces around
-    query = re.sub(r'\s+OR\s+', ' | ', query, flags=re.IGNORECASE)
+    query = re.sub(r"\s+OR\s+", " | ", query, flags=re.IGNORECASE)
 
     # Replace AND with & (case insensitive) - with spaces around
-    query = re.sub(r'\s+AND\s+', ' & ', query, flags=re.IGNORECASE)
+    query = re.sub(r"\s+AND\s+", " & ", query, flags=re.IGNORECASE)
 
     # Now split by space and rebuild - this ensures proper operator placement
     tokens = query.split()
     new_tokens: list[str] = []
     for i, token in enumerate(tokens):
-        if token in ('|', '&'):
-            new_tokens.append(token)
-        elif token.startswith('__PHRASE_') and token.endswith('__'):
+        if (
+            token in ("|", "&")
+            or token.startswith("__PHRASE_")
+            and token.endswith("__")
+        ):
             new_tokens.append(token)
         else:
             # It's a word - escape special chars
             escaped = escape_special_chars(token)
-            if i > 0 and new_tokens and new_tokens[-1] not in ('|', '&'):
+            if i > 0 and new_tokens and new_tokens[-1] not in ("|", "&"):
                 # Add implicit AND
-                new_tokens.append('&')
+                new_tokens.append("&")
             new_tokens.append(escaped)
 
-    query = ' '.join(new_tokens)
+    query = " ".join(new_tokens)
 
     # Restore phrases with <-> operator
     for i, phrase in enumerate(phrases):
@@ -225,8 +225,8 @@ class FulltextSearch:
         self,
         query: str,
         top_k: int = 10,
-        document_ids: Optional[List[str]] = None,
-    ) -> List[FTSResult]:
+        document_ids: list[str] | None = None,
+    ) -> list[FTSResult]:
         """Execute a full-text search query.
 
         Args:
@@ -249,16 +249,14 @@ class FulltextSearch:
             return []
 
         # Build the search query
-        results = await self._execute_search(
-            fts_query.parsed, top_k, document_ids
-        )
+        results = await self._execute_search(fts_query.parsed, top_k, document_ids)
         return results
 
     async def _execute_search(
         self,
         parsed_query: str,
         top_k: int,
-        document_ids: Optional[List[str]] = None,
+        document_ids: list[str] | None = None,
     ) -> list[FTSResult]:
         """Execute the PostgreSQL FTS query.
 
@@ -271,7 +269,9 @@ class FulltextSearch:
             List of ranked search results
         """
         # Build the to_tsquery expression
-        tsquery_expr = text("to_tsquery(CAST(:lang AS regconfig), :q)").bindparams(lang=self.language, q=parsed_query)
+        tsquery_expr = text("to_tsquery(CAST(:lang AS regconfig), :q)").bindparams(
+            lang=self.language, q=parsed_query
+        )
 
         # Build tsvector for content
         content_vector = func.to_tsvector(self.language, Chunk.content)
@@ -289,8 +289,7 @@ class FulltextSearch:
                         func.setweight(
                             func.to_tsvector(self.language, Document.title),
                             literal_column(f"'{self.WEIGHT_TITLE}'"),
-                        )
-                        .concat(
+                        ).concat(
                             func.setweight(
                                 func.to_tsvector(self.language, Chunk.content),
                                 literal_column(f"'{self.WEIGHT_CONTENT}'"),
@@ -359,7 +358,7 @@ class FulltextSearch:
         self,
         query: str,
         top_k: int = 10,
-    ) -> List[FTSResult]:
+    ) -> list[FTSResult]:
         """Search only in chunk content (no title weighting).
 
         Args:
@@ -420,7 +419,7 @@ class FulltextSearch:
         query: str,
         max_fragments: int = 3,
         fragment_delimiter: str = " ... ",
-    ) -> Optional[str]:
+    ) -> str | None:
         """Generate highlighted snippets for a chunk.
 
         Args:
@@ -460,9 +459,11 @@ class FulltextSearch:
             self.language,
             Chunk.content,
             tsquery_expr,
-            text("MaxFragments=:max_fragments, "
-                 "FragmentDelimiter=:delimiter, "
-                 "StartSel=<mark>, StopSel=</mark>").bindparams(
+            text(
+                "MaxFragments=:max_fragments, "
+                "FragmentDelimiter=:delimiter, "
+                "StartSel=<mark>, StopSel=</mark>"
+            ).bindparams(
                 max_fragments=max_fragments,
                 delimiter=fragment_delimiter,
             ),
@@ -485,7 +486,7 @@ async def search_chunks(
     query: str,
     top_k: int = 10,
     language: str = "english",
-) -> List[FTSResult]:
+) -> list[FTSResult]:
     """Convenience function for chunk-only full-text search.
 
     Args:
@@ -506,7 +507,7 @@ async def search_with_title(
     query: str,
     top_k: int = 10,
     language: str = "english",
-) -> List[FTSResult]:
+) -> list[FTSResult]:
     """Convenience function for weighted title+content search.
 
     Args:

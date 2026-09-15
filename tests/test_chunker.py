@@ -20,7 +20,6 @@ from grimoire.core.chunker.markdown import MarkdownChunkConfig
 from grimoire.core.chunker.recursive import RecursiveChunkConfig
 from grimoire.core.chunker.semantic import SemanticChunkConfig
 
-
 # =============================================================================
 # Chunk Model Tests
 # =============================================================================
@@ -377,7 +376,10 @@ Shakespeare's plays are considered some of the finest works in English literatur
 
         # Each chunk should have content
         for chunk in chunks:
-            assert len(chunk.content.strip()) >= chunker.config.min_chunk_size or len(chunks) == 1
+            assert (
+                len(chunk.content.strip()) >= chunker.config.min_chunk_size
+                or len(chunks) == 1
+            )
 
     @pytest.mark.asyncio
     async def test_empty_text_returns_empty_list(self, chunker) -> None:
@@ -467,9 +469,7 @@ class TestChunkingIntegration:
         """Test handling of very long lines without spaces."""
         text = "A" * 10000
 
-        recursive = RecursiveCharacterTextSplitter(
-            RecursiveChunkConfig(chunk_size=500)
-        )
+        recursive = RecursiveCharacterTextSplitter(RecursiveChunkConfig(chunk_size=500))
         chunks = await recursive.chunk(text)
         assert len(chunks) > 0
 

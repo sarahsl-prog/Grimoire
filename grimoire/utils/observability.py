@@ -8,14 +8,17 @@ the Grimoire knowledge management system.
 import asyncio
 import functools
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from types import TracebackType
+from typing import Any
+
 from loguru import logger
 
 
 class PerformanceTimer:
     """Context manager for measuring execution time."""
 
-    def __init__(self, operation: str, logger_instance=None):
+    def __init__(self, operation: str, logger_instance: Any = None) -> None:
         """
         Initialize timer.
 
@@ -25,18 +28,25 @@ class PerformanceTimer:
         """
         self.operation = operation
         self.logger = logger_instance or logger
-        self.start_time = None
+        self.start_time: float | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> "PerformanceTimer":
         """Start timing."""
         self.start_time = time.perf_counter()
         self.logger.debug(f"Starting {self.operation}")
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Stop timing and log result."""
         end_time = time.perf_counter()
-        duration = end_time - self.start_time
+        # start_time is None only if __exit__ runs without __enter__; report a
+        # zero duration rather than raising out of a context manager's exit.
+        duration = end_time - self.start_time if self.start_time is not None else 0.0
 
         if exc_type is None:
             self.logger.info(f"{self.operation} completed in {duration:.2f}s")
@@ -45,10 +55,13 @@ class PerformanceTimer:
                 f"{self.operation} failed after {duration:.2f}s: {exc_val}"
             )
 
-        return False  # Don't suppress exceptions
+        # Returning None (rather than False) keeps exceptions propagating while
+        # satisfying the typed __exit__ contract.
 
 
-def trace_function(operation: str = None):
+def trace_function(
+    operation: str | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to trace function execution time and success/failure.
 
@@ -59,19 +72,20 @@ def trace_function(operation: str = None):
         Decorated function
     """
 
-    def decorator(func: Callable[..., Any]):
-        nonlocal operation
-        if operation is None:
-            operation = f"{func.__module__}.{func.__name__}"
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        # Resolved into a local, not back into `operation` via nonlocal: writing
+        # to the closure would make a reused decorator object label every later
+        # function with the first one's name.
+        op_name = operation or f"{func.__module__}.{func.__name__}"
 
         @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            with PerformanceTimer(operation):
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            with PerformanceTimer(op_name):
                 return await func(*args, **kwargs)
 
         @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            with PerformanceTimer(operation):
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            with PerformanceTimer(op_name):
                 return func(*args, **kwargs)
 
         # Check if function is async
@@ -86,12 +100,12 @@ def trace_function(operation: str = None):
 class MetricsCollector:
     """Simple metrics collector for counting operations."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize metrics collector."""
-        self.counters = {}
-        self.timers = {}
+        self.counters: dict[str, int] = {}
+        self.timers: dict[str, list[float]] = {}
 
-    def increment(self, metric: str, value: int = 1):
+    def increment(self, metric: str, value: int = 1) -> None:
         """
         Increment a counter metric.
 
@@ -103,7 +117,7 @@ class MetricsCollector:
             self.counters[metric] = 0
         self.counters[metric] += value
 
-    def record_time(self, metric: str, duration: float):
+    def record_time(self, metric: str, duration: float) -> None:
         """
         Record a timing metric.
 
@@ -138,10 +152,10 @@ class MetricsCollector:
             Average time in seconds, or 0 if no recordings
         """
         if metric not in self.timers or not self.timers[metric]:
-            return 0
+            return 0.0
         return sum(self.timers[metric]) / len(self.timers[metric])
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset all metrics."""
         self.counters.clear()
         self.timers.clear()
@@ -151,7 +165,7 @@ class MetricsCollector:
 _global_metrics = MetricsCollector()
 
 
-def increment_metric(metric: str, value: int = 1):
+def increment_metric(metric: str, value: int = 1) -> None:
     """
     Increment a global metric counter.
 
@@ -162,7 +176,7 @@ def increment_metric(metric: str, value: int = 1):
     _global_metrics.increment(metric, value)
 
 
-def record_timing(metric: str, duration: float):
+def record_timing(metric: str, duration: float) -> None:
     """
     Record a timing metric globally.
 
@@ -202,11 +216,16 @@ def get_average_timing(metric: str) -> float:
 class Tracer:
     """Simple tracer for function calls."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize tracer."""
-        self.trace_stack = []
+        self.trace_stack: list[dict[str, Any]] = []
 
-    def trace_call(self, func_name: str, args: tuple = (), kwargs: dict = None):
+    def trace_call(
+        self,
+        func_name: str,
+        args: tuple[Any, ...] = (),
+        kwargs: dict[str, Any] | None = None,
+    ) -> None:
         """
         Trace a function call.
 
@@ -226,7 +245,7 @@ class Tracer:
         )
         logger.debug(f"TRACE: {func_name}({args}, {kwargs})")
 
-    def trace_return(self, func_name: str, result: Any = None):
+    def trace_return(self, func_name: str, result: Any = None) -> None:
         """
         Trace a function return.
 
@@ -236,7 +255,7 @@ class Tracer:
         """
         logger.debug(f"TRACE: {func_name} -> {result}")
 
-    def get_trace(self) -> list:
+    def get_trace(self) -> list[dict[str, Any]]:
         """
         Get trace history.
 
@@ -245,7 +264,7 @@ class Tracer:
         """
         return self.trace_stack.copy()
 
-    def clear_trace(self):
+    def clear_trace(self) -> None:
         """Clear trace history."""
         self.trace_stack.clear()
 
@@ -254,7 +273,11 @@ class Tracer:
 _global_tracer = Tracer()
 
 
-def trace_call(func_name: str, args: tuple = (), kwargs: dict = None):
+def trace_call(
+    func_name: str,
+    args: tuple[Any, ...] = (),
+    kwargs: dict[str, Any] | None = None,
+) -> None:
     """
     Trace a function call globally.
 
@@ -266,7 +289,7 @@ def trace_call(func_name: str, args: tuple = (), kwargs: dict = None):
     _global_tracer.trace_call(func_name, args, kwargs)
 
 
-def trace_return(func_name: str, result: Any = None):
+def trace_return(func_name: str, result: Any = None) -> None:
     """
     Trace a function return globally.
 
@@ -278,7 +301,9 @@ def trace_return(func_name: str, result: Any = None):
 
 
 # Convenience functions
-def log_performance(operation: str):
+def log_performance(
+    operation: str,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for logging performance of functions.
 
@@ -289,9 +314,9 @@ def log_performance(operation: str):
         Decorator function
     """
 
-    def decorator(func: Callable[..., Any]):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             start = time.perf_counter()
             try:
                 result = await func(*args, **kwargs)
@@ -307,7 +332,7 @@ def log_performance(operation: str):
                 raise
 
         @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             start = time.perf_counter()
             try:
                 result = func(*args, **kwargs)

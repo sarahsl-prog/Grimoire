@@ -40,8 +40,9 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Mapping
 from enum import Enum
-from typing import Any, Mapping, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Public enum
@@ -91,8 +92,12 @@ _RE_FRONTMATTER_ATTACK_ID = re.compile(
 _RE_FRONTMATTER_PLAYBOOK_KEYS = re.compile(
     r"^\s*(?:playbook|phase|trigger):\s*\S", re.MULTILINE
 )
-_RE_MD_SECTION_TRIGGER = re.compile(r"^#{1,4}\s+trigger\b", re.MULTILINE | re.IGNORECASE)
-_RE_MD_SECTION_ACTIONS = re.compile(r"^#{1,4}\s+actions?\b", re.MULTILINE | re.IGNORECASE)
+_RE_MD_SECTION_TRIGGER = re.compile(
+    r"^#{1,4}\s+trigger\b", re.MULTILINE | re.IGNORECASE
+)
+_RE_MD_SECTION_ACTIONS = re.compile(
+    r"^#{1,4}\s+actions?\b", re.MULTILINE | re.IGNORECASE
+)
 
 # IOC sniff regexes — anchored with fullmatch via `$` so a stray prose word
 # does not accidentally match.
@@ -112,7 +117,12 @@ _PATH_HINTS_NVD = ("/nvd-cve/", "/nvd/", "/cve/")
 _PATH_HINTS_MITRE = ("/mitre-attack/", "/attack/", "/mitre/")
 _PATH_HINTS_MITRE_EXCLUDE = ("/mitre-defend/",)
 _PATH_HINTS_IOC = ("/iocs/", "/ioc-lists/")
-_PATH_HINTS_PLAYBOOK = ("/playbooks/", "/runbooks/", "/ir-playbooks/", "/response-plans/")
+_PATH_HINTS_PLAYBOOK = (
+    "/playbooks/",
+    "/runbooks/",
+    "/ir-playbooks/",
+    "/response-plans/",
+)
 
 # Extensions that warrant the YAML sniff.
 _YAML_EXTENSIONS = (".yml", ".yaml")
@@ -130,7 +140,7 @@ _IOC_MATCH_RATIO = 0.80
 # ---------------------------------------------------------------------------
 
 
-def _extract_path(source_metadata: Optional[Mapping[str, Any]]) -> Optional[str]:
+def _extract_path(source_metadata: Mapping[str, Any] | None) -> str | None:
     """Return the original-case path string from metadata, or ``None``."""
 
     if not source_metadata:
@@ -144,7 +154,7 @@ def _extract_path(source_metadata: Optional[Mapping[str, Any]]) -> Optional[str]
     return None
 
 
-def _check_path_hints(path: Optional[str]) -> Optional[SourceType]:
+def _check_path_hints(path: str | None) -> SourceType | None:
     """Apply the path-substring matching rules. Returns ``None`` on no match."""
 
     if not path:
@@ -167,7 +177,7 @@ def _check_path_hints(path: Optional[str]) -> Optional[SourceType]:
     return None
 
 
-def _check_extension_hints(path: Optional[str], text: str) -> Optional[SourceType]:
+def _check_extension_hints(path: str | None, text: str) -> SourceType | None:
     """Combined extension + content sniff for Sigma YAML rules.
 
     If the text contains both ``detection:`` and ``logsource:`` we treat it
@@ -190,7 +200,7 @@ def _check_extension_hints(path: Optional[str], text: str) -> Optional[SourceTyp
     return None
 
 
-def _check_json_shape(text: str) -> Optional[SourceType]:
+def _check_json_shape(text: str) -> SourceType | None:
     """Parse ``text`` as JSON and infer source type from object shape.
 
     Returns ``None`` if the text does not look like JSON or doesn't match a
@@ -243,7 +253,7 @@ def _check_json_shape(text: str) -> Optional[SourceType]:
     return None
 
 
-def _check_frontmatter(text: str) -> Optional[SourceType]:
+def _check_frontmatter(text: str) -> SourceType | None:
     """Detect MITRE ATT&CK markdown via YAML frontmatter."""
 
     if not text.startswith("---\n"):
@@ -260,7 +270,7 @@ def _check_frontmatter(text: str) -> Optional[SourceType]:
     return None
 
 
-def _check_filename_hint(path: Optional[str]) -> Optional[SourceType]:
+def _check_filename_hint(path: str | None) -> SourceType | None:
     """Detect MITRE ATT&CK technique from basename like ``T1059.md``."""
 
     if not path:
@@ -271,7 +281,7 @@ def _check_filename_hint(path: Optional[str]) -> Optional[SourceType]:
     return None
 
 
-def _check_playbook_structure(text: str) -> Optional[SourceType]:
+def _check_playbook_structure(text: str) -> SourceType | None:
     """Detect incident-response playbooks by frontmatter keys or section headers.
 
     Recognizes two shapes:
@@ -353,7 +363,7 @@ def _looks_like_prose(text: str) -> bool:
 
 def detect_source_type(
     text: str,
-    source_metadata: Optional[Mapping[str, Any]] = None,
+    source_metadata: Mapping[str, Any] | None = None,
 ) -> SourceType:
     """Best-effort detection of what kind of security content ``text`` represents.
 

@@ -20,9 +20,9 @@ the LLM extractor arrives in Phase 3+.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -78,17 +78,17 @@ _RE_MITRE_TECHNIQUE_ID = re.compile(r"^T\d{4}(\.\d{3})?$")
 _LIST_ENTRY_CAP = 32
 
 
-def _ensure_utc(value: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(value: datetime | None) -> datetime | None:
     """Promote naive datetimes to UTC; pass through TZ-aware values."""
 
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
+        return value.replace(tzinfo=UTC)
     return value
 
 
-def _join_list(values: List[str]) -> str:
+def _join_list(values: list[str]) -> str:
     """Pipe-join a list with truncation at ``_LIST_ENTRY_CAP`` entries."""
 
     if not values:
@@ -128,7 +128,7 @@ class SecurityMetadata(BaseModel):
         default=SourceType.UNKNOWN,
         description="Coarse-grained source type (sigma_rule, nvd_cve, etc.).",
     )
-    source_url: Optional[str] = Field(
+    source_url: str | None = Field(
         default=None,
         description="Canonical upstream URL for the source document.",
     )
@@ -138,11 +138,11 @@ class SecurityMetadata(BaseModel):
     )
 
     # CVE block ---------------------------------------------------------------
-    cve_id: Optional[str] = Field(
+    cve_id: str | None = Field(
         default=None,
         description="CVE identifier, e.g. 'CVE-2024-12345'.",
     )
-    cvss_score: Optional[float] = Field(
+    cvss_score: float | None = Field(
         default=None,
         ge=0.0,
         le=10.0,
@@ -152,77 +152,77 @@ class SecurityMetadata(BaseModel):
         default=Severity.UNKNOWN,
         description="Severity bucket; mapped from CVSS or Sigma 'level'.",
     )
-    cwe_ids: List[str] = Field(
+    cwe_ids: list[str] = Field(
         default_factory=list,
         description="CWE identifiers, e.g. ['CWE-79', 'CWE-89'].",
     )
-    affected_products: List[str] = Field(
+    affected_products: list[str] = Field(
         default_factory=list,
         description="CPE product strings or human-readable product names.",
     )
-    published_date: Optional[datetime] = Field(
+    published_date: datetime | None = Field(
         default=None,
         description="Upstream publication date (TZ-aware preferred).",
     )
 
     # MITRE block -------------------------------------------------------------
-    mitre_technique_id: Optional[str] = Field(
+    mitre_technique_id: str | None = Field(
         default=None,
         description="ATT&CK technique id, e.g. 'T1059' or 'T1059.001'.",
     )
-    mitre_tactic: Optional[str] = Field(
+    mitre_tactic: str | None = Field(
         default=None,
         description="ATT&CK tactic, e.g. 'execution' or 'persistence'.",
     )
-    mitre_subtechnique: Optional[str] = Field(
+    mitre_subtechnique: str | None = Field(
         default=None,
         description="Human-readable sub-technique name (denormalised).",
     )
 
     # Threat-intel block ------------------------------------------------------
-    threat_actors: List[str] = Field(
+    threat_actors: list[str] = Field(
         default_factory=list,
         description="Named threat actors / APT groups.",
     )
-    malware_families: List[str] = Field(
+    malware_families: list[str] = Field(
         default_factory=list,
         description="Malware family names referenced by the document.",
     )
-    ioc_types: List[str] = Field(
+    ioc_types: list[str] = Field(
         default_factory=list,
         description="IOC types present (e.g. 'ipv4', 'domain', 'sha256').",
     )
 
     # Detection block ---------------------------------------------------------
-    detection_categories: List[str] = Field(
+    detection_categories: list[str] = Field(
         default_factory=list,
         description="Detection-rule categories or 'falsepositives' notes.",
     )
-    platforms: List[str] = Field(
+    platforms: list[str] = Field(
         default_factory=list,
         description="Platforms covered (e.g. 'windows', 'linux', 'aws').",
     )
-    log_sources: List[str] = Field(
+    log_sources: list[str] = Field(
         default_factory=list,
         description="Log source channels referenced (Sigma 'logsource').",
     )
 
     # Playbook block ----------------------------------------------------------
-    playbook_phase: Optional[str] = Field(
+    playbook_phase: str | None = Field(
         default=None,
         description="IR phase, e.g. 'identify', 'contain', 'eradicate', 'recover'.",
     )
-    action_type: Optional[str] = Field(
+    action_type: str | None = Field(
         default=None,
         description="Whether the playbook actions are 'manual' or 'automated'.",
     )
-    trigger: Optional[str] = Field(
+    trigger: str | None = Field(
         default=None,
         description="Condition that triggers the playbook.",
     )
 
     # Recency -----------------------------------------------------------------
-    content_date: Optional[datetime] = Field(
+    content_date: datetime | None = Field(
         default=None,
         description="Effective date of the content (not ingest date).",
     )
@@ -233,7 +233,7 @@ class SecurityMetadata(BaseModel):
 
     @field_validator("cve_id")
     @classmethod
-    def _validate_cve_id(cls, value: Optional[str]) -> Optional[str]:
+    def _validate_cve_id(cls, value: str | None) -> str | None:
         if value is None:
             return None
         if not _RE_CVE_ID.match(value):
@@ -242,7 +242,7 @@ class SecurityMetadata(BaseModel):
 
     @field_validator("mitre_technique_id")
     @classmethod
-    def _validate_mitre_technique_id(cls, value: Optional[str]) -> Optional[str]:
+    def _validate_mitre_technique_id(cls, value: str | None) -> str | None:
         if value is None:
             return None
         if not _RE_MITRE_TECHNIQUE_ID.match(value):
@@ -253,7 +253,7 @@ class SecurityMetadata(BaseModel):
 
     @field_validator("published_date", "content_date")
     @classmethod
-    def _normalise_datetime(cls, value: Optional[datetime]) -> Optional[datetime]:
+    def _normalise_datetime(cls, value: datetime | None) -> datetime | None:
         return _ensure_utc(value)
 
     # ------------------------------------------------------------------ #
@@ -334,7 +334,7 @@ class SecurityMetadata(BaseModel):
         }
 
     @classmethod
-    def from_db_row(cls, doc: Any) -> "SecurityMetadata":
+    def from_db_row(cls, doc: Any) -> SecurityMetadata:
         """Hydrate a :class:`SecurityMetadata` from a ``Document`` row.
 
         Reads the indexed scalar columns and merges the wide JSONB blob

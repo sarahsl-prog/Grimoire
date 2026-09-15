@@ -29,21 +29,33 @@ async def generate_content(
     try:
         ct = ContentType(body.content_type)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid content_type: {body.content_type}")
+        # from None: the detail below already names the bad value, and the
+        # underlying enum ValueError adds nothing for the caller.
+        raise HTTPException(
+            status_code=400, detail=f"Invalid content_type: {body.content_type}"
+        ) from None
 
     if ct == ContentType.SUMMARY:
-        result = await agent.generate_summary(db, body.document_ids, style=body.style or "concise")
+        result = await agent.generate_summary(
+            db, body.document_ids, style=body.style or "concise"
+        )
     elif ct == ContentType.FLASH_CARD:
-        result = await agent.generate_flash_cards(db, body.document_ids, count=body.count)
+        result = await agent.generate_flash_cards(
+            db, body.document_ids, count=body.count
+        )
     elif ct == ContentType.CLIFF_NOTES:
         result = await agent.generate_cliff_notes(db, body.document_ids)
     elif ct == ContentType.OUTLINE:
         result = await agent.generate_outline(db, body.document_ids)
     elif ct == ContentType.EXTRACT:
         if not body.query:
-            raise HTTPException(status_code=400, detail="'query' is required for extract generation.")
+            raise HTTPException(
+                status_code=400, detail="'query' is required for extract generation."
+            )
         result = await agent.generate_extract(db, body.document_ids, query=body.query)
     else:
-        raise HTTPException(status_code=400, detail=f"Unsupported content type: {body.content_type}")
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported content type: {body.content_type}"
+        )
 
     return GenerateResponse(**result.model_dump())

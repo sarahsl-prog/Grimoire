@@ -4,9 +4,10 @@ Vector Search Wrapper for Grimoire.
 This module provides a wrapper around vectorstore operations for semantic search functionality.
 """
 
-from typing import List, Dict, Any, Optional
-from grimoire.vectorstore.base import VectorStore
+from typing import Any
+
 from grimoire.config.settings import settings
+from grimoire.vectorstore.base import VectorStore
 
 
 class VectorSearch:
@@ -24,10 +25,10 @@ class VectorSearch:
 
     async def search(
         self,
-        query_embedding: List[float],
-        filter_dict: Optional[Dict[str, Any]] = None,
+        query_embedding: list[float],
+        filter_dict: dict[str, Any] | None = None,
         top_k: int = 10,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Perform vector similarity search.
 
@@ -65,9 +66,9 @@ class VectorSearch:
         self,
         query_text: str,
         embedder: Any,  # Embedder instance
-        filter_dict: Optional[Dict[str, Any]] = None,
+        filter_dict: dict[str, Any] | None = None,
         top_k: int = 10,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Perform vector similarity search with text query.
 
@@ -115,7 +116,7 @@ class VectorSearch:
             self.logger.error(f"Error getting document count: {e}")
             raise
 
-    async def delete_documents(self, ids: List[str]) -> None:
+    async def delete_documents(self, ids: list[str]) -> None:
         """
         Delete documents from the vector store.
 

@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 import time
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -38,11 +38,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.agents.content_gen import ContentGenerationAgent, GenerationResult
-from grimoire.agents.ingestion import BatchIngestionResult, IngestionAgent, IngestionResult
+from grimoire.agents.ingestion import (
+    BatchIngestionResult,
+    IngestionAgent,
+    IngestionResult,
+)
 from grimoire.agents.query import QueryAgent, QueryResult, SearchOnlyResult
 from grimoire.agents.watcher import WatcherAgent
 from grimoire.db.models import ContentType
-
 
 # =============================================================================
 # Intent Classification
@@ -89,43 +92,95 @@ _INTENT_KEYWORDS: list[tuple[IntentType, frozenset[str]]] = [
     ),
     (
         IntentType.INGEST,
-        frozenset({
-            "ingest", "scan", "import", "index", "process files",
-            "add files", "add documents", "load files", "load documents",
-            "parse", "embed",
-        }),
+        frozenset(
+            {
+                "ingest",
+                "scan",
+                "import",
+                "index",
+                "process files",
+                "add files",
+                "add documents",
+                "load files",
+                "load documents",
+                "parse",
+                "embed",
+            }
+        ),
     ),
     (
         IntentType.GENERATE,
-        frozenset({
-            "generate", "create a summary", "write a summary", "make a summary",
-            "summarize", "summarise", "flashcard", "flash card",
-            "cliff note", "cliffnote", "outline", "key points",
-        }),
+        frozenset(
+            {
+                "generate",
+                "create a summary",
+                "write a summary",
+                "make a summary",
+                "summarize",
+                "summarise",
+                "flashcard",
+                "flash card",
+                "cliff note",
+                "cliffnote",
+                "outline",
+                "key points",
+            }
+        ),
     ),
     (
         IntentType.SEARCH,
-        frozenset({
-            "search for", "find documents", "list documents",
-            "show documents", "show me documents",
-        }),
+        frozenset(
+            {
+                "search for",
+                "find documents",
+                "list documents",
+                "show documents",
+                "show me documents",
+            }
+        ),
     ),
 ]
 
 # Question words that strongly signal a QUERY intent
-_QUERY_STARTERS = frozenset({
-    "what", "why", "how", "who", "when", "where", "which", "explain",
-    "describe", "tell me", "can you", "could you", "is there", "are there",
-    "does", "do you know",
-})
+_QUERY_STARTERS = frozenset(
+    {
+        "what",
+        "why",
+        "how",
+        "who",
+        "when",
+        "where",
+        "which",
+        "explain",
+        "describe",
+        "tell me",
+        "can you",
+        "could you",
+        "is there",
+        "are there",
+        "does",
+        "do you know",
+    }
+)
 
 # GeneratedContent type keyword mapping
 _CONTENT_TYPE_KEYWORDS: list[tuple[ContentType, frozenset[str]]] = [
     (ContentType.FLASH_CARD, frozenset({"flashcard", "flash card", "cards", "quiz"})),
-    (ContentType.CLIFF_NOTES, frozenset({"cliff note", "cliffnote", "cliff-note", "bullets", "key points"})),
-    (ContentType.OUTLINE, frozenset({"outline", "structure", "table of contents", "toc"})),
+    (
+        ContentType.CLIFF_NOTES,
+        frozenset({"cliff note", "cliffnote", "cliff-note", "bullets", "key points"}),
+    ),
+    (
+        ContentType.OUTLINE,
+        frozenset({"outline", "structure", "table of contents", "toc"}),
+    ),
     (ContentType.EXTRACT, frozenset({"extract", "find information", "pull out"})),
-    (ContentType.SUMMARY, frozenset({"summary", "summarize", "summarise", "overview", "brief", "abstract"})),
+    (
+        ContentType.SUMMARY,
+        frozenset(
+            {"summary", "summarize", "summarise", "overview", "brief", "abstract"}
+        ),
+    ),
 ]
 
 
@@ -146,7 +201,9 @@ def classify_intent(text: str) -> tuple[IntentType, float]:
     for intent, keywords in _INTENT_KEYWORDS:
         for kw in keywords:
             if kw in lowered:
-                logger.debug(f"Intent classified as {intent.value!r} via keyword {kw!r}")
+                logger.debug(
+                    f"Intent classified as {intent.value!r} via keyword {kw!r}"
+                )
                 return intent, 0.9
 
     # Question-word heuristic → QUERY
@@ -210,19 +267,19 @@ class CoordinatorContext(BaseModel):
         wiki_action: Action for WIKI intent (compile, list, show, export, status).
     """
 
-    intent: Optional[IntentType] = None
-    file_path: Optional[str] = None
+    intent: IntentType | None = None
+    file_path: str | None = None
     recursive: bool = True
-    document_ids: List[str] = Field(default_factory=list)
-    content_type: Optional[ContentType] = None
+    document_ids: list[str] = Field(default_factory=list)
+    content_type: ContentType | None = None
     generation_style: str = "concise"
     flashcard_count: int = 10
     top_k: int = 5
-    filter_dict: Optional[Dict[str, Any]] = None
-    watch_id: Optional[str] = None
+    filter_dict: dict[str, Any] | None = None
+    watch_id: str | None = None
     watch_backend: str = "local"
     use_cache: bool = True
-    wiki_action: Optional[str] = None  # compile, list, show, export, status
+    wiki_action: str | None = None  # compile, list, show, export, status
 
 
 class CoordinatorResult(BaseModel):
@@ -242,11 +299,11 @@ class CoordinatorResult(BaseModel):
 
     intent: IntentType
     agent_used: str
-    result: Optional[Any] = None
+    result: Any | None = None
     input_text: str
     confidence: float = 1.0
     duration_ms: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # =============================================================================
@@ -287,11 +344,11 @@ class CoordinatorAgent:
 
     def __init__(
         self,
-        ingestion_agent: Optional[IngestionAgent] = None,
-        query_agent: Optional[QueryAgent] = None,
-        content_gen_agent: Optional[ContentGenerationAgent] = None,
-        watcher_agent: Optional[WatcherAgent] = None,
-        wiki_agent: Optional[Any] = None,
+        ingestion_agent: IngestionAgent | None = None,
+        query_agent: QueryAgent | None = None,
+        content_gen_agent: ContentGenerationAgent | None = None,
+        watcher_agent: WatcherAgent | None = None,
+        wiki_agent: Any | None = None,
         llm_url: str = "http://localhost:11434",
         llm_model: str = "llama3:8b",
         use_llm_fallback: bool = False,
@@ -318,9 +375,7 @@ class CoordinatorAgent:
             ]
             if agent is not None
         ]
-        logger.debug(
-            f"CoordinatorAgent initialized with agents: {agents_available}"
-        )
+        logger.debug(f"CoordinatorAgent initialized with agents: {agents_available}")
 
     # -------------------------------------------------------------------------
     # Public API
@@ -331,7 +386,7 @@ class CoordinatorAgent:
         db: AsyncSession,
         user_input: str,
         *,
-        context: Optional[CoordinatorContext] = None,
+        context: CoordinatorContext | None = None,
     ) -> CoordinatorResult:
         """Classify intent and dispatch to the appropriate agent.
 
@@ -364,10 +419,7 @@ class CoordinatorAgent:
             intent, confidence = classify_intent(user_input)
 
             # Step 2: Optional LLM fallback for low-confidence classifications
-            if (
-                self._use_llm_fallback
-                and confidence < self._llm_fallback_threshold
-            ):
+            if self._use_llm_fallback and confidence < self._llm_fallback_threshold:
                 try:
                     llm_intent = await self._llm_classify(user_input)
                 except Exception as exc:
@@ -445,7 +497,7 @@ class CoordinatorAgent:
         question: str,
         *,
         top_k: int = 5,
-        filter_dict: Optional[Dict[str, Any]] = None,
+        filter_dict: dict[str, Any] | None = None,
         use_cache: bool = True,
     ) -> CoordinatorResult:
         """Convenience method for RAG question-answering.
@@ -471,12 +523,12 @@ class CoordinatorAgent:
     async def generate(
         self,
         db: AsyncSession,
-        document_ids: List[str],
+        document_ids: list[str],
         content_type: ContentType = ContentType.SUMMARY,
         *,
         style: str = "concise",
         count: int = 10,
-        query: Optional[str] = None,
+        query: str | None = None,
     ) -> CoordinatorResult:
         """Convenience method for content generation.
 
@@ -678,13 +730,16 @@ class CoordinatorAgent:
                 "Provide context.file_path or include a path in the input."
             )
 
-        watch_id = await self._watcher_agent.watch(
-            path, backend=ctx.watch_backend
-        )
-        return {"watch_id": watch_id, "path": path, "status": "watching"}, "WatcherAgent"
+        watch_id = await self._watcher_agent.watch(path, backend=ctx.watch_backend)
+        return {
+            "watch_id": watch_id,
+            "path": path,
+            "status": "watching",
+        }, "WatcherAgent"
 
     async def _handle_unwatch(
-        self, ctx: CoordinatorContext,
+        self,
+        ctx: CoordinatorContext,
     ) -> tuple[dict[str, Any], str]:
         if self._watcher_agent is None:
             raise RuntimeError("WatcherAgent is not configured in this coordinator.")
@@ -702,7 +757,10 @@ class CoordinatorAgent:
         }, "WatcherAgent"
 
     async def _handle_wiki(
-        self, db: AsyncSession, user_input: str, ctx: CoordinatorContext,
+        self,
+        db: AsyncSession,
+        user_input: str,
+        ctx: CoordinatorContext,
     ) -> tuple[Any, str]:
         """Handle wiki-related requests."""
         if self._wiki_agent is None:
@@ -713,8 +771,10 @@ class CoordinatorAgent:
             results = await self._wiki_agent.compile_pending(db)
             return results, "WikiAgent"
         elif action == "list":
-            from grimoire.db.models import WikiPage
             from sqlalchemy import select
+
+            from grimoire.db.models import WikiPage
+
             stmt = select(WikiPage).order_by(WikiPage.title)
             result = await db.execute(stmt)
             pages = result.scalars().all()
@@ -743,7 +803,7 @@ class CoordinatorAgent:
         "Category:"
     )
 
-    async def _llm_classify(self, user_input: str) -> Optional[IntentType]:
+    async def _llm_classify(self, user_input: str) -> IntentType | None:
         """Use the LLM to classify intent when keyword matching is ambiguous.
 
         Args:
@@ -785,7 +845,7 @@ class CoordinatorAgent:
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def _extract_path(text: str) -> Optional[str]:
+    def _extract_path(text: str) -> str | None:
         """Extract a filesystem path from free-form text.
 
         Looks for Unix-style absolute paths (``/…``) or Windows-style
@@ -799,9 +859,7 @@ class CoordinatorAgent:
             First path found, or None.
         """
         # Cloud scheme paths
-        cloud_match = re.search(
-            r"((?:gdrive|onedrive|rclone)://[^\s]+)", text
-        )
+        cloud_match = re.search(r"((?:gdrive|onedrive|rclone)://[^\s]+)", text)
         if cloud_match:
             return cloud_match.group(1)
 

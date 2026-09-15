@@ -2,9 +2,9 @@
 
 import hashlib
 import os
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, List, Optional, Union
 
 from loguru import logger
 
@@ -60,9 +60,12 @@ class WatchdogWatchHandle(WatchHandle):
         self.start()
         return self
 
-    def __exit__(self, exc_type: Optional[type], 
-                 exc_val: Optional[BaseException], 
-                 exc_tb: Optional[object]) -> None:
+    def __exit__(
+        self,
+        exc_type: type | None,
+        exc_val: BaseException | None,
+        exc_tb: object | None,
+    ) -> None:
         """Exit context manager (stop watching)."""
         self.stop()
 
@@ -87,12 +90,12 @@ class _WatchdogEventHandler(FileSystemEventHandler):
         """
         self._callback: Callable[[FileChange], None] = callback
 
-    def _create_file_info(self, path: str) -> Optional[FileInfo]:
+    def _create_file_info(self, path: str) -> FileInfo | None:
         """Create FileInfo from filesystem path if file exists."""
         try:
             if os.path.isfile(path):
                 stat = os.stat(path)
-                mime_type: Optional[str] = _get_mime_type(path)
+                mime_type: str | None = _get_mime_type(path)
                 return FileInfo(
                     path=path,
                     name=os.path.basename(path),
@@ -106,7 +109,7 @@ class _WatchdogEventHandler(FileSystemEventHandler):
             logger.warning(f"Failed to get file info for {path}: {e}")
         return None
 
-    def _to_str(self, path: Union[str, bytes]) -> str:
+    def _to_str(self, path: str | bytes) -> str:
         """Convert path to string, handling bytes type."""
         if isinstance(path, bytes):
             return path.decode("utf-8", errors="surrogateescape")
@@ -114,7 +117,7 @@ class _WatchdogEventHandler(FileSystemEventHandler):
 
     def on_created(self, event: object) -> None:
         """Handle file/directory creation event."""
-        if hasattr(event, 'is_directory') and hasattr(event, 'src_path'):
+        if hasattr(event, "is_directory") and hasattr(event, "src_path"):
             src_path: str = self._to_str(event.src_path)
             is_dir: bool = bool(event.is_directory)
             change = FileChange(
@@ -130,12 +133,12 @@ class _WatchdogEventHandler(FileSystemEventHandler):
 
     def on_modified(self, event: object) -> None:
         """Handle file modification event."""
-        if hasattr(event, 'is_directory'):
+        if hasattr(event, "is_directory"):
             is_dir = bool(event.is_directory)
             if is_dir:
                 return  # Skip directory modification events
-        
-        if hasattr(event, 'src_path'):
+
+        if hasattr(event, "src_path"):
             src_path = self._to_str(event.src_path)
             change = FileChange(
                 change_type=FileChangeType.MODIFIED,
@@ -150,7 +153,7 @@ class _WatchdogEventHandler(FileSystemEventHandler):
 
     def on_deleted(self, event: object) -> None:
         """Handle file/directory deletion event."""
-        if hasattr(event, 'src_path'):
+        if hasattr(event, "src_path"):
             src_path = self._to_str(event.src_path)
             change = FileChange(
                 change_type=FileChangeType.DELETED,
@@ -164,23 +167,27 @@ class _WatchdogEventHandler(FileSystemEventHandler):
 
     def on_moved(self, event: object) -> None:
         """Handle file/directory move event."""
-        if hasattr(event, 'src_path'):
+        if hasattr(event, "src_path"):
             src_path = self._to_str(event.src_path)
-            dest_path: Optional[str] = None
+            dest_path: str | None = None
             is_dir = False
-            if hasattr(event, 'dest_path'):
+            if hasattr(event, "dest_path"):
                 raw_dest = event.dest_path
                 if isinstance(raw_dest, (str, bytes)):
                     dest_path = self._to_str(raw_dest)
-            if hasattr(event, 'is_directory'):
+            if hasattr(event, "is_directory"):
                 is_dir = bool(event.is_directory)
-            
+
             change = FileChange(
                 change_type=FileChangeType.MOVED,
                 path=dest_path if dest_path else src_path,
                 previous_path=src_path,
                 timestamp=datetime.now(),
-                file_info=self._create_file_info(dest_path) if dest_path and not is_dir else None,
+                file_info=(
+                    self._create_file_info(dest_path)
+                    if dest_path and not is_dir
+                    else None
+                ),
             )
             try:
                 self._callback(change)
@@ -192,7 +199,7 @@ class _WatchdogEventHandler(FileSystemEventHandler):
         pass
 
 
-def _get_mime_type(path: str) -> Optional[str]:
+def _get_mime_type(path: str) -> str | None:
     """Guess MIME type from file extension.
 
     Args:
@@ -202,11 +209,12 @@ def _get_mime_type(path: str) -> Optional[str]:
         MIME type string or None.
     """
     import mimetypes
-    mime_type: Optional[str] = mimetypes.guess_type(path)[0]
+
+    mime_type: str | None = mimetypes.guess_type(path)[0]
     return mime_type
 
 
-def _compute_file_hash(path: str, block_size: int = 65536) -> Optional[str]:
+def _compute_file_hash(path: str, block_size: int = 65536) -> str | None:
     """Compute SHA-256 hash of file contents.
 
     Args:
@@ -246,10 +254,10 @@ class LocalStorageAdapter(StorageAdapter):
 
     def __init__(self) -> None:
         """Initialize the local storage adapter."""
-        self._observers: List[object] = []
+        self._observers: list[object] = []
         logger.debug("LocalStorageAdapter initialized")
 
-    async def list_files(self, path: str, recursive: bool = False) -> List[FileInfo]:
+    async def list_files(self, path: str, recursive: bool = False) -> list[FileInfo]:
         """List files in a directory.
 
         Args:
@@ -264,7 +272,7 @@ class LocalStorageAdapter(StorageAdapter):
             PermissionError: If access is denied.
             RuntimeError: If listing operation fails.
         """
-        files: List[FileInfo] = []
+        files: list[FileInfo] = []
         target_path = Path(path)
 
         if not target_path.exists():
@@ -281,7 +289,7 @@ class LocalStorageAdapter(StorageAdapter):
                     if item.is_file():
                         try:
                             stat = item.stat()
-                            mime_type: Optional[str] = _get_mime_type(str(item))
+                            mime_type: str | None = _get_mime_type(str(item))
                             files.append(
                                 FileInfo(
                                     path=str(item),
@@ -383,8 +391,10 @@ class LocalStorageAdapter(StorageAdapter):
 
         try:
             stat = target_path.stat()
-            mime_type: Optional[str] = _get_mime_type(path) if target_path.is_file() else None
-            file_hash: Optional[str] = None
+            mime_type: str | None = (
+                _get_mime_type(path) if target_path.is_file() else None
+            )
+            file_hash: str | None = None
             if target_path.is_file():
                 file_hash = _compute_file_hash(str(target_path))
 
@@ -422,7 +432,9 @@ class LocalStorageAdapter(StorageAdapter):
         logger.debug(f"Path {path} exists: {exists}")
         return exists
 
-    async def list_changes(self, since: datetime, path: Optional[str] = None) -> List[FileChange]:
+    async def list_changes(
+        self, since: datetime, path: str | None = None
+    ) -> list[FileChange]:
         """List changes since a given timestamp.
 
         Local adapters do not support change tracking via polling.
@@ -473,7 +485,7 @@ class LocalStorageAdapter(StorageAdapter):
         """
         # Import watchdog classes at runtime
         from watchdog.observers import Observer
-        
+
         target_path = Path(path)
 
         if not target_path.exists():
@@ -488,7 +500,7 @@ class LocalStorageAdapter(StorageAdapter):
             observer = Observer()
             event_handler = _WatchdogEventHandler(callback)
             observer.schedule(event_handler, str(target_path), recursive=True)
-            
+
             handle = WatchdogWatchHandle(observer, str(target_path))
             self._observers.append(observer)
             logger.info(f"Started watching directory: {path}")

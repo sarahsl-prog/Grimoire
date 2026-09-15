@@ -8,9 +8,9 @@ external APIs and services.
 import asyncio
 import functools
 import time
-from collections import defaultdict
-from typing import Dict, Optional, Callable, Any
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -22,7 +22,7 @@ class TokenBucket:
     tokens: float = field(default=0)
     last_refill: float = field(default_factory=time.time)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize with full capacity of tokens."""
         self.tokens = float(self.capacity)
 
@@ -79,9 +79,9 @@ class TokenBucket:
 class RateLimiter:
     """Rate limiter that manages multiple token buckets."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize rate limiter."""
-        self.buckets: Dict[str, TokenBucket] = {}
+        self.buckets: dict[str, TokenBucket] = {}
 
     def register_bucket(self, key: str, capacity: int, refill_rate: float) -> None:
         """
@@ -152,7 +152,9 @@ def register_rate_limit(bucket_key: str, capacity: int, refill_rate: float) -> N
     _global_rate_limiter.register_bucket(bucket_key, capacity, refill_rate)
 
 
-def rate_limit(bucket_key: str, requests: int = 1):
+def rate_limit(
+    bucket_key: str, requests: int = 1
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to rate limit function calls.
 
@@ -164,9 +166,9 @@ def rate_limit(bucket_key: str, requests: int = 1):
         Decorated function
     """
 
-    def decorator(func: Callable[..., Any]):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             await _global_rate_limiter.wait_if_needed(bucket_key, requests)
 
             if not _global_rate_limiter.consume(bucket_key, requests):
@@ -175,7 +177,7 @@ def rate_limit(bucket_key: str, requests: int = 1):
             return await func(*args, **kwargs)
 
         @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             bucket = _global_rate_limiter.buckets.get(bucket_key)
             if bucket:
                 wait = bucket.wait_time(requests)
@@ -196,7 +198,7 @@ def rate_limit(bucket_key: str, requests: int = 1):
 
 
 # Predefined rate limits for common services
-def setup_common_rate_limits():
+def setup_common_rate_limits() -> None:
     """Setup rate limits for common services."""
     # Google Drive API limits (example values)
     register_rate_limit("gdrive_read", 1000, 1000 / 60)  # 1000 requests per minute

@@ -7,7 +7,6 @@ using mocked Microsoft Graph API responses.
 from __future__ import annotations
 
 import json
-import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -173,7 +172,9 @@ class TestOneDriveAdapterInit:
         adapter = OneDriveAdapter(onedrive_config)
         assert adapter.token_data is None
 
-    async def test_adapter_context_manager(self, onedrive_config: CloudOnedriveConfig) -> None:
+    async def test_adapter_context_manager(
+        self, onedrive_config: CloudOnedriveConfig
+    ) -> None:
         """Adapter works as async context manager."""
         async with OneDriveAdapter(onedrive_config) as adapter:
             assert isinstance(adapter, OneDriveAdapter)
@@ -216,9 +217,10 @@ class TestTokenRefresh:
     """Tests for token refresh functionality."""
 
     async def test_token_refresh_when_expired(
-        self, onedrive_config: CloudOnedriveConfig,
+        self,
+        onedrive_config: CloudOnedriveConfig,
         expired_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Token is refreshed when expired."""
         httpx_mock.add_response(
@@ -239,9 +241,10 @@ class TestTokenRefresh:
         assert adapter.token_data.access_token == "refreshed_access_token"
 
     async def test_token_refresh_failure(
-        self, onedrive_config: CloudOnedriveConfig,
+        self,
+        onedrive_config: CloudOnedriveConfig,
         expired_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Token refresh failure raises auth error."""
         httpx_mock.add_response(
@@ -266,7 +269,7 @@ class TestListFiles:
         mock_token_data: OneDriveTokenData,
         sample_drive_item: dict[str, Any],
         sample_folder_item: dict[str, Any],
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Files can be listed non-recursively."""
         httpx_mock.add_response(
@@ -290,7 +293,7 @@ class TestListFiles:
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
         sample_drive_item: dict[str, Any],
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Files can be listed recursively using delta endpoint."""
         httpx_mock.add_response(
@@ -314,7 +317,7 @@ class TestReadFile:
         self,
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """File can be read successfully."""
         httpx_mock.add_response(
@@ -341,7 +344,7 @@ class TestReadFile:
         self,
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """FileNotFoundError raised when file doesn't exist."""
         httpx_mock.add_response(
@@ -360,7 +363,7 @@ class TestReadFile:
         self,
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """PermissionError raised when access denied."""
         httpx_mock.add_response(
@@ -390,7 +393,7 @@ class TestListChanges:
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
         sample_drive_item: dict[str, Any],
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Changes can be listed successfully."""
         httpx_mock.add_response(
@@ -414,7 +417,7 @@ class TestListChanges:
         self,
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Deleted items are correctly identified."""
         deleted_item = {
@@ -457,7 +460,9 @@ class TestWatch:
         """watch raises NotImplementedError."""
         adapter = OneDriveAdapter(onedrive_config)
 
-        with pytest.raises(NotImplementedError, match="does not support native watching"):
+        with pytest.raises(
+            NotImplementedError, match="does not support native watching"
+        ):
             await adapter.watch("/", lambda x: None)
 
 
@@ -468,7 +473,7 @@ class TestRateLimiting:
         self,
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Rate limit error includes retry-after information."""
         httpx_mock.add_response(
@@ -509,7 +514,7 @@ class TestExists:
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
         sample_drive_item: dict[str, Any],
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Returns True for existing file."""
         httpx_mock.add_response(
@@ -527,7 +532,7 @@ class TestExists:
         self,
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Returns False for non-existent file."""
         httpx_mock.add_response(
@@ -550,7 +555,7 @@ class TestNetworkErrors:
         self,
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Network errors are handled gracefully."""
         httpx_mock.add_exception(httpx.ConnectError("Network unreachable"))
@@ -565,7 +570,7 @@ class TestNetworkErrors:
         self,
         onedrive_config: CloudOnedriveConfig,
         mock_token_data: OneDriveTokenData,
-        httpx_mock: HTTPXMock
+        httpx_mock: HTTPXMock,
     ) -> None:
         """Timeout errors are handled gracefully."""
         httpx_mock.add_exception(httpx.TimeoutException("Request timed out"))
@@ -623,4 +628,3 @@ class TestTokenPersistence:
         adapter = OneDriveAdapter(onedrive_config)
         adapter.token_data = None
         adapter._save_tokens()  # type: ignore[misc]
-

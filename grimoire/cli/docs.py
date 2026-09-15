@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import click
 from sqlalchemy import func, select
@@ -15,6 +16,12 @@ from grimoire.cli.helpers import (
     setup_db,
     teardown_db,
 )
+
+if TYPE_CHECKING:
+    # Type-only: the CLI defers model imports to keep startup fast.
+    from collections.abc import Sequence
+
+    from grimoire.db.models import Document
 
 
 def _parse_since(value: str) -> datetime:
@@ -32,14 +39,14 @@ def _parse_since(value: str) -> datetime:
             delta = timedelta(weeks=amount)
         else:  # "m"
             delta = timedelta(days=amount * 30)
-        return datetime.now(tz=timezone.utc) - delta
+        return datetime.now(tz=UTC) - delta
 
     try:
         return datetime.fromisoformat(value)
-    except ValueError:
+    except ValueError as e:
         raise click.BadParameter(
             f"Invalid date '{value}'. Use ISO format (2026-03-01) or relative (7d, 2w, 3m)."
-        )
+        ) from e
 
 
 @click.group()
@@ -48,9 +55,22 @@ def docs() -> None:
 
 
 @docs.command("list")
-@click.option("--category", "-c", type=str, default=None, help="Filter by category name or slug.")
-@click.option("--search", "-s", type=str, default=None, help="Case-insensitive title substring search.")
-@click.option("--since", type=str, default=None, help="Date filter (ISO date or relative: 7d, 2w, 3m).")
+@click.option(
+    "--category", "-c", type=str, default=None, help="Filter by category name or slug."
+)
+@click.option(
+    "--search",
+    "-s",
+    type=str,
+    default=None,
+    help="Case-insensitive title substring search.",
+)
+@click.option(
+    "--since",
+    type=str,
+    default=None,
+    help="Date filter (ISO date or relative: 7d, 2w, 3m).",
+)
 @click.option(
     "--format",
     "fmt",
@@ -130,47 +150,67 @@ async def docs_list(
         await teardown_db()
 
 
-def _output_text(documents: list) -> None:
+def _output_text(documents: Sequence[Document]) -> None:
     """Print documents in formatted text table."""
     if not documents:
         click.echo("No documents found.")
         return
 
-    click.echo(
-        f"{'ID':<38}{'Title':<34}{'Type':<6}{'Status':<12}{'Created'}"
-    )
-    click.echo(
-        f"{'─' * 36:<38}{'─' * 32:<34}{'─' * 4:<6}{'─' * 9:<12}{'─' * 10}"
-    )
+    click.echo(f"{'ID':<38}{'Title':<34}{'Type':<6}{'Status':<12}{'Created'}")
+    click.echo(f"{'─' * 36:<38}{'─' * 32:<34}{'─' * 4:<6}{'─' * 9:<12}{'─' * 10}")
     for doc in documents:
         title = (doc.title or "Untitled")[:32]
-        file_type = doc.file_type.value if hasattr(doc.file_type, "value") else str(doc.file_type)
-        status = doc.processing_status.value if hasattr(doc.processing_status, "value") else str(doc.processing_status)
+        file_type = (
+            doc.file_type.value
+            if hasattr(doc.file_type, "value")
+            else str(doc.file_type)
+        )
+        status = (
+            doc.processing_status.value
+            if hasattr(doc.processing_status, "value")
+            else str(doc.processing_status)
+        )
         created = doc.created_at.strftime("%Y-%m-%d") if doc.created_at else ""
         click.echo(f"{doc.id:<38}{title:<34}{file_type:<6}{status:<12}{created}")
 
     click.echo(f"\n{len(documents)} document(s) found.")
 
 
-def _output_markdown(documents: list) -> None:
+def _output_markdown(documents: Sequence[Document]) -> None:
     """Print documents as a GitHub-flavored markdown table."""
     if not documents:
         click.echo("No documents found.")
         return
 
-    click.echo("| ID                                   | Title                            | Type | Status    | Created    |")
-    click.echo("|--------------------------------------|----------------------------------|------|-----------|------------|")
+    click.echo(
+        "| ID                                   | Title                            | Type | Status    | Created    |"
+    )
+    click.echo(
+        "|--------------------------------------|----------------------------------|------|-----------|------------|"
+    )
     for doc in documents:
         title = (doc.title or "Untitled")[:32]
-        file_type = doc.file_type.value if hasattr(doc.file_type, "value") else str(doc.file_type)
-        status = doc.processing_status.value if hasattr(doc.processing_status, "value") else str(doc.processing_status)
+        file_type = (
+            doc.file_type.value
+            if hasattr(doc.file_type, "value")
+            else str(doc.file_type)
+        )
+        status = (
+            doc.processing_status.value
+            if hasattr(doc.processing_status, "value")
+            else str(doc.processing_status)
+        )
         created = doc.created_at.strftime("%Y-%m-%d") if doc.created_at else ""
-        click.echo(f"| {doc.id:<36} | {title:<32} | {file_type:<4} | {status:<9} | {created:<10} |")
+        click.echo(
+            f"| {doc.id:<36} | {title:<32} | {file_type:<4} | {status:<9} | {created:<10} |"
+        )
 
     click.echo(f"\n{len(documents)} document(s) found.")
 
 
-def _output_json(documents: list, doc_categories: dict[str, list[str]]) -> None:
+def _output_json(
+    documents: Sequence[Document], doc_categories: dict[str, list[str]]
+) -> None:
     """Print documents as JSON."""
     if not documents:
         click.echo("[]")
@@ -178,15 +218,25 @@ def _output_json(documents: list, doc_categories: dict[str, list[str]]) -> None:
 
     items = []
     for doc in documents:
-        file_type = doc.file_type.value if hasattr(doc.file_type, "value") else str(doc.file_type)
-        status = doc.processing_status.value if hasattr(doc.processing_status, "value") else str(doc.processing_status)
-        items.append({
-            "id": doc.id,
-            "title": doc.title,
-            "file_type": file_type,
-            "processing_status": status,
-            "created_at": doc.created_at.isoformat() if doc.created_at else None,
-            "categories": doc_categories.get(doc.id, []),
-        })
+        file_type = (
+            doc.file_type.value
+            if hasattr(doc.file_type, "value")
+            else str(doc.file_type)
+        )
+        status = (
+            doc.processing_status.value
+            if hasattr(doc.processing_status, "value")
+            else str(doc.processing_status)
+        )
+        items.append(
+            {
+                "id": doc.id,
+                "title": doc.title,
+                "file_type": file_type,
+                "processing_status": status,
+                "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                "categories": doc_categories.get(doc.id, []),
+            }
+        )
 
     click.echo(json.dumps(items, indent=2, default=str))

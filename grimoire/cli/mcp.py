@@ -9,8 +9,6 @@ For HTTP/SSE inside the main FastAPI app, see ``grimoire.api.main``.
 
 from __future__ import annotations
 
-import asyncio
-
 import click
 from loguru import logger
 
@@ -20,8 +18,12 @@ from grimoire.mcp.server import create_mcp_server
 
 
 @click.command(name="mcp")
-@click.option("--stdio", is_flag=True, default=False, help="Run stdio transport (default).")
-@click.option("--sse", is_flag=True, default=False, help="Run standalone SSE transport.")
+@click.option(
+    "--stdio", is_flag=True, default=False, help="Run stdio transport (default)."
+)
+@click.option(
+    "--sse", is_flag=True, default=False, help="Run standalone SSE transport."
+)
 @click.option("--host", default="0.0.0.0", help="Bind host for SSE mode.")
 @click.option("--port", default=8100, type=int, help="Port for SSE mode.")
 @async_command
@@ -43,6 +45,7 @@ async def mcp(stdio: bool, sse: bool, host: str, port: int) -> None:
         logger.info(f"Starting Grimoire MCP server (SSE transport on {host}:{port})")
         mcp_server = create_mcp_server()
         from uvicorn import Config, Server
+
         config = Config(
             app=mcp_server.sse_app(),
             host=host,

@@ -2,7 +2,7 @@
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any
 
 import numpy as np
 
@@ -34,9 +34,9 @@ class Reranker(ABC):
     async def rerank(
         self,
         query: str,
-        documents: List[str],
+        documents: list[str],
         top_k: int = 5,
-    ) -> List[int]:
+    ) -> list[int]:
         """Rerank documents by relevance to query.
 
         Args:
@@ -76,11 +76,13 @@ class CrossEncoderReranker(Reranker):
         3. Top-k indices are returned for LLM context
     """
 
-    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+    def __init__(
+        self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    ) -> None:
         self._model_name = model_name
-        self._model = None
+        self._model: Any = None
 
-    def _get_model(self):
+    def _get_model(self) -> Any:
         """Lazy-load the cross-encoder model."""
         if self._model is None:
             from sentence_transformers import CrossEncoder
@@ -88,14 +90,16 @@ class CrossEncoderReranker(Reranker):
             self._model = CrossEncoder(self._model_name)
         return self._model
 
-    async def rerank(self, query: str, documents: List[str], top_k: int = 5) -> List[int]:
+    async def rerank(
+        self, query: str, documents: list[str], top_k: int = 5
+    ) -> list[int]:
         if top_k <= 0 or not documents:
             return []
 
         model = self._get_model()
         pairs = [[query, doc] for doc in documents]
 
-        def _score():
+        def _score() -> Any:
             return model.predict(pairs)
 
         scores = await asyncio.get_running_loop().run_in_executor(None, _score)

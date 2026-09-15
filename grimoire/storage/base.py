@@ -1,10 +1,11 @@
 """Abstract base class and models for storage adapters."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol
+from typing import Any, Protocol
 
 
 class StorageBackend(Enum):
@@ -36,8 +37,8 @@ class FileInfo:
     size_bytes: int = 0
     modified_at: datetime = field(default_factory=datetime.now)
     is_directory: bool = False
-    mime_type: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    mime_type: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -60,13 +61,13 @@ class FileMetadata:
     path: str
     size_bytes: int
     modified_at: datetime
-    created_at: Optional[datetime] = None
-    accessed_at: Optional[datetime] = None
-    file_hash: Optional[str] = None
-    permissions: Optional[int] = None
-    owner: Optional[str] = None
-    mime_type: Optional[str] = None
-    additional: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime | None = None
+    accessed_at: datetime | None = None
+    file_hash: str | None = None
+    permissions: int | None = None
+    owner: str | None = None
+    mime_type: str | None = None
+    additional: dict[str, Any] = field(default_factory=dict)
 
 
 class FileChangeType(Enum):
@@ -93,8 +94,8 @@ class FileChange:
     change_type: FileChangeType
     path: str
     timestamp: datetime = field(default_factory=datetime.now)
-    previous_path: Optional[str] = None
-    file_info: Optional[FileInfo] = None
+    previous_path: str | None = None
+    file_info: FileInfo | None = None
 
 
 class WatchHandle(Protocol):
@@ -141,7 +142,7 @@ class StorageAdapter(ABC):
     """
 
     @abstractmethod
-    async def list_files(self, path: str, recursive: bool = False) -> List[FileInfo]:
+    async def list_files(self, path: str, recursive: bool = False) -> list[FileInfo]:
         """List files in a directory.
 
         Args:
@@ -206,8 +207,8 @@ class StorageAdapter(ABC):
 
     @abstractmethod
     async def list_changes(
-        self, since: datetime, path: Optional[str] = None
-    ) -> List[FileChange]:
+        self, since: datetime, path: str | None = None
+    ) -> list[FileChange]:
         """List changes since a given timestamp.
 
         Cloud adapters should implement this using native change tracking APIs
