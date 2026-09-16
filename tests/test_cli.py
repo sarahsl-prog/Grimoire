@@ -530,6 +530,82 @@ class TestSearchCommand:
     @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
     @patch(f"{_QUERY}.build_query_agent")
     @patch(f"{_QUERY}.get_db_context")
+    def test_search_text_output_falls_back_on_null_title(
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        """A present-but-None title must fall back to the short document id.
+
+        `document_title` is always in the dict, so a `.get(key, default)`
+        default never fires and the table would print the literal "None".
+        """
+        mock_result = MagicMock(
+            total_results=1,
+            duration_ms=42,
+            results=[
+                {
+                    "document_title": None,
+                    "document_id": "abcdef1234567890",
+                    "score": 0.95,
+                    "content": "Untitled content",
+                },
+            ],
+        )
+        mock_agent = MagicMock()
+        mock_agent.search = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(cli, ["search", "neural networks"])
+        assert result.exit_code == 0
+        assert "abcdef12" in result.output
+        assert "None" not in result.output
+
+    @patch(f"{_QUERY}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.build_query_agent")
+    @patch(f"{_QUERY}.get_db_context")
+    def test_search_markdown_output_falls_back_on_null_title(
+        self,
+        mock_ctx: MagicMock,
+        mock_build: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        runner: CliRunner,
+    ) -> None:
+        """Same None-title fallback in the markdown table renderer."""
+        mock_result = MagicMock(
+            total_results=1,
+            duration_ms=42,
+            results=[
+                {
+                    "document_title": None,
+                    "document_id": "abcdef1234567890",
+                    "score": 0.95,
+                    "content": "Untitled content",
+                },
+            ],
+        )
+        mock_agent = MagicMock()
+        mock_agent.search = AsyncMock(return_value=mock_result)
+        mock_build.return_value = mock_agent
+        mock_ctx.return_value = _mock_db_ctx()
+
+        result = runner.invoke(
+            cli, ["search", "neural networks", "--format", "markdown"]
+        )
+        assert result.exit_code == 0
+        assert "abcdef12" in result.output
+        assert "None" not in result.output
+
+    @patch(f"{_QUERY}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_QUERY}.build_query_agent")
+    @patch(f"{_QUERY}.get_db_context")
     def test_search_json_output(
         self,
         mock_ctx: MagicMock,
