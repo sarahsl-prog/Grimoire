@@ -29,6 +29,8 @@ from grimoire.config.settings import (
     CloudConfig,
     CloudGoogleConfig,
     CloudOnedriveConfig,
+    # Exceptions
+    ConfigurationError,
     DatabaseConfig,
     DedupStrategy,
     EmbeddingDevice,
@@ -64,6 +66,8 @@ __all__ = [
     "get_settings",
     "reload_settings",
     "settings",
+    # Exceptions
+    "ConfigurationError",
     # Config models
     "LLMConfig",
     "EmbeddingsConfig",

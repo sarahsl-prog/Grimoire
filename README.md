@@ -128,6 +128,19 @@ Grimoire uses Pydantic Settings for configuration. Settings are loaded from:
 
 See [.env.example](.env.example) for all available configuration options.
 
+### Configuration validation
+
+Configuration is validated at startup, before any command does real work. If
+`grimoire.yaml` is malformed, unreadable, or contains a value that fails
+validation, the CLI prints the offending file, the specific problem, and how to
+fix it, then exits with status `1`; the API logs the same detail and refuses to
+start. A *missing* `grimoire.yaml` is not an error — Grimoire falls back to
+built-in defaults.
+
+The `grimoire config` commands are deliberately exempt from this check, so
+`grimoire config init` and `grimoire config edit` remain usable for repairing a
+broken config file.
+
 ### Required Environment Variables
 
 | Variable | Description | Default |

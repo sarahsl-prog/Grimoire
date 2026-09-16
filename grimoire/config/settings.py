@@ -34,6 +34,21 @@ from pydantic_settings import (
 )
 
 # =============================================================================
+# Exceptions
+# =============================================================================
+
+
+class ConfigurationError(Exception):
+    """Raised when Grimoire configuration cannot be loaded or is invalid.
+
+    The message is written for a human operator: it names the offending file
+    (when one is known), describes the specific problem, and states how to fix
+    it. Callers at process entrypoints (CLI, API) catch this single type and
+    print ``str(exc)`` instead of leaking a Pydantic/PyYAML traceback.
+    """
+
+
+# =============================================================================
 # Enums
 # =============================================================================
 
@@ -797,6 +812,29 @@ class WikiConfig(BaseModel):
 # =============================================================================
 
 
+def _describe_yaml_error(error: yaml.YAMLError) -> str:
+    """Condense a PyYAML parse error into one actionable line.
+
+    PyYAML's ``str()`` spans several lines and repeats the file context. Marked
+    errors carry the exact line/column, which is the only detail an operator
+    needs to find the typo.
+
+    Args:
+        error: The exception raised by :func:`yaml.safe_load`.
+
+    Returns:
+        A single-line description, including ``line N, column M`` when PyYAML
+        recorded a position.
+    """
+    problem: Any = getattr(error, "problem", None)
+    mark: Any = getattr(error, "problem_mark", None)
+    if mark is not None:
+        # Marks are zero-based; editors are one-based.
+        location = f"line {mark.line + 1}, column {mark.column + 1}"
+        return f"{problem or 'parse error'} (at {location})"
+    return " ".join(str(error).split())
+
+
 class YamlConfigSource(PydanticBaseSettingsSource):
     """Custom settings source for loading from YAML config file."""
 
@@ -810,7 +848,21 @@ class YamlConfigSource(PydanticBaseSettingsSource):
         return None, "", False
 
     def __call__(self) -> dict[str, Any]:
-        """Load configuration from YAML file."""
+        """Load configuration from the YAML file.
+
+        A missing file is not an error: it means "no YAML provided, use
+        defaults". Every other failure is a real misconfiguration and raises
+        :class:`ConfigurationError` — silently falling back to defaults would
+        start the app with settings the operator never asked for.
+
+        Returns:
+            The ``grimoire:`` mapping from the YAML file, or an empty dict when
+            the file does not exist or contains no settings.
+
+        Raises:
+            ConfigurationError: The file exists but is unreadable, is not valid
+                YAML, or does not have the expected mapping shape.
+        """
         config_path = Path(self.yaml_path)
         if not config_path.exists():
             logger.debug(f"Config file not found: {config_path}")
@@ -819,24 +871,68 @@ class YamlConfigSource(PydanticBaseSettingsSource):
         try:
             with open(config_path, encoding="utf-8") as f:
                 config = yaml.safe_load(f)
-            # Handle None (empty file) or non-dict content
-            if config is None:
-                config = {}
-            elif not isinstance(config, dict):
-                logger.warning(
-                    f"YAML config must contain a dict, got {type(config).__name__}"
-                )
-                return {}
-            logger.info(f"Loaded configuration from {config_path}")
-            grimoire_config = config.get("grimoire", {})
-            # Ensure we return a dict
-            return grimoire_config if isinstance(grimoire_config, dict) else {}
         except yaml.YAMLError as e:
-            logger.warning(f"Failed to parse YAML config: {e}")
-            return {}
+            detail = _describe_yaml_error(e)
+            logger.error(f"Malformed YAML in config file {config_path}: {detail}")
+            raise ConfigurationError(
+                f"Configuration file '{config_path}' is not valid YAML.\n"
+                f"  {detail}\n"
+                "Fix the syntax error, or remove/rename the file to fall back "
+                "to built-in defaults."
+            ) from e
         except OSError as e:
-            logger.warning(f"Failed to read config file: {e}")
+            # An existing-but-unreadable file (permissions, bad symlink) is a
+            # misconfiguration, not an absent config.
+            reason = e.strerror or str(e)
+            logger.error(f"Cannot read config file {config_path}: {reason}")
+            raise ConfigurationError(
+                f"Configuration file '{config_path}' exists but could not be "
+                f"read: {reason}.\n"
+                "Check the file's permissions and ownership."
+            ) from e
+
+        # An empty file is valid and simply contributes no settings.
+        if config is None:
+            logger.debug(f"Config file is empty: {config_path}")
             return {}
+
+        if not isinstance(config, dict):
+            logger.error(
+                f"Config file {config_path} must contain a top-level mapping, "
+                f"got {type(config).__name__}"
+            )
+            raise ConfigurationError(
+                f"Configuration file '{config_path}' must contain a top-level "
+                f"mapping of settings, but it contains a "
+                f"{type(config).__name__}.\n"
+                "Expected structure:\n"
+                "  grimoire:\n"
+                "    llm:\n"
+                "      model: llama3.2"
+            )
+
+        grimoire_config = config.get("grimoire", {})
+        # A bare `grimoire:` header with nothing under it parses as None and
+        # means "no overrides", same as an empty file.
+        if grimoire_config is None:
+            grimoire_config = {}
+        if not isinstance(grimoire_config, dict):
+            logger.error(
+                f"'grimoire' key in {config_path} must be a mapping, "
+                f"got {type(grimoire_config).__name__}"
+            )
+            raise ConfigurationError(
+                f"The 'grimoire' key in '{config_path}' must be a mapping of "
+                f"configuration sections, but it is a "
+                f"{type(grimoire_config).__name__}.\n"
+                "Expected structure:\n"
+                "  grimoire:\n"
+                "    llm:\n"
+                "      model: llama3.2"
+            )
+
+        logger.info(f"Loaded configuration from {config_path}")
+        return grimoire_config
 
 
 class SecurityConfig(BaseModel):
@@ -1097,6 +1193,11 @@ def get_settings() -> GrimoireSettings:
     Returns:
         GrimoireSettings: The global settings instance.
 
+    Raises:
+        ConfigurationError: The YAML config file is unusable, or one or more
+            settings failed validation. Pydantic's ``ValidationError`` is
+            translated so that callers have a single exception type to catch.
+
     Example:
         >>> from grimoire.config import get_settings
         >>> settings = get_settings()
@@ -1106,13 +1207,28 @@ def get_settings() -> GrimoireSettings:
     if _settings is None:
         try:
             _settings = GrimoireSettings()
-            if _settings.debug:
-                _settings.log_config()
-        except ValidationError as e:
-            logger.error("Failed to load configuration:")
-            for error in e.errors():
-                logger.error(f"  {error['loc']}: {error['msg']}")
+        except ConfigurationError as e:
+            # Already carries an operator-facing message from the YAML source.
+            logger.error(f"Failed to load configuration:\n{e}")
             raise
+        except ValidationError as e:
+            config_path = os.environ.get("GRIMOIRE_CONFIG", "grimoire.yaml")
+            errors = e.errors()
+            details = "\n".join(
+                f"  {'.'.join(str(part) for part in error['loc']) or '<root>'}: "
+                f"{error['msg']}"
+                for error in errors
+            )
+            logger.error(f"Invalid configuration values:\n{details}")
+            raise ConfigurationError(
+                f"Grimoire configuration is invalid: {len(errors)} setting(s) "
+                f"failed validation.\n"
+                f"{details}\n"
+                f"Correct these values in '{config_path}', in the .env file, or "
+                "in the matching GRIMOIRE_* environment variables."
+            ) from e
+        if _settings.debug:
+            _settings.log_config()
     return _settings
 
 

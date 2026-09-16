@@ -9,6 +9,7 @@ Follows Appendix D testing standards from IMPLEMENTATION.md.
 
 from __future__ import annotations
 
+import importlib
 import os
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from grimoire.config import (
     ChunkingConfig,
     ChunkingStrategy,
     CloudConfig,
+    ConfigurationError,
     DatabaseConfig,
     DedupStrategy,
     EmbeddingsConfig,
@@ -860,6 +862,162 @@ class TestConfigErrorHandling:
         error_msg = str(exc_info.value)
         # Should contain information about errors
         assert "validation" in error_msg.lower()
+
+
+# =============================================================================
+# Startup Validation Tests
+# =============================================================================
+
+
+def _load_yaml_source(path: Path) -> dict[str, Any]:
+    """Invoke the YAML settings source directly for the given path."""
+    from grimoire.config.settings import YamlConfigSource
+
+    return YamlConfigSource(GrimoireSettings, str(path))()
+
+
+@pytest.fixture
+def clean_settings_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the cached settings singleton for the duration of a test.
+
+    ``monkeypatch.setattr`` restores the previously cached instance afterwards,
+    so a deliberately broken config in one test cannot leak into another.
+    """
+    # NOTE: `grimoire.config.settings` is both the submodule and the name of the
+    # re-exported proxy object, and the proxy shadows the submodule attribute on
+    # the package. import_module resolves the module itself.
+    settings_module = importlib.import_module("grimoire.config.settings")
+
+    monkeypatch.setattr(settings_module, "_settings", None)
+
+
+class TestYamlSourceStartupValidation:
+    """The YAML source must fail loudly rather than silently use defaults."""
+
+    def test_missing_file_uses_defaults(self, temp_directory: Path) -> None:
+        """A missing config file is legitimate: no YAML, use defaults."""
+        assert _load_yaml_source(temp_directory / "nope.yaml") == {}
+
+    def test_empty_file_uses_defaults(self, temp_directory: Path) -> None:
+        """An empty file contributes no settings and is not an error."""
+        config_file = temp_directory / "grimoire.yaml"
+        config_file.write_text("")
+
+        assert _load_yaml_source(config_file) == {}
+
+    def test_valid_file_returns_grimoire_section(self, temp_directory: Path) -> None:
+        """Happy path: the ``grimoire:`` mapping is returned verbatim."""
+        config_file = temp_directory / "grimoire.yaml"
+        config_file.write_text(yaml.dump({"grimoire": {"llm": {"model": "mistral"}}}))
+
+        assert _load_yaml_source(config_file) == {"llm": {"model": "mistral"}}
+
+    def test_malformed_yaml_raises(self, temp_directory: Path) -> None:
+        """Broken YAML syntax must raise, not silently fall back to defaults."""
+        config_file = temp_directory / "grimoire.yaml"
+        config_file.write_text('grimoire:\n  llm:\n    model: "unterminated\n')
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            _load_yaml_source(config_file)
+
+        message = str(exc_info.value)
+        assert str(config_file) in message
+        assert "not valid YAML" in message
+        # The operator needs a position to find the typo.
+        assert "line" in message
+
+    def test_non_mapping_top_level_raises(self, temp_directory: Path) -> None:
+        """A top-level list is the wrong shape and must be rejected."""
+        config_file = temp_directory / "grimoire.yaml"
+        config_file.write_text("- one\n- two\n")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            _load_yaml_source(config_file)
+
+        message = str(exc_info.value)
+        assert str(config_file) in message
+        assert "mapping" in message
+        assert "list" in message
+
+    def test_non_mapping_grimoire_key_raises(self, temp_directory: Path) -> None:
+        """``grimoire:`` must hold config sections, not a scalar."""
+        config_file = temp_directory / "grimoire.yaml"
+        config_file.write_text("grimoire: just-a-string\n")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            _load_yaml_source(config_file)
+
+        assert "'grimoire' key" in str(exc_info.value)
+
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        reason="root bypasses file permission checks",
+    )
+    def test_unreadable_file_raises(self, temp_directory: Path) -> None:
+        """An existing-but-unreadable file is a misconfiguration, not absence."""
+        config_file = temp_directory / "grimoire.yaml"
+        config_file.write_text("grimoire:\n  llm:\n    model: mistral\n")
+        config_file.chmod(0o000)
+
+        try:
+            with pytest.raises(ConfigurationError) as exc_info:
+                _load_yaml_source(config_file)
+        finally:
+            config_file.chmod(0o600)
+
+        assert "could not be read" in str(exc_info.value)
+
+
+class TestGetSettingsErrorTranslation:
+    """``get_settings`` exposes exactly one exception type to its callers."""
+
+    def test_bad_field_value_raises_configuration_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_settings_cache: None,
+        temp_directory: Path,
+    ) -> None:
+        """A failed field validator surfaces as ConfigurationError."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", str(temp_directory / "absent.yaml"))
+        monkeypatch.setenv("GRIMOIRE_LLM__MAX_TOKENS", "not-a-number")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            get_settings()
+
+        message = str(exc_info.value)
+        assert "max_tokens" in message
+        assert "failed validation" in message
+        # The raw pydantic error is preserved for debugging, not shown to users.
+        assert isinstance(exc_info.value.__cause__, ValidationError)
+
+    def test_malformed_yaml_raises_configuration_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_settings_cache: None,
+        temp_directory: Path,
+    ) -> None:
+        """A broken grimoire.yaml aborts startup instead of using defaults."""
+        config_file = temp_directory / "grimoire.yaml"
+        config_file.write_text("grimoire:\n  llm:\n  - [unclosed\n")
+        monkeypatch.setenv("GRIMOIRE_CONFIG", str(config_file))
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            get_settings()
+
+        assert str(config_file) in str(exc_info.value)
+
+    def test_missing_yaml_loads_defaults(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_settings_cache: None,
+        temp_directory: Path,
+    ) -> None:
+        """No config file at all still yields a usable settings object."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", str(temp_directory / "absent.yaml"))
+
+        loaded = get_settings()
+
+        assert loaded.llm.model == "llama3.2"
 
 
 # =============================================================================
