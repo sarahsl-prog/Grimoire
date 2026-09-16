@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.core.embedder import Embedder
 from grimoire.core.reranker import Reranker
+from grimoire.db.models import Document
 from grimoire.search.fulltext import FulltextSearch
 from grimoire.vectorstore.base import VectorStore
 
@@ -151,7 +153,14 @@ class HybridSearch:
 
         # Sort by score and limit
         merged.sort(key=lambda r: r.score, reverse=True)
-        return merged[:top_k]
+        final = merged[:top_k]
+
+        # Vector hits carry no title (ChromaDB metadata has none), so fill in
+        # any that FTS did not already supply. Done on the truncated list so the
+        # lookup only covers documents we are actually about to return.
+        await self._backfill_document_titles(db, final)
+
+        return final
 
     async def vector_search_only(
         self,
@@ -349,6 +358,61 @@ class HybridSearch:
             f"= {len(merged)} unique results"
         )
         return list(merged.values())
+
+    async def _backfill_document_titles(
+        self,
+        db: AsyncSession,
+        results: list[HybridResult],
+    ) -> None:
+        """Fill in ``document_title`` for results that still lack one.
+
+        Document titles live only in PostgreSQL (``Document.title``); the
+        per-chunk metadata written to the vector store does not include them.
+        FTS results arrive with a title already (its SQL joins ``Document``),
+        and :meth:`_merge_results` copies that onto a vector hit for the *same*
+        chunk -- but a chunk surfaced by vector search alone has no FTS twin to
+        borrow from, so it would otherwise stay ``None`` and render as a
+        literal "None" to the user.
+
+        Resolving this from PostgreSQL (rather than embedding the title in
+        vector metadata) also fixes every document that was already ingested,
+        with no re-embedding.
+
+        Mutates ``results`` in place. Uses a single batched ``SELECT`` keyed by
+        the distinct document IDs, never one query per result: this runs on
+        every search.
+
+        Args:
+            db: Database session used for the title lookup.
+            results: Results to enrich; untouched entries keep their title.
+        """
+        missing = [r for r in results if not r.document_title and r.document_id]
+        if not missing:
+            return
+
+        document_ids = {r.document_id for r in missing}
+
+        try:
+            rows = await db.execute(
+                select(Document.id, Document.title).where(Document.id.in_(document_ids))
+            )
+            titles: dict[str, str | None] = dict(rows.all())
+        except Exception as e:
+            # A missing title degrades display only; never fail the search.
+            logger.warning(f"Document title backfill failed: {e}")
+            return
+
+        filled = 0
+        for r in missing:
+            title = titles.get(r.document_id)
+            if title:
+                r.document_title = title
+                filled += 1
+
+        logger.debug(
+            f"Backfilled {filled}/{len(missing)} document titles "
+            f"from {len(document_ids)} document(s)"
+        )
 
     async def _apply_reranking(
         self,
