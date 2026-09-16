@@ -250,7 +250,9 @@ async def search(
             click.echo("| # | Score | Title | Snippet |")
             click.echo("|---|-------|-------|---------|")
             for i, r in enumerate(result.results, 1):
-                title = r.get("document_title", r.get("document_id", "")[:8])
+                # `or` (not a .get default): the key is always present but may
+                # be None, and a None default would never fire.
+                title = r.get("document_title") or r.get("document_id", "")[:8]
                 score = r.get("score", 0)
                 snippet = (
                     r.get("content", "")[:80].replace("\n", " ").replace("|", "\\|")
@@ -261,7 +263,9 @@ async def search(
 
         click.echo(f"Found {result.total_results} results ({result.duration_ms}ms):\n")
         for i, r in enumerate(result.results, 1):
-            title = r.get("document_title", r.get("document_id", "")[:8])
+            # `or` (not a .get default): the key is always present but may be
+            # None, and a None default would never fire.
+            title = r.get("document_title") or r.get("document_id", "")[:8]
             score = r.get("score", 0)
             snippet = r.get("content", "")[:120].replace("\n", " ")
             click.echo(f"  {i}. [{score:.2f}] {title}")

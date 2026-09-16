@@ -95,6 +95,17 @@ def make_vector_result(
     }
 
 
+def mock_title_rows(mock_db: AsyncMock, titles: dict[str, str | None]) -> None:
+    """Make ``db.execute(...).all()`` return (document_id, title) rows.
+
+    Mirrors what the batched ``SELECT Document.id, Document.title`` in
+    ``_backfill_document_titles`` gets back from PostgreSQL.
+    """
+    rows = MagicMock()
+    rows.all.return_value = list(titles.items())
+    mock_db.execute = AsyncMock(return_value=rows)
+
+
 def make_hybrid_result(
     chunk_id: str,
     score: float = 0.5,
@@ -148,6 +159,11 @@ def hybrid_with_reranker(
 @pytest_asyncio.fixture
 async def mock_db() -> AsyncMock:
     session = AsyncMock(spec=AsyncSession)
+    # Default to an empty result set so the title-backfill query in search()
+    # has something iterable to unpack; tests override via mock_title_rows().
+    empty_rows = MagicMock()
+    empty_rows.all.return_value = []
+    session.execute = AsyncMock(return_value=empty_rows)
     yield session
 
 
@@ -240,6 +256,95 @@ class TestMergeResults:
 
         merged = hybrid._merge_results(vector_results, fts_results)
         assert merged[0].document_title == "My Doc"
+
+
+# =============================================================================
+# Test _backfill_document_titles
+# =============================================================================
+
+
+class TestBackfillDocumentTitles:
+    """Test PostgreSQL title backfill for results the vector store can't title."""
+
+    @pytest.mark.asyncio
+    async def test_backfill_populates_missing_title(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """A result with no title should get one from the database."""
+        results = [make_hybrid_result("c1", doc_id="doc1")]
+        mock_title_rows(mock_db, {"doc1": "Neural Networks 101"})
+
+        await hybrid._backfill_document_titles(mock_db, results)
+        assert results[0].document_title == "Neural Networks 101"
+
+    @pytest.mark.asyncio
+    async def test_backfill_does_not_overwrite_existing_title(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """Titles already supplied by FTS must be left alone."""
+        result = make_hybrid_result("c1", doc_id="doc1")
+        result.document_title = "From FTS"
+        mock_title_rows(mock_db, {"doc1": "From Postgres"})
+
+        await hybrid._backfill_document_titles(mock_db, [result])
+        assert result.document_title == "From FTS"
+
+    @pytest.mark.asyncio
+    async def test_backfill_issues_single_query_for_many_results(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """Ten results across two documents must cost exactly one query."""
+        results = [make_hybrid_result(f"c{i}", doc_id=f"doc{i % 2}") for i in range(10)]
+        mock_title_rows(mock_db, {"doc0": "Doc Zero", "doc1": "Doc One"})
+
+        await hybrid._backfill_document_titles(mock_db, results)
+        assert mock_db.execute.await_count == 1
+        assert {r.document_title for r in results} == {"Doc Zero", "Doc One"}
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_query_when_all_titled(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """No missing titles means no database round trip at all."""
+        result = make_hybrid_result("c1", doc_id="doc1")
+        result.document_title = "Already Titled"
+        mock_db.execute = AsyncMock()
+
+        await hybrid._backfill_document_titles(mock_db, [result])
+        assert mock_db.execute.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_backfill_leaves_title_none_when_document_untitled(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """A genuinely untitled document stays None (CLI falls back to its id)."""
+        results = [make_hybrid_result("c1", doc_id="doc1")]
+        mock_title_rows(mock_db, {"doc1": None})
+
+        await hybrid._backfill_document_titles(mock_db, results)
+        assert results[0].document_title is None
+
+    @pytest.mark.asyncio
+    async def test_backfill_handles_db_failure(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """A failed lookup degrades display only; it must not raise."""
+        results = [make_hybrid_result("c1", doc_id="doc1")]
+        mock_db.execute = AsyncMock(side_effect=RuntimeError("connection lost"))
+
+        await hybrid._backfill_document_titles(mock_db, results)
+        assert results[0].document_title is None
+
+    @pytest.mark.asyncio
+    async def test_backfill_ignores_results_without_document_id(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """A result with no document_id can't be looked up, so no query runs."""
+        results = [make_hybrid_result("c1", doc_id="")]
+        mock_db.execute = AsyncMock()
+
+        await hybrid._backfill_document_titles(mock_db, results)
+        assert mock_db.execute.await_count == 0
 
 
 # =============================================================================
@@ -501,6 +606,65 @@ class TestHybridSearch:
         results = await hybrid.vector_search_only("test query", top_k=10)
         assert len(results) == 2
         assert all(r.vector_score is not None for r in results)
+
+    @pytest.mark.asyncio
+    async def test_search_titles_vector_only_hits(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """Regression: a chunk found by vector search but NOT by FTS still gets
+        a title.
+
+        This is the "neural networks" bug -- semantic hits FTS never surfaced
+        lexically had no FTS twin to copy a title from, so they printed as the
+        literal string "None".
+        """
+        hybrid._vector_store = MockVectorStore(
+            [make_vector_result("c1", doc_id="doc1", distance=0.2)]
+        )
+        mock_title_rows(mock_db, {"doc1": "Neural Networks 101"})
+
+        with patch.object(hybrid, "_fts_search", new_callable=AsyncMock) as mock_fts:
+            mock_fts.return_value = []  # no lexical match for this chunk
+
+            results = await hybrid.search(mock_db, "neural networks", top_k=10)
+
+        assert len(results) == 1
+        assert results[0].chunk_id == "c1"
+        assert results[0].fts_score is None  # vector-only, as the bug requires
+        assert results[0].document_title == "Neural Networks 101"
+
+    @pytest.mark.asyncio
+    async def test_search_backfills_only_vector_only_hits(
+        self, hybrid: HybridSearch, mock_db: AsyncMock
+    ) -> None:
+        """Mixed result set: FTS titles survive, vector-only hits get filled."""
+        hybrid._vector_store = MockVectorStore(
+            [
+                make_vector_result("c1", doc_id="doc1", distance=0.2),
+                make_vector_result("c2", doc_id="doc2", distance=0.3),
+            ]
+        )
+        mock_title_rows(mock_db, {"doc2": "Backfilled Doc"})
+
+        with patch.object(hybrid, "_fts_search", new_callable=AsyncMock) as mock_fts:
+            mock_fts.return_value = [
+                HybridResult(
+                    chunk_id="c1",
+                    document_id="doc1",
+                    content="test content",
+                    score=0.3,
+                    fts_score=1.0,
+                    document_title="From FTS",
+                )
+            ]
+
+            results = await hybrid.search(mock_db, "neural networks", top_k=10)
+
+        by_id = {r.chunk_id: r for r in results}
+        assert by_id["c1"].document_title == "From FTS"
+        assert by_id["c2"].document_title == "Backfilled Doc"
+        # One batched query for the whole result set, not one per result.
+        assert mock_db.execute.await_count == 1
 
     @pytest.mark.asyncio
     async def test_search_both_sources_combined(
