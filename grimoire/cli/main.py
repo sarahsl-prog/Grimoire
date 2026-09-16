@@ -44,6 +44,25 @@ def cli(ctx: click.Context, config: Path | None, verbose: bool) -> None:
     log_level = "DEBUG" if verbose else "INFO"
     setup_logger(level=log_level, console_format=CLI_LOG_FORMAT)
 
+    # Validate configuration up front. Subcommands load settings lazily, deep in
+    # the call stack, so without this a broken grimoire.yaml surfaces as a raw
+    # traceback from wherever the first get_settings() call happens to be.
+    # The `config` group is exempt so `config init`/`edit`/`show` stay usable
+    # for repairing the very file that is broken.
+    if ctx.invoked_subcommand != "config":
+        from grimoire.cli.helpers import echo_error
+        from grimoire.config.settings import ConfigurationError, get_settings
+
+        try:
+            get_settings()
+        except ConfigurationError as e:
+            echo_error(str(e))
+            click.echo(
+                "Run 'grimoire config show' to inspect the loaded configuration.",
+                err=True,
+            )
+            raise SystemExit(1) from e
+
 
 # Register subcommands
 from grimoire.cli.categories import categories, tag, untag

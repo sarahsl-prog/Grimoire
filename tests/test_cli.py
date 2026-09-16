@@ -1383,3 +1383,114 @@ class TestCLIEdgeCases:
     def test_search_missing_argument(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["search"])
         assert result.exit_code != 0
+
+
+# =============================================================================
+# Startup Configuration Validation
+# =============================================================================
+
+
+@pytest.fixture
+def clean_settings_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the cached settings singleton for the duration of a test.
+
+    ``monkeypatch.setattr`` restores the previous instance afterwards, so a
+    deliberately broken config cannot leak into other tests.
+    """
+    import importlib
+
+    # The re-exported `settings` proxy shadows the submodule attribute on the
+    # package, so the module must be resolved via import_module.
+    settings_module = importlib.import_module("grimoire.config.settings")
+    monkeypatch.setattr(settings_module, "_settings", None)
+
+
+class TestCLIConfigValidation:
+    """The CLI must fail gracefully on a broken grimoire.yaml."""
+
+    @staticmethod
+    def _write_broken_config(directory: Path) -> Path:
+        config_file = directory / "grimoire.yaml"
+        config_file.write_text('grimoire:\n  llm:\n    model: "unterminated\n')
+        return config_file
+
+    def test_broken_config_exits_with_code_1(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_settings_cache: None,
+        tmp_path: Path,
+    ) -> None:
+        """A malformed config aborts before the subcommand runs, no traceback."""
+        config_file = self._write_broken_config(tmp_path)
+        monkeypatch.setenv("GRIMOIRE_CONFIG", str(config_file))
+
+        result = runner.invoke(cli, ["status", "--help"])
+
+        assert result.exit_code == 1
+        assert "not valid YAML" in result.output
+        assert str(config_file) in result.output
+        # Never surface a raw traceback to the user.
+        assert "Traceback" not in result.output
+
+    def test_invalid_field_value_exits_with_code_1(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_settings_cache: None,
+        tmp_path: Path,
+    ) -> None:
+        """A field that fails validation produces a readable per-field report."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", str(tmp_path / "absent.yaml"))
+        monkeypatch.setenv("GRIMOIRE_REDIS__PORT", "99999")
+
+        result = runner.invoke(cli, ["status", "--help"])
+
+        assert result.exit_code == 1
+        assert "redis.port" in result.output
+        assert "Traceback" not in result.output
+
+    def test_missing_config_file_is_not_an_error(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_settings_cache: None,
+        tmp_path: Path,
+    ) -> None:
+        """No grimoire.yaml at all simply means "use defaults"."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", str(tmp_path / "absent.yaml"))
+
+        result = runner.invoke(cli, ["status", "--help"])
+
+        assert result.exit_code == 0
+
+    def test_group_help_works_with_broken_config(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_settings_cache: None,
+        tmp_path: Path,
+    ) -> None:
+        """`grimoire --help` must stay usable when the config is broken."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", str(self._write_broken_config(tmp_path)))
+
+        result = runner.invoke(cli, ["--help"])
+
+        assert result.exit_code == 0
+        assert "Usage:" in result.output
+
+    def test_config_group_is_exempt_from_eager_validation(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_settings_cache: None,
+        tmp_path: Path,
+    ) -> None:
+        """`config init` must still work — it is how a broken file gets fixed."""
+        monkeypatch.setenv("GRIMOIRE_CONFIG", str(self._write_broken_config(tmp_path)))
+        output = tmp_path / "fresh.yaml"
+
+        result = runner.invoke(cli, ["config", "init", "-o", str(output)])
+
+        assert result.exit_code == 0
+        assert output.exists()

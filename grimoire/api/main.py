@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger
 
 from grimoire.api.routes import categories, documents, generate, ingest, query, watch
 
@@ -40,9 +41,16 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     limiter = setup_rate_limiting(app)
 
     # CORS — origins configurable via GRIMOIRE_AUTH__CORS_ORIGINS
-    from grimoire.config.settings import get_settings
+    from grimoire.config.settings import ConfigurationError, get_settings
 
-    settings = get_settings()
+    # This module is imported as `grimoire.api.main:app`, so a config failure
+    # here happens at uvicorn import time. Exit with a readable message instead
+    # of letting a Pydantic/PyYAML traceback be the operator's only clue.
+    try:
+        settings = get_settings()
+    except ConfigurationError as e:
+        logger.error(f"Cannot start the Grimoire API - invalid configuration:\n{e}")
+        raise SystemExit(1) from e
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.auth.cors_origins,
