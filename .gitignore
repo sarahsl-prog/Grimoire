@@ -220,6 +220,8 @@ docker-compose.*.yml
 !docker-compose.security.yml
 # GPU overlay is checked in and ships with the repo.
 !docker-compose.gpu.yml
+# Dev overlay is checked in and ships with the repo.
+!docker-compose.dev.yml
 !.docker/
 
 # =============================================================================

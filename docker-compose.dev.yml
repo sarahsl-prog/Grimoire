@@ -1,0 +1,48 @@
+# Development overlay.
+#
+# Bind-mounts the source tree over the installed package and enables uvicorn's
+# reloader, so edits take effect without rebuilding the image.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  api:
+    volumes:
+      - ./grimoire:/opt/venv/lib/python3.13/site-packages/grimoire:ro
+      - ./grimoire.yaml:/app/grimoire.yaml:ro
+      - model_cache:/home/grimoire
+      - app_logs:/app/logs
+      - app_cache:/app/cache
+    command:
+      - uvicorn
+      - grimoire.api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+      - --reload
+      - --reload-dir
+      - /opt/venv/lib/python3.13/site-packages/grimoire
+    environment:
+      GRIMOIRE_LOGGING__LEVEL: DEBUG
+
+  mcp:
+    volumes:
+      - ./grimoire:/opt/venv/lib/python3.13/site-packages/grimoire:ro
+      - ./grimoire.yaml:/app/grimoire.yaml:ro
+      - model_cache:/home/grimoire
+      - app_logs:/app/logs
+      - app_cache:/app/cache
+    command:
+      - uvicorn
+      - grimoire.mcp.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8100"
+      - --reload
+      - --reload-dir
+      - /opt/venv/lib/python3.13/site-packages/grimoire
+    environment:
+      GRIMOIRE_LOGGING__LEVEL: DEBUG
