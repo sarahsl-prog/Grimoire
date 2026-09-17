@@ -90,6 +90,20 @@ class TestTorchVariant:
     def test_cpu_variant_uses_the_pytorch_cpu_index(self, dockerfile_text: str) -> None:
         assert "download.pytorch.org/whl/cpu" in dockerfile_text
 
+    def test_cpu_variant_also_reinstalls_torchvision(self, dockerfile_text: str) -> None:
+        """torchvision must be swapped to the CPU build alongside torch.
+
+        torchvision is compiled against torch's C++ ABI. Reinstalling torch
+        alone from the CPU index leaves the CUDA-linked torchvision that
+        uv.lock resolved sitting next to it; the two no longer agree on the
+        ABI, and importing torchvision then raises (observed in practice as
+        "operator torchvision::nms does not exist"), which docling's import
+        chain depends on — so Docling silently becomes non-functional. This
+        must reinstall torchvision in the same breath as torch, not just
+        use the CPU index for torch.
+        """
+        assert "--reinstall-package torchvision" in dockerfile_text
+
 
 class TestDependencyResolution:
     def test_install_is_frozen(self, dockerfile_text: str) -> None:
