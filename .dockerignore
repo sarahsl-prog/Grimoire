@@ -1,0 +1,34 @@
+# Secrets — never enter the build context
+.env
+.env.*
+!.env.example
+
+# Host virtualenv and caches
+.venv
+__pycache__/
+*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.coverage
+
+# Local runtime state — containers use volumes for these
+chroma_db/
+cache/
+logs/
+documents/
+
+# VCS and tooling
+.git
+.github
+.claude
+.entire
+.remember
+.vscode
+.qwen
+
+# Docs and tests are not needed at runtime
+docs/
+tests/
+*.md
+!README.md
