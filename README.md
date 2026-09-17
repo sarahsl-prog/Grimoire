@@ -76,6 +76,22 @@ Grimoire is a production-ready, modular knowledge management platform supporting
    GRIMOIRE_API_KEY=your-key-here uv run grimoire mcp --stdio
    ```
 
+### Run with Docker
+
+Prefer containers over the bare-metal setup above? Three commands get the
+full stack (Postgres, Redis, ChromaDB, the API, the MCP server, and the
+watcher) running:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+curl http://localhost:8001/health
+```
+
+See [docs/deploy/docker.md](docs/deploy/docker.md) for the services table,
+configuration precedence, GPU/dev overlays, volumes and backup, and
+troubleshooting. Both paths — bare-metal and Docker — are fully supported.
+
 ### Development
 
 ```bash
@@ -285,7 +301,9 @@ Grimoire exposes its full functionality as an MCP server, allowing AI assistants
 
 **Available transports:**
 - **stdio** – run `grimoire mcp --stdio` and point your AI client at it (requires `GRIMOIRE_API_KEY` env var)
-- **SSE** – the API server mounts an MCP endpoint at `/mcp` (included automatically when you run `uvicorn grimoire.api.main:app`)
+- **SSE** – `grimoire mcp --sse --port 8100`, or the `mcp` container, serves an authenticated endpoint at `/mcp/sse`. The REST API also mounts the same endpoint at `/mcp/sse` when you run `uvicorn grimoire.api.main:app`.
+
+> **Changed in 2.1:** the standalone SSE transport previously served MCP at `/sse` with no authentication. It now requires the same `X-API-Key` header as every other transport, and the endpoint moved to `/mcp/sse`. Update any client that pointed at the old path.
 
 **Authentication:** All MCP requests require an `X-API-Key` header (SSE) or a valid `GRIMOIRE_API_KEY` env var (stdio). API keys have tier-based access control:
 
@@ -385,6 +403,7 @@ Grimoire ships a security-domain pipeline (Sigma / NVD CVE / MITRE ATT&CK chunke
 - [Design Document](docs/DESIGN.md) - Complete system architecture and design decisions
 - [Implementation Plan](docs/IMPLEMENTATION.md) - Phased development roadmap
 - [Security strategy](docs/strategies/README.md) — security-domain ingestion, retrieval, and filter surface
+- [Docker deploy](docs/deploy/docker.md) — container image and Compose stack: quick start, services, configuration, GPU/dev overlays, backup, troubleshooting
 - [Hetzner security deploy](docs/deploy/hetzner_security.md) — one-shot homelab setup for the security pipeline
 - [Coding Conventions](CLAUDE.md) - Development guidelines and best practices
 

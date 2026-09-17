@@ -1,0 +1,184 @@
+# Docker deploy — Grimoire application
+
+This is the general-purpose guide to running Grimoire under Docker Compose:
+the base stack (`docker-compose.yml`) plus the GPU and development overlays.
+If you're deploying the security-domain corpus pipeline specifically, see
+[`docs/deploy/hetzner_security.md`](hetzner_security.md) instead — it covers
+the same container image with a different overlay and seeded corpora.
+
+## Prerequisites
+
+- Docker Engine with the Compose v2 plugin (`docker compose version` should
+  print `v2.x`, not the standalone `docker-compose` v1 binary).
+- Roughly 10GB of free disk: the built image alone is about 3.5GB, and the
+  `model_cache` volume adds several more once Docling and sentence-transformers
+  have downloaded their weights. Budget extra for the `postgres_data` and
+  `chromadb_data` volumes as your corpus grows.
+- Ollama reachable from the host, listening on its default port (11434).
+  Containers reach it through `host.docker.internal` by default — see
+  [Ollama](#ollama) below if that doesn't work for your setup.
+
+## Quick start
+
+```bash
+cp .env.example .env
+# Edit .env: set POSTGRES_PASSWORD and any other credentials you want to
+# change from the example defaults.
+docker compose up -d --build
+curl http://localhost:8001/health
+```
+
+The first `up -d --build` builds the `grimoire:latest` image, starts
+Postgres, Redis, and ChromaDB, runs the one-shot `db-migrate` service to
+bring the schema current, then starts `api`, `mcp`, and `watcher`. The health
+check should return `{"status":"ok"}` once `api` has finished its startup
+sequence (embedding model load can take a minute on a cold `model_cache`).
+
+## Services
+
+| Service | Port | Purpose |
+|---|---|---|
+| `postgres` | 5434→5432 | Primary metadata database (Postgres 16) |
+| `redis` | 6379 | Cache, rate limiting, Celery broker/result backend |
+| `chromadb` | 8060→8000 | Vector database |
+| `db-migrate` | — | One-shot Alembic migration; every app container gates on its success and does not start until it completes |
+| `api` | 8001 | REST API (Swagger UI at `/docs`); also mounts authenticated MCP at `/mcp/sse` |
+| `mcp` | 8100 | Dedicated MCP server, restartable independently of the REST API |
+| `watcher` | — | Filesystem watcher; ingests from the host directory mounted at `/data/watch` |
+| `pgadmin` (profile `tools`) | 5050 | Optional Postgres management UI |
+| `redis-commander` (profile `tools`) | 8081 | Optional Redis management UI |
+
+The `tools` profile services don't start with a plain `docker compose up`;
+add `--profile tools` to bring them up alongside the rest.
+
+## Configuration
+
+Settings resolve in this precedence order (highest wins), per
+`settings.py:1107`: environment variables, then `.env`, then `grimoire.yaml`,
+then built-in defaults. Inside a container, "environment variables" means the
+compose `environment:` block — see the warning below.
+
+The full set of `GRIMOIRE_*` variables the compose file sets for every app
+container lives in the `x-grimoire-env` anchor at the top of
+`docker-compose.yml`: database URL, vector store host/port, Redis host/port,
+Celery broker/result URLs, log directory, cache path, and the Ollama URL.
+`.env.example` documents the complete list of variables the application
+understands, most of which you'd only override for non-default behavior
+(embeddings, chunking, auth, wiki, etc.) — see that file for the full
+reference table.
+
+> **A mounted `.env` is not read inside containers.** `settings.py:1049`
+> resolves the dotenv path relative to the *installed package*, and inside
+> the image that's `/opt/venv/lib/python3.13/site-packages/grimoire/...` —
+> there is no `.env` there, mounted or otherwise. Configuration must reach
+> containers as real environment variables. The compose file handles this by
+> declaring `env_file: .env` on every app service (which Compose reads on
+> the host and injects as environment variables) and by setting
+> container-specific values explicitly in `x-grimoire-env`. If you add a new
+> setting, either put it in `x-grimoire-env` or confirm it's read from `.env`
+> on the host side, not expect the app to open the mounted file itself.
+
+**Two Ollama variables, on purpose.** `.env.example` ships both
+`GRIMOIRE_LLM__URL` (line 46, `http://localhost:11434` — correct for running
+the app bare-metal on the host) and `GRIMOIRE_OLLAMA_URL` (line 202,
+`http://host.docker.internal:11434` — read by `docker-compose.yml` on the
+host and injected into containers as `GRIMOIRE_LLM__URL`). After
+`cp .env.example .env`, both variables are present; the compose
+`environment:` block always wins for containers, so `GRIMOIRE_OLLAMA_URL` is
+the one that actually takes effect there. This is harmless but easy to
+mistake for a bug — if you're editing the Ollama target for a container
+deployment, edit `GRIMOIRE_OLLAMA_URL`, not `GRIMOIRE_LLM__URL`.
+
+## Ollama
+
+Containers default to `host.docker.internal:11434` because the app doesn't
+ship a bundled Ollama container — you're expected to run Ollama on the host
+(or point at a remote/containerized instance) and let the app reach it
+through the Docker bridge. `extra_hosts: host.docker.internal:host-gateway`
+in `docker-compose.yml` is what makes that hostname resolve from inside the
+containers.
+
+To retarget Ollama — a remote box, a containerized daemon on the same host,
+or a different port — set `GRIMOIRE_OLLAMA_URL` in `.env`. It must **not**
+end in `/v1`: the agents append `/api/generate` themselves, so a `/v1` base
+produces `/v1/api/generate`, which 404s.
+
+## Overlays
+
+Two overlays extend the base compose file; apply them with `-f` in sequence
+(later files override earlier ones):
+
+```bash
+# GPU — rebuilds the image with the CUDA torch variant, tagged grimoire:gpu
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+# Development — bind-mounts ./grimoire over the installed package and
+# enables uvicorn's --reload, so source edits take effect without a rebuild
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+The GPU overlay requires the NVIDIA Container Toolkit on the host; the base
+image is CPU-only torch, so reserving a device isn't enough on its own — the
+overlay rebuilds the image (`TORCH_VARIANT=gpu`) to get CUDA-linked torch and
+torchvision, then reserves the GPU and sets `GRIMOIRE_EMBEDDINGS__DEVICE=cuda`.
+
+There's also a security-domain overlay (`docker-compose.security.yml`) for
+the Sigma/CVE/MITRE corpus pipeline — see
+[`docs/deploy/hetzner_security.md`](hetzner_security.md).
+
+> **Adding a fourth overlay?** `.gitignore` blanket-ignores
+> `docker-compose.*.yml` (to keep ad hoc local overrides out of git) and then
+> explicitly un-ignores the security, GPU, and dev overlays with `!` negation
+> lines. A new overlay file needs its own negation line or it will be
+> silently untracked.
+
+## Volumes and backup
+
+| Volume | Holds | Back up? |
+|---|---|---|
+| `postgres_data` | All document metadata, categories, wiki pages, API keys | Yes — the source of truth |
+| `chromadb_data` | Vector embeddings | Yes — expensive to regenerate at scale |
+| `model_cache` | Downloaded Docling and sentence-transformers model weights | No — rebuildable, just re-downloads on next cold start |
+| `app_cache` | Grimoire's internal query/embedding cache | No — rebuildable |
+| `app_logs` | Application logs | Optional, not required for recovery |
+
+A logical Postgres dump plus a tar of the ChromaDB volume covers a full
+recovery; see the backup script in
+[`docs/deploy/hetzner_security.md`](hetzner_security.md#backups) for a
+concrete example (written against the security overlay's volume names, but
+the same approach applies to `postgres_data` and `chromadb_data` here).
+
+## Troubleshooting
+
+**LLM generation fails with a 404.** Almost always a `/v1` suffix on the
+Ollama URL — check `GRIMOIRE_OLLAMA_URL` in `.env`. If the URL is correct,
+confirm the host's Ollama daemon is actually listening on the Docker bridge
+interface, not just `127.0.0.1`; by default Ollama binds to localhost only,
+which containers can't reach through `host.docker.internal`.
+
+**Chroma connection refused.** Either the `chromadb` service is unhealthy
+(`docker compose ps chromadb`; check `docker compose logs chromadb`), or
+`GRIMOIRE_VECTOR_STORE__HOST` isn't set, in which case the app silently falls
+back to an embedded (in-process) Chroma client instead of the service — the
+compose file sets this for you, but if you're overriding `environment:`
+locally, make sure that variable survives.
+
+**App containers exit immediately at first start.** Check `db-migrate`
+first — `db-migrate` runs `alembic upgrade head` once, and `api`, `mcp`, and
+`watcher` all gate on `db-migrate` completing successfully
+(`depends_on: db-migrate: condition: service_completed_successfully`). If the
+migration failed, every app container will exit right after without ever
+really starting. `docker compose logs db-migrate` has the actual error.
+
+**Restarting a single service doesn't pick up dependency state.**
+`docker compose restart api` and `docker compose up --no-deps api` do
+**not** re-evaluate `depends_on` — Compose only checks dependency conditions
+on the initial `up`. So if you restart `api` alone while `db-migrate` hasn't
+rerun, or before Postgres reports healthy again after a host reboot, `api`
+comes back up regardless and may fail to connect. This is normal Compose
+behavior, not a bug in this stack: run `docker compose up -d` (no service
+name) if you want dependency ordering re-applied.
+
+**First ingestion is very slow.** Expected on a cold `model_cache` — Docling
+and sentence-transformers are downloading model weights on first use.
+Subsequent ingests are fast once the volume is warm.

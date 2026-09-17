@@ -1,0 +1,23 @@
+{
+	"servers": {
+		"backboard-docs": {
+			"type": "http",
+			"url": "https://backboard-docs.docsalot.dev/api/mcp"
+		},
+		"grimoire": {
+			"type": "sse",
+			"url": "http://localhost:8100/mcp/sse",
+			"headers": {
+				"X-API-Key": "${input:grimoire-api-key}"
+			}
+		}
+	},
+	"inputs": [
+		{
+			"id": "grimoire-api-key",
+			"type": "promptString",
+			"description": "Grimoire API key (grimoire keys create)",
+			"password": true
+		}
+	]
+}
