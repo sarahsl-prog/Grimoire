@@ -218,6 +218,8 @@ docker-compose.override.yml
 docker-compose.*.yml
 # Phase 10 — security overlay is checked in and ships with the repo.
 !docker-compose.security.yml
+# GPU overlay is checked in and ships with the repo.
+!docker-compose.gpu.yml
 !.docker/
 
 # =============================================================================

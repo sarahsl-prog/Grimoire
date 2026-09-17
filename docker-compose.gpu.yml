@@ -1,0 +1,34 @@
+# GPU overlay.
+#
+# The base image ships CPU-only torch to stay portable, so reserving a device
+# is not enough on its own — this overlay rebuilds the image with the CUDA
+# torch variant, tags it separately, reserves the GPU, and points the embedder
+# at it.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Requires the NVIDIA Container Toolkit on the host.
+
+services:
+  api: &gpu-service
+    image: grimoire:gpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TORCH_VARIANT: gpu
+        TORCH_VERSION: "2.11.0"
+    environment:
+      GRIMOIRE_EMBEDDINGS__DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  mcp: *gpu-service
+
+  watcher: *gpu-service
