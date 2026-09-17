@@ -91,8 +91,14 @@ A single multi-stage `Dockerfile` at the repository root.
 The **builder** stage starts from `python:3.13-slim`, installs `uv`, and
 resolves dependencies into `/opt/venv` from `pyproject.toml` and the existing
 `uv.lock`, so image builds are reproducible and match the host environment.
-Torch installs from the PyTorch CPU wheel index so the base image carries no
-CUDA runtime.
+
+`uv.lock` pins `torch==2.11.0` from PyPI, which on Linux is the CUDA build and
+pulls in fifteen `nvidia-*` packages — 1.2GB of torch plus 2.7GB of CUDA
+libraries, all of it dead weight on a host without a GPU. The builder therefore
+takes a `TORCH_VARIANT` argument. The default `cpu` variant removes the CUDA
+packages and reinstalls the same torch version from the PyTorch CPU index; the
+`gpu` variant keeps what the lock resolved. Both variants pin the identical
+torch version, so behavior does not diverge between them.
 
 The **runtime** stage starts from the same slim base, copies `/opt/venv` and the
 `grimoire` package, installs only the system libraries the application needs at
@@ -198,10 +204,14 @@ block calls this out.
 
 Following the precedent already set by `docker-compose.security.yml`:
 
-- **`docker-compose.gpu.yml`** — adds the nvidia runtime and device reservations
-  so embedding runs on the GPU where one exists. The host has an RTX 2000 Ada and
-  the nvidia container runtime is installed, so this is testable locally. The
-  base image stays CPU-only and portable; only hosts that opt in pay for CUDA.
+- **`docker-compose.gpu.yml`** — enables GPU embedding. Because the base image
+  ships CPU-only torch, a device reservation alone would do nothing: the overlay
+  must also rebuild the image with the CUDA torch variant, which it does through
+  the `TORCH_VARIANT=gpu` build argument, tagging the result `grimoire:gpu` so
+  the two variants never overwrite each other. It then reserves an nvidia device
+  and sets `GRIMOIRE_EMBEDDINGS__DEVICE=cuda`. The host has an RTX 2000 Ada and
+  the nvidia container runtime installed, so this is testable locally. The base
+  image stays CPU-only and portable; only hosts that opt in pay for CUDA.
 - **`docker-compose.dev.yml`** — bind-mounts the source tree and runs uvicorn
   with `--reload` for edit-and-refresh development.
 
