@@ -110,8 +110,20 @@ services:
       - "${CHROMADB_PORT:-8060}:8000"
     volumes:
       - chromadb_data:/chroma/chroma
+    # The chromadb/chroma image ships no curl, wget, or python — only a
+    # shell and coreutils — so the healthcheck can't shell out to an HTTP
+    # client. bash's /dev/tcp pseudo-device gives a real HTTP readiness
+    # check without one: open a TCP socket, write a raw GET, and grep the
+    # status line. Also: /api/v1/heartbeat now returns 410 Gone upstream;
+    # /api/v2/heartbeat is the current endpoint.
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          'exec 3<>/dev/tcp/127.0.0.1/8000 && printf "GET /api/v2/heartbeat HTTP/1.0\r\n\r\n" >&3 && timeout 2 head -c 15 <&3 | grep -q "200 OK"',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

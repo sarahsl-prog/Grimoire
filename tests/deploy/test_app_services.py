@@ -7,6 +7,8 @@ to diagnose live but trivial to catch in the YAML.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -62,6 +64,18 @@ class TestStartupOrdering:
         """No app container may open a connection before the schema is current."""
         depends = services[name]["depends_on"]
         assert depends["db-migrate"]["condition"] == "service_completed_successfully"
+
+    @pytest.mark.parametrize("name", LONG_RUNNING)
+    def test_app_waits_for_chromadb_to_be_healthy(
+        self, services: dict, name: str
+    ) -> None:
+        """Every app container talks to the shared chromadb service over HTTP.
+
+        A real service_healthy gate here only works if chromadb's own
+        healthcheck can actually succeed — see TestChromaHealthcheck below.
+        """
+        depends = services[name]["depends_on"]
+        assert depends["chromadb"]["condition"] == "service_healthy"
 
 
 class TestEnvironmentWiring:
@@ -153,3 +167,50 @@ class TestHealthchecks:
         assert "healthcheck" in services[name]
         test = " ".join(services[name]["healthcheck"]["test"])
         assert "/health" in test
+
+
+class TestChromaHealthcheck:
+    """chromadb/chroma ships no curl, wget, or python — only a shell and
+    coreutils — so its healthcheck can't shell out to an HTTP client the
+    way api/mcp's do. Confirmed by inspecting the running image directly.
+    Without a real, passing healthcheck here, `service_healthy` above is a
+    permanent blocker: `docker compose up -d` would never start api, mcp,
+    or watcher.
+    """
+
+    @pytest.fixture(scope="class")
+    def healthcheck(self, services: dict) -> dict:
+        assert "healthcheck" in services["chromadb"]
+        return services["chromadb"]["healthcheck"]
+
+    def test_does_not_rely_on_curl_wget_or_python(self, healthcheck: dict) -> None:
+        test = " ".join(healthcheck["test"])
+        for absent_binary in ("curl", "wget", "python"):
+            assert absent_binary not in test, (
+                f"chromadb image has no {absent_binary}; healthcheck would "
+                "never pass and block every app service forever"
+            )
+
+    def test_uses_the_current_heartbeat_endpoint(self, healthcheck: dict) -> None:
+        """/api/v1/heartbeat now returns 410 Gone; /api/v2 is current."""
+        test = " ".join(healthcheck["test"])
+        assert "/api/v2/heartbeat" in test
+        assert "/api/v1/heartbeat" not in test
+
+    @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not installed")
+    def test_command_is_syntactically_valid_bash(self, healthcheck: dict) -> None:
+        """The healthcheck shells out via `bash -c <script>`; that script
+        itself must be valid, independent of whether chromadb is running.
+        """
+        test = healthcheck["test"]
+        assert test[:3] == ["CMD", "bash", "-c"], test
+        script = test[3]
+        bash = shutil.which("bash")
+        assert bash is not None  # already guarded by skipif, narrow the type
+        result = subprocess.run(  # noqa: S603 — bash path resolved via shutil.which
+            [bash, "-n", "-c", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
