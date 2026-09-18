@@ -269,6 +269,8 @@ tests/fixtures/sample_docs/large_*
 # =============================================================================
 *.bak
 *.backup
+# Database dumps carry bcrypt-hashed API keys and document metadata.
+backups/
 *.old
 *.orig
 *.rej
