@@ -105,6 +105,24 @@ class TestTorchVariant:
         assert "--reinstall-package torchvision" in dockerfile_text
 
 
+class TestRuntimeDependencies:
+    def test_curl_installed_for_healthchecks(self, dockerfile_text: str) -> None:
+        """The api and mcp container healthchecks shell out to curl.
+
+        Silently dropping it from the runtime stage would break both
+        healthchecks — the same bug shape as the chromadb healthcheck
+        defect this branch already hit (see docs/deploy/docker.md).
+        """
+        runtime_stage = dockerfile_text.split("AS runtime", 1)[1]
+        install_block = re.search(
+            r"RUN apt-get update.*?apt-get install.*?(?=\nRUN|\Z)",
+            runtime_stage,
+            re.DOTALL,
+        )
+        assert install_block, "no apt-get install found in the runtime stage"
+        assert "curl" in install_block.group(0)
+
+
 class TestDependencyResolution:
     def test_install_is_frozen(self, dockerfile_text: str) -> None:
         """Builds resolve from uv.lock, never from a fresh resolution."""
