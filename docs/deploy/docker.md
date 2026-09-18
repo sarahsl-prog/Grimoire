@@ -148,6 +148,17 @@ recovery; see the backup script in
 concrete example (written against the security overlay's volume names, but
 the same approach applies to `postgres_data` and `chromadb_data` here).
 
+**`./chroma_db` in the repo root is the legacy embedded vector store** from
+running Grimoire bare-metal on the host, before containerization. It is a
+plain directory, not a Docker volume, so `docker compose down -v` doesn't
+touch it — but the containerized stack never reads it: containers talk to
+the `chromadb` service over HTTP (port 8000 internally, `chromadb_data`
+volume), not a local path. Once you've re-ingested your corpus into the
+containerized stack and confirmed the `chromadb` service has the vectors,
+`./chroma_db` is safe to delete. (See the "Known bug" entry above, though —
+confirm the dual-write bug there is fixed and vectors are actually landing
+in the `chromadb` service before deleting this as your only copy.)
+
 ## Troubleshooting
 
 **LLM generation fails with a 404.** Almost always a `/v1` suffix on the
@@ -162,6 +173,35 @@ which containers can't reach through `host.docker.internal`.
 back to an embedded (in-process) Chroma client instead of the service — the
 compose file sets this for you, but if you're overriding `environment:`
 locally, make sure that variable survives.
+
+**Known bug: ingestion never writes to the `chromadb` service, even with
+`GRIMOIRE_VECTOR_STORE__HOST` set correctly.** Verified during end-to-end
+stack testing (2026-09-18). `build_ingestion_agent()` and
+`build_query_agent()` in `grimoire/cli/helpers.py` construct `ChromaDBStore`
+with only `persist_directory` and `collection_name` — they never read
+`settings.vector_store.host` / `.port`, so the `host` argument is always
+`None` and `ChromaDBStore.initialize()` always takes the `PersistentClient`
+branch (`grimoire/vectorstore/chromadb.py:130-146`), regardless of what the
+container environment sets. The API, MCP, watcher, and `grimoire` CLI all
+build their vector store through these same two helpers, so this affects
+every ingestion and query path, not just the CLI.
+
+Symptom: `grimoire ingest` reports success and Postgres's `documents` count
+increments, but `docker compose exec api python -c "import chromadb; c =
+chromadb.HttpClient(host='chromadb', port=8000); print(c.get_collection(
+'documents').count())"` raises `NotFoundError: Collection [documents] does
+not exist` — the vectors went into `/app/chroma_db` inside the container's
+own filesystem instead, which is **not** a mounted volume and is lost the
+next time the container is recreated (`up --build`, `rm`, etc.). Queries
+(`grimoire ask`) still appear to work because ingestion and query use the
+same broken local store consistently within one container's lifetime — the
+break only becomes visible across a container recreation, or when comparing
+against the `chromadb` service directly as above.
+
+This is a code bug, not a configuration problem — no `.env` or compose
+change works around it. The fix is to pass `host=settings.vector_store.host,
+port=settings.vector_store.port` into both `ChromaDBStore(...)` calls in
+`grimoire/cli/helpers.py`.
 
 **App containers exit immediately at first start.** Check `db-migrate`
 first — `db-migrate` runs `alembic upgrade head` once, and `api`, `mcp`, and
@@ -182,3 +222,71 @@ name) if you want dependency ordering re-applied.
 **First ingestion is very slow.** Expected on a cold `model_cache` — Docling
 and sentence-transformers are downloading model weights on first use.
 Subsequent ingests are fast once the volume is warm.
+
+**`chromadb` shows `unhealthy` even though the service works fine.** The
+compose healthcheck runs `curl -f http://localhost:8000/api/v1/heartbeat`
+inside the container, but the current `chromadb/chroma:latest` image ships
+neither a `curl` binary (`docker compose exec chromadb curl ...` fails with
+`executable file not found in $PATH`) nor a working `/api/v1` route (v1 is
+deprecated and returns an error body, `/api/v2/heartbeat` is the live one).
+The healthcheck therefore always fails and `chromadb` is permanently
+"unhealthy," which blocks `api`, `mcp`, and `watcher` from starting since
+they all gate on `chromadb: condition: service_healthy`. Verify the service
+is actually up with `curl http://localhost:8060/api/v2/heartbeat` from the
+host, then start the gated containers directly, bypassing the broken
+dependency check: `docker start grimoire-api grimoire-mcp grimoire-watcher`.
+A durable fix needs a healthcheck the image can satisfy (e.g. pin an older
+`chromadb/chroma` tag that still ships `curl` and the v1 route, or replace
+the healthcheck command with something present in the image, such as a
+Python one-liner against `/api/v2/heartbeat`).
+
+**Host port already in use for `chromadb`.** `CHROMADB_PORT` (default 8060
+in the compose file, but frequently overridden to 8000 in a local `.env`)
+can collide with an unrelated container or process already bound to that
+port on the host — Compose's error (`Bind for 127.0.0.1:PORT failed: port is
+already allocated`) doesn't say what's using it. Check with `ss -ltnp | grep
+<port>` and `docker ps --format '{{.Names}}\t{{.Ports}}'`. Override for a
+single run without touching `.env`: `CHROMADB_PORT=8060 docker compose up
+-d`. Internal container-to-container traffic always uses port 8000 on the
+`grimoire-network` regardless of this mapping, so changing it is safe.
+
+**Rebuilding the image can fail with a `uv` download timeout on a slow
+network.** `uv sync`'s per-request timeout defaults to 30s
+(`UV_HTTP_TIMEOUT`), and the CUDA build of `torch` plus its `nvidia-*`
+dependencies total 2.5GB+ before the CPU swap step even runs. On a
+constrained connection this reliably fails partway through with `Failed to
+download ... due to network timeout`, on a different package each attempt
+since nothing is cached between failed `RUN` layers. If you have a working
+`grimoire:latest` image already and the source tree hasn't changed, prefer
+`docker compose up -d` (no `--build`) over forcing a rebuild.
+
+**Watcher and inotify across the WSL2 bind mount.** This is a known WSL2
+weakness in general — inotify events don't always propagate across a
+Windows-filesystem bind mount. In practice, on this stack, a file copied
+into the watched `documents/` directory *was* detected and ingested
+correctly within the test window (event logged within seconds, ingestion
+completed in under 30s). If you find the watcher isn't picking up new files
+on your setup, don't assume it's broken before checking: `docker compose
+exec watcher grimoire watch start /data/watch --poll-interval 30` (or the
+compose `command:` override) switches to polling instead of relying on
+inotify, at the cost of a delay up to the poll interval.
+
+**`uv run pre-commit run --all-files` fails immediately with
+`.pre-commit-config.yaml is not a file`.** The file doesn't exist anywhere
+in this repository's history — `pre-commit` is listed as a dependency in
+`pyproject.toml`, but no config was ever committed. Run the tools directly
+instead until a config is added: `uv run ruff check .`, `uv run black
+--check .`, `uv run mypy grimoire/`, `uv run bandit -r grimoire/`. As of this
+verification pass, `ruff check .` alone reports 173 pre-existing findings
+(mostly `S108` temp-path warnings in test fixtures), unrelated to this
+branch.
+
+**`uv run pytest -v` has 5 pre-existing failures unrelated to containerization.**
+`test_mcp_mlflow.py::test_trace_mcp_tool_wraps_when_active`,
+`test_parser.py::TestDocumentParserSupportedFormats::test_unsupported_txt`,
+`test_parser.py::TestDocumentParserAsync::test_parse_unsupported_format`,
+`test_storage_gdrive.py::TestGoogleDriveAdapterHappyPath::test_save_tokens`,
+and `test_storage_onedrive.py::TestTokenPersistence::test_tokens_saved_after_authentication`
+all fail identically on `main` — none of the files involved were touched by
+this branch. No regression from the MCP transport change in Task 1; the
+1653 other tests pass.
