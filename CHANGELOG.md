@@ -4,6 +4,35 @@ All notable changes to Grimoire are documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- The standalone MCP SSE transport (`grimoire mcp --sse`) now requires an
+  `X-API-Key` header, matching the API-server-mounted transport. Previously
+  it served every MCP tool — including `grimoire_ingest_file`,
+  `grimoire_pg_query`, and `grimoire_delete_document` — with no
+  authentication at all, so any client able to reach the port could read or
+  modify the full corpus. Update any client still pointed at the old
+  unauthenticated `/sse` path.
+
+### Added
+
+- **Container image and Compose services** – `Dockerfile` builds a
+  multi-stage `grimoire:latest` image (CPU torch by default); `api`,
+  `mcp`, `watcher`, and a one-shot `db-migrate` service run it in
+  `docker-compose.yml` alongside Postgres, Redis, and ChromaDB.
+  - `docker-compose.gpu.yml` — rebuilds the image with the CUDA torch
+    variant as `grimoire:gpu` and reserves a GPU device.
+  - `docker-compose.dev.yml` — bind-mounts the source tree over the
+    installed package and enables uvicorn's `--reload`.
+  - See [docs/deploy/docker.md](docs/deploy/docker.md) for the full guide.
+
+### Changed
+
+- The standalone SSE endpoint moved from `/sse` to `/mcp/sse`, matching the
+  path the API server has always used.
+- Containerized deployments use the `chromadb` service over HTTP instead of
+  an embedded (in-process) ChromaDB client.
+
 ### Documentation
 
 - Added [`docs/UPGRADING.md`](docs/UPGRADING.md) — a full in-place upgrade
@@ -12,6 +41,10 @@ All notable changes to Grimoire are documented in this file.
   troubleshooting), plus a condensed `Upgrading an existing install` section
   in the README. Per-release `Upgrading` blocks below remain the source of
   truth for version-specific steps.
+- Added [`docs/deploy/docker.md`](docs/deploy/docker.md) — the general
+  application deployment guide for the container image and Compose stack
+  (quick start, services, configuration precedence, Ollama, GPU/dev
+  overlays, volumes and backup, troubleshooting).
 
 ## [2.0.0] - 2026-06-18
 

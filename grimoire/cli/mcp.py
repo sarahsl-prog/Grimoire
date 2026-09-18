@@ -2,7 +2,7 @@
 
 Usage:
     grimoire mcp --stdio          # stdio transport (Claude Code, etc.)
-    grimoire mcp --sse --port 8100  # Standalone SSE server
+    grimoire mcp --sse --port 8100  # Authenticated SSE server at /mcp/sse
 
 For HTTP/SSE inside the main FastAPI app, see ``grimoire.api.main``.
 """
@@ -43,11 +43,12 @@ async def mcp(stdio: bool, sse: bool, host: str, port: int) -> None:
         mcp_server.run()  # stdio by default; lifespan manages DB init/close
     elif sse:
         logger.info(f"Starting Grimoire MCP server (SSE transport on {host}:{port})")
-        mcp_server = create_mcp_server()
         from uvicorn import Config, Server
 
+        from grimoire.mcp.app import create_mcp_app
+
         config = Config(
-            app=mcp_server.sse_app(),
+            app=create_mcp_app(),
             host=host,
             port=port,
             log_level="info",

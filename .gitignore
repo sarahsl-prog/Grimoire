@@ -125,7 +125,12 @@ uv.lock
 out/
 
 # VSCode
-.vscode/
+# Directory-then-negate (not "!.vscode/mcp.json" alone) because git never
+# looks inside an excluded directory for further negations.
+.vscode/*
+# Grimoire's own MCP server registration ships with the repo so contributors
+# get it without hand-editing local settings.
+!.vscode/mcp.json
 *.code-workspace
 .history/
 
@@ -218,6 +223,10 @@ docker-compose.override.yml
 docker-compose.*.yml
 # Phase 10 — security overlay is checked in and ships with the repo.
 !docker-compose.security.yml
+# GPU overlay is checked in and ships with the repo.
+!docker-compose.gpu.yml
+# Dev overlay is checked in and ships with the repo.
+!docker-compose.dev.yml
 !.docker/
 
 # =============================================================================
@@ -260,6 +269,8 @@ tests/fixtures/sample_docs/large_*
 # =============================================================================
 *.bak
 *.backup
+# Database dumps carry bcrypt-hashed API keys and document metadata.
+backups/
 *.old
 *.orig
 *.rej

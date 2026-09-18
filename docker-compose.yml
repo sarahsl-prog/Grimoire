@@ -1,3 +1,42 @@
+# Shared configuration for every container that runs the Grimoire image.
+# Environment variables override grimoire.yaml — settings.py orders env above
+# YAML — so the host's localhost defaults stay correct for bare-metal use
+# while containers talk to service DNS names.
+x-grimoire-env: &grimoire-env
+  GRIMOIRE_CONFIG: /app/grimoire.yaml
+  GRIMOIRE_DATABASE__URL: postgresql+asyncpg://${POSTGRES_USER:-grimoire}:${POSTGRES_PASSWORD:-grimoire}@postgres:5432/${POSTGRES_DB:-grimoire}
+  GRIMOIRE_VECTOR_STORE__HOST: chromadb
+  GRIMOIRE_VECTOR_STORE__PORT: "8000"
+  GRIMOIRE_REDIS__HOST: redis
+  GRIMOIRE_REDIS__PORT: "6379"
+  GRIMOIRE_CELERY__BROKER_URL: redis://redis:6379/0
+  GRIMOIRE_CELERY__RESULT_BACKEND: redis://redis:6379/1
+  GRIMOIRE_LOGGING__LOG_DIR: /app/logs
+  GRIMOIRE_CACHE__PATH: /app/cache
+  # Ollama stays on the host by default.  Set GRIMOIRE_OLLAMA_URL to retarget
+  # a remote or containerized daemon.  No /v1 suffix — the agents append
+  # /api/generate themselves.
+  GRIMOIRE_LLM__URL: ${GRIMOIRE_OLLAMA_URL:-http://host.docker.internal:11434}
+
+x-grimoire-app: &grimoire-app
+  image: grimoire:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment: *grimoire-env
+  env_file:
+    - path: .env
+      required: false
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - ./grimoire.yaml:/app/grimoire.yaml:ro
+    - model_cache:/home/grimoire
+    - app_logs:/app/logs
+    - app_cache:/app/cache
+  networks:
+    - grimoire-network
+
 services:
   # PostgreSQL 16 - Primary metadata database
   postgres:
@@ -71,8 +110,20 @@ services:
       - "${CHROMADB_PORT:-8060}:8000"
     volumes:
       - chromadb_data:/chroma/chroma
+    # The chromadb/chroma image ships no curl, wget, or python — only a
+    # shell and coreutils — so the healthcheck can't shell out to an HTTP
+    # client. bash's /dev/tcp pseudo-device gives a real HTTP readiness
+    # check without one: open a TCP socket, write a raw GET, and grep the
+    # status line. Also: /api/v1/heartbeat now returns 410 Gone upstream;
+    # /api/v2/heartbeat is the current endpoint.
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          'exec 3<>/dev/tcp/127.0.0.1/8000 && printf "GET /api/v2/heartbeat HTTP/1.0\r\n\r\n" >&3 && timeout 2 head -c 15 <&3 | grep -q "200 OK"',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -81,6 +132,87 @@ services:
       - grimoire-network
     # Note: ChromaDB defaults to in-memory if not configured for persistence
     # The IS_PERSISTENT flag enables disk-based storage
+
+  # One-shot Alembic migration.  Gates every application container so the
+  # schema is current before anything connects, and so no two containers
+  # race to migrate.  Named db-migrate because `grimoire migrate` is an
+  # unrelated vector-store command.
+  db-migrate:
+    <<: *grimoire-app
+    container_name: grimoire-db-migrate
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # REST API.  Also serves authenticated MCP at /mcp/sse for clients that
+  # would rather not use the dedicated service.
+  api:
+    <<: *grimoire-app
+    container_name: grimoire-api
+    restart: unless-stopped
+    command:
+      ["uvicorn", "grimoire.api.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "${GRIMOIRE_API_PORT:-8001}:8001"
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Dedicated MCP server, restartable independently of the REST API.
+  mcp:
+    <<: *grimoire-app
+    container_name: grimoire-mcp
+    restart: unless-stopped
+    command:
+      ["uvicorn", "grimoire.mcp.app:app", "--host", "0.0.0.0", "--port", "8100"]
+    ports:
+      - "${GRIMOIRE_MCP_PORT:-8100}:8100"
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Filesystem watcher.  The corpus mounts read-only: the watcher ingests
+  # from it and never needs to write back.
+  watcher:
+    <<: *grimoire-app
+    container_name: grimoire-watcher
+    restart: unless-stopped
+    command: ["grimoire", "watch", "start", "/data/watch"]
+    volumes:
+      - ./grimoire.yaml:/app/grimoire.yaml:ro
+      - model_cache:/home/grimoire
+      - app_logs:/app/logs
+      - app_cache:/app/cache
+      - ${GRIMOIRE_WATCH_DIR:-./documents}:/data/watch:ro
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   # Optional: PGAdmin for PostgreSQL management
   pgadmin:
@@ -126,6 +258,12 @@ volumes:
   chromadb_data:
     driver: local
   pgadmin_data:
+    driver: local
+  model_cache:
+    driver: local
+  app_logs:
+    driver: local
+  app_cache:
     driver: local
 
 networks:
