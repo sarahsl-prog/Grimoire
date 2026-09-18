@@ -43,6 +43,14 @@ RUN uv sync --frozen --no-dev --no-install-project
 # whatever uv.lock pins.
 ARG TORCH_VARIANT=cpu
 ARG TORCH_VERSION=2.11.0
+# pipefail matters here specifically: the package lists below are built from
+# pipelines, and without it a failing `uv pip list` or `grep` yields an empty
+# string that sails on as if nothing were installed. That is how this block
+# once produced an image whose torchvision was left CUDA-linked.
+# SC2086 is suppressed deliberately — $nvidia_pkgs must word-split into
+# separate package arguments, so quoting it would break the uninstall.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=SC2086
 RUN if [ "$TORCH_VARIANT" = "cpu" ]; then \
         nvidia_pkgs="$(uv pip list --python /opt/venv --format=freeze \
             | grep '^nvidia-' | cut -d= -f1 | tr '\n' ' ')"; \
@@ -100,7 +108,9 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 RUN mkdir -p /app/logs /app/cache && chown -R grimoire:grimoire /app
 
-USER grimoire
+# Numeric rather than the name, so orchestrators that must verify a non-root
+# user (Kubernetes runAsNonRoot) can resolve it without reading /etc/passwd.
+USER 10001
 
 EXPOSE 8001 8100
 

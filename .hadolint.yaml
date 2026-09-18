@@ -1,0 +1,16 @@
+# hadolint configuration.
+#
+# Run via `hadolint Dockerfile`, and enforced by
+# tests/deploy/test_dockerfile.py::TestHadolint (which skips when the binary
+# is absent).
+
+ignored:
+  # DL3008 — "pin versions in apt-get install".
+  #
+  # Deliberately ignored. The base image is python:3.13-slim, a rolling Debian
+  # tag whose package versions change underneath us. Pinning apt versions there
+  # does not buy reproducibility: Debian drops superseded versions from the
+  # archive, so a pin that works today fails to resolve within weeks and breaks
+  # the build outright. Reproducibility for this image comes from uv.lock, which
+  # pins every Python dependency, and from the pinned uv and base image tags.
+  - DL3008
