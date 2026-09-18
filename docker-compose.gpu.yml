@@ -32,3 +32,5 @@ services:
   mcp: *gpu-service
 
   watcher: *gpu-service
+
+  db-migrate: *gpu-service

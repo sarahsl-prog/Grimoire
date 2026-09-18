@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_COMPOSE = REPO_ROOT / "docker-compose.yml"
 GPU_OVERLAY = REPO_ROOT / "docker-compose.gpu.yml"
 
-GPU_SERVICES = ("api", "mcp", "watcher")
+GPU_SERVICES = ("api", "mcp", "watcher", "db-migrate")
 
 
 def _load(path: Path) -> dict:
@@ -74,4 +74,7 @@ def test_overlay_changes_nothing_else(overlay: dict, name: str) -> None:
 
 
 def test_overlay_does_not_touch_infrastructure(overlay: dict) -> None:
+    """The overlay may retag any application service, but postgres, redis,
+    and chromadb must stay on the CPU-built images from the base stack."""
     assert set(overlay["services"]) <= set(GPU_SERVICES)
+    assert not set(overlay["services"]) & {"postgres", "redis", "chromadb"}
