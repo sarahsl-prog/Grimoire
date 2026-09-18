@@ -11,7 +11,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.18 /uv /usr/local/bin/uv
 
 ENV UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
-    UV_PROJECT_ENVIRONMENT=/opt/venv
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_HTTP_TIMEOUT=300
 
 # build-essential covers any dependency without a manylinux wheel.
 RUN apt-get update && apt-get install -y --no-install-recommends \
