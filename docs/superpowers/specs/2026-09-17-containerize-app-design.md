@@ -191,8 +191,15 @@ the Ollama daemon on the host. That preserves the current setup: already-pulled
 weights, the `kimi-k2.6:cloud` and `ornith:9b` models, and the cloud API key the
 daemon holds. Because the endpoint is a plain environment variable, another
 environment can point at a remote or containerized Ollama without touching an
-image. An optional `ollama` Compose profile is provided for fully self-contained
-deployments.
+image.
+
+> **Not delivered.** This section originally also promised an optional `ollama`
+> Compose profile for fully self-contained deployments. It was dropped during
+> implementation: the load-bearing half — retargeting the endpoint through
+> `GRIMOIRE_OLLAMA_URL` — shipped and is documented, while adding a
+> multi-gigabyte model service at the end of the branch would have introduced a
+> component nothing in the plan verified. A fully self-contained deployment
+> therefore still requires an Ollama daemon reachable from the containers.
 
 Note that the `/v1` suffix must not appear in this URL. The agents call Ollama's
 native endpoint by appending `/api/generate` (`grimoire/agents/query.py:422`,
