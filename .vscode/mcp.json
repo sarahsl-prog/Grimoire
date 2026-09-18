@@ -16,7 +16,7 @@
 		{
 			"id": "grimoire-api-key",
 			"type": "promptString",
-			"description": "Grimoire API key (grimoire keys create)",
+			"description": "Grimoire API key (grimoire key create)",
 			"password": true
 		}
 	]

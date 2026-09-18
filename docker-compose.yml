@@ -146,8 +146,8 @@ services:
       postgres:
         condition: service_healthy
 
-  # REST API.  Also serves authenticated MCP at /mcp for clients that would
-  # rather not use the dedicated service.
+  # REST API.  Also serves authenticated MCP at /mcp/sse for clients that
+  # would rather not use the dedicated service.
   api:
     <<: *grimoire-app
     container_name: grimoire-api

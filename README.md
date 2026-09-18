@@ -303,7 +303,7 @@ Grimoire exposes its full functionality as an MCP server, allowing AI assistants
 - **stdio** – run `grimoire mcp --stdio` and point your AI client at it (requires `GRIMOIRE_API_KEY` env var)
 - **SSE** – `grimoire mcp --sse --port 8100`, or the `mcp` container, serves an authenticated endpoint at `/mcp/sse`. The REST API also mounts the same endpoint at `/mcp/sse` when you run `uvicorn grimoire.api.main:app`.
 
-> **Changed in 2.1:** the standalone SSE transport previously served MCP at `/sse` with no authentication. It now requires the same `X-API-Key` header as every other transport, and the endpoint moved to `/mcp/sse`. Update any client that pointed at the old path.
+> **Unreleased:** the standalone SSE transport previously served MCP at `/sse` with no authentication. It now requires the same `X-API-Key` header as every other transport, and the endpoint moved to `/mcp/sse`. Update any client that pointed at the old path.
 
 **Authentication:** All MCP requests require an `X-API-Key` header (SSE) or a valid `GRIMOIRE_API_KEY` env var (stdio). API keys have tier-based access control:
 
@@ -409,13 +409,9 @@ Grimoire ships a security-domain pipeline (Sigma / NVD CVE / MITRE ATT&CK chunke
 
 ## Services (Docker Compose)
 
-| Service | Port | Description |
-|---------|------|-------------|
-| PostgreSQL | 5432 | Primary metadata database |
-| Redis | 6379 | Cache and message broker |
-| ChromaDB | 8000 | Vector database |
-| PGAdmin | 5050 | PostgreSQL management UI (optional) |
-| Redis Commander | 8081 | Redis management UI (optional) |
+See [docs/deploy/docker.md](docs/deploy/docker.md#services) for the full
+service table (`api`, `mcp`, `watcher`, `db-migrate`, plus Postgres, Redis,
+ChromaDB, and the optional `tools`-profile UIs) and the quick-start guide.
 
 ## Testing
 
