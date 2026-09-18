@@ -18,6 +18,9 @@ cache/
 logs/
 documents/
 
+# Database dumps carry bcrypt-hashed API keys and document metadata.
+backups/
+
 # VCS and tooling
 .git
 .github
