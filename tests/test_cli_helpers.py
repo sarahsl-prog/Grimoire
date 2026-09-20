@@ -15,7 +15,7 @@ import importlib
 
 import pytest
 
-from grimoire.cli.helpers import build_ingestion_agent, build_query_agent
+from grimoire.cli.helpers import async_command, build_ingestion_agent, build_query_agent
 from grimoire.vectorstore.chromadb import ChromaDBStore
 
 
@@ -65,6 +65,46 @@ class TestIngestionAgentVectorStoreWiring:
         assert isinstance(store, ChromaDBStore)
         assert store.host is None
         assert store.port is None
+
+
+class TestAsyncCommandConnectionHandling:
+    """A down database must produce a clean CLI error, not a raw traceback.
+
+    Regression coverage for the `grimoire status` crash: asyncpg raises a
+    bare `OSError`/`ConnectionRefusedError` on connection-acquire failures,
+    which SQLAlchemy does not wrap (unlike statement-execution errors), so
+    it would otherwise propagate straight out of `asyncio.run`.
+    """
+
+    def test_connection_refused_becomes_clean_exit(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        @async_command
+        async def failing_command() -> None:
+            raise ConnectionRefusedError(111, "Connect call failed")
+
+        with pytest.raises(SystemExit) as exc_info:
+            failing_command()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Could not reach the database" in captured.err
+        assert "Traceback" not in captured.err
+
+    def test_other_exceptions_are_not_swallowed(self) -> None:
+        @async_command
+        async def failing_command() -> None:
+            raise ValueError("unrelated failure")
+
+        with pytest.raises(ValueError, match="unrelated failure"):
+            failing_command()
+
+    def test_success_passes_through(self) -> None:
+        @async_command
+        async def working_command() -> str:
+            return "ok"
+
+        assert working_command() == "ok"
 
 
 class TestQueryAgentVectorStoreWiring:

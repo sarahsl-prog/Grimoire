@@ -20,11 +20,28 @@ if TYPE_CHECKING:
 
 
 def async_command(func: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator to run async Click commands."""
+    """Decorator to run async Click commands.
+
+    Every DB-backed command goes through here, so a database that's down
+    or unreachable is caught once, in one place, instead of each command
+    needing its own try/except around `get_db_context()`. SQLAlchemy does
+    not wrap connection-acquire failures (as opposed to statement-execution
+    failures) in its own exception types, so the raw `OSError` /
+    `ConnectionRefusedError` from asyncpg is what actually surfaces here.
+    """
 
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        return asyncio.run(func(*args, **kwargs))
+        try:
+            return asyncio.run(func(*args, **kwargs))
+        except OSError as e:
+            echo_error(f"Could not reach the database: {e}")
+            click.echo(
+                "Check that the stack is running (`docker compose ps`) and that "
+                "POSTGRES_HOST/POSTGRES_PORT in .env match the exposed port.",
+                err=True,
+            )
+            raise SystemExit(1) from e
 
     return wrapper
 
