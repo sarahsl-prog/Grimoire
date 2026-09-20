@@ -159,6 +159,21 @@ containerized stack and confirmed the `chromadb` service has the vectors,
 
 ## Troubleshooting
 
+**`grimoire status` (or any CLI command) fails with `ConnectionRefusedError` on
+`127.0.0.1:<POSTGRES_PORT>`, and `docker compose ps` only shows `api`, `mcp`,
+`watcher`, and `db-migrate`.** You brought up an overlay file alone — e.g.
+`docker compose -f docker-compose.gpu.yml up -d --build` — instead of the
+two-file form. `docker-compose.gpu.yml` only re-declares `api`, `mcp`,
+`watcher`, and `db-migrate` (to swap their image/build args); it never
+defines `postgres`, `redis`, or `chromadb`, so those three are silently
+never created. Compose does not warn about this — it just builds and starts
+whatever services the given files define. Fix: always chain the base file
+with `-f`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
 **LLM generation fails with a 404.** Almost always a `/v1` suffix on the
 Ollama URL — check `GRIMOIRE_OLLAMA_URL` in `.env`. If the URL is correct,
 confirm the host's Ollama daemon is actually listening on the Docker bridge
