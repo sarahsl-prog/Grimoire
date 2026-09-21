@@ -7,6 +7,7 @@ Search shows the same chunks with no answer above them.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -38,7 +39,17 @@ class CitationCard(QFrame):
         self.document_id = document_id
 
         header = QHBoxLayout()
-        title_label = QLabel(f"<b>{title or '(untitled)'}</b>")
+        # Both labels below must render their text literally, never as
+        # markup: the corpus ingests .html/.htm, so a chunk's snippet - and
+        # a document's title, which is parsed from the document itself -
+        # can contain tags such as "<img src=x>Title". Qt.TextFormat.
+        # PlainText (not the AutoText default) is what stops that from
+        # being interpreted as rich text.
+        title_label = QLabel(title or "(untitled)")
+        title_label.setTextFormat(Qt.TextFormat.PlainText)
+        title_font = title_label.font()
+        title_font.setWeight(QFont.Weight.Bold)
+        title_label.setFont(title_font)
         title_label.setWordWrap(True)
         score_label = QLabel(f"{score:.2f}")
         copy_button = QPushButton("Copy ID")
@@ -49,6 +60,7 @@ class CitationCard(QFrame):
         header.addWidget(copy_button)
 
         body = QLabel(self._truncate(snippet))
+        body.setTextFormat(Qt.TextFormat.PlainText)
         body.setWordWrap(True)
         body.setTextInteractionFlags(
             body.textInteractionFlags() | Qt.TextInteractionFlag.TextSelectableByMouse
