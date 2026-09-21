@@ -285,6 +285,12 @@ curl -X POST http://localhost:8001/api/v1/ingest/directory \
   -H "Content-Type: application/json" \
   -d '{"directory": "/path/to/docs", "recursive": true}'
 
+# Upload and ingest a file directly (no shared filesystem needed)
+curl -X POST http://localhost:8001/api/v1/ingest/upload \
+  -H "X-API-Key: $GRIMOIRE_API_KEY" \
+  -F "file=@/path/to/document.pdf" \
+  -F "auto_tag=true"
+
 # List documents
 curl http://localhost:8001/api/v1/documents
 

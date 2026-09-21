@@ -154,6 +154,17 @@ class TestVolumes:
         mounts = services[name]["volumes"]
         assert any(str(m).startswith("model_cache:") for m in mounts)
 
+    def test_app_uploads_volume_declared(self, compose: dict) -> None:
+        """The staging directory for POST /ingest/upload is the only copy
+        of every uploaded document — it must survive container recreation.
+        """
+        assert "app_uploads" in compose["volumes"]
+
+    @pytest.mark.parametrize("name", APP_SERVICES)
+    def test_app_uploads_mounted(self, services: dict, name: str) -> None:
+        mounts = services[name]["volumes"]
+        assert any(str(m).startswith("app_uploads:") for m in mounts)
+
     def test_watcher_mounts_its_corpus_read_only(self, services: dict) -> None:
         mounts = [str(m) for m in services["watcher"]["volumes"]]
         watch_mounts = [m for m in mounts if "/data/watch" in m]

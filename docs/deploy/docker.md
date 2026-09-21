@@ -61,11 +61,17 @@ compose `environment:` block — see the warning below.
 The full set of `GRIMOIRE_*` variables the compose file sets for every app
 container lives in the `x-grimoire-env` anchor at the top of
 `docker-compose.yml`: database URL, vector store host/port, Redis host/port,
-Celery broker/result URLs, log directory, cache path, and the Ollama URL.
-`.env.example` documents the complete list of variables the application
-understands, most of which you'd only override for non-default behavior
-(embeddings, chunking, auth, wiki, etc.) — see that file for the full
-reference table.
+Celery broker/result URLs, log directory, cache path, upload directory, and
+the Ollama URL. `.env.example` documents the complete list of variables the
+application understands, most of which you'd only override for non-default
+behavior (embeddings, chunking, auth, wiki, etc.) — see that file for the
+full reference table.
+
+`GRIMOIRE_API__UPLOAD_DIR` (containers: `/app/uploads`, set in
+`x-grimoire-env`) and `GRIMOIRE_API__MAX_UPLOAD_BYTES` (default
+`104857600`, 100 MB) control `POST /ingest/upload`: where it stages
+incoming files and how large a single upload may be before it's rejected
+with a 413.
 
 > **A mounted `.env` is not read inside containers.** `settings.py:1049`
 > resolves the dotenv path relative to the *installed package*, and inside
@@ -140,7 +146,13 @@ the Sigma/CVE/MITRE corpus pipeline — see
 | `chromadb_data` | Vector embeddings | Yes — expensive to regenerate at scale |
 | `model_cache` | Downloaded Docling and sentence-transformers model weights | No — rebuildable, just re-downloads on next cold start |
 | `app_cache` | Grimoire's internal query/embedding cache | No — rebuildable |
+| `app_uploads` | Files uploaded through the GUI or `POST /ingest/upload` | **Yes** — the only copy of every uploaded document |
 | `app_logs` | Application logs | Optional, not required for recovery |
+
+`app_uploads` is the one application volume that is not rebuildable.
+`POST /api/v1/ingest/upload` stages each uploaded file there and records that
+path as the document's `source_path`, so the staged file is the original —
+deleting the volume orphans every row that came in through the GUI.
 
 A logical Postgres dump plus a tar of the ChromaDB volume covers a full
 recovery; see the backup script in
