@@ -47,10 +47,6 @@ class SearchTab(QWidget):
         self._client = client
         self._pool = pool
         self._on_error = on_error
-        # True once the user edits top_k directly. Until then, the spinner
-        # tracks each mode's own client default (ask=5, search=10) rather
-        # than freezing at whichever default happened to show first.
-        self._top_k_touched = False
 
         self.query_field = QLineEdit()
         self.query_field.setPlaceholderText("Ask a question, or search for a phrase")
@@ -104,7 +100,6 @@ class SearchTab(QWidget):
         self.submit_button.clicked.connect(self.submit)
         self.query_field.returnPressed.connect(self.submit)
         self.ask_radio.toggled.connect(self._sync_mode)
-        self.top_k_spin.valueChanged.connect(self._on_top_k_edited)
         self._sync_mode()
 
     def set_client(self, client: Any) -> None:
@@ -113,17 +108,8 @@ class SearchTab(QWidget):
 
     def _sync_mode(self) -> None:
         """Hide the answer panel in Search mode: there is no answer."""
-        is_ask = self.ask_radio.isChecked()
-        self.answer_view.setVisible(is_ask)
-        self.cache_checkbox.setEnabled(is_ask)
-        if not self._top_k_touched:
-            self.top_k_spin.blockSignals(True)
-            self.top_k_spin.setValue(5 if is_ask else 10)
-            self.top_k_spin.blockSignals(False)
-
-    def _on_top_k_edited(self) -> None:
-        """Stop following the mode default once the user picks their own."""
-        self._top_k_touched = True
+        self.answer_view.setVisible(self.ask_radio.isChecked())
+        self.cache_checkbox.setEnabled(self.ask_radio.isChecked())
 
     def submit(self) -> None:
         """Run the current mode's query, unless the box is empty."""

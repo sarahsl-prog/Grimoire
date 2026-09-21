@@ -117,8 +117,30 @@ class TestSearchMode:
         tab.submit()
         qtbot.waitUntil(lambda: _card_count(tab) > 0, timeout=3000)
 
-        assert client.search_calls == [("x", 10)]
+        # The spinner is the single source of truth for top_k in both modes
+        # (it defaults to 5 and is never rewritten by a mode switch), so a
+        # Search call with the spinner untouched carries 5, not the
+        # client's own default of 10.
+        assert client.search_calls == [("x", 5)]
         assert not tab.answer_view.isVisible()
+
+    def test_top_k_value_is_unchanged_by_mode_toggling(self, qtbot) -> None:
+        client = _StubClient()
+        tab = _make_tab(qtbot, client)
+        tab.query_field.setText("x")
+        tab.top_k_spin.setValue(7)
+
+        tab.ask_radio.setChecked(True)
+        tab.search_radio.setChecked(True)
+        tab.ask_radio.setChecked(True)
+
+        assert tab.top_k_spin.value() == 7
+
+        tab.search_radio.setChecked(True)
+        tab.submit()
+        qtbot.waitUntil(lambda: bool(client.search_calls), timeout=3000)
+
+        assert client.search_calls == [("x", 7)]
 
 
 class TestEmptyAndErrorStates:
