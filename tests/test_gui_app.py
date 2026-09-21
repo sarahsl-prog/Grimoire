@@ -12,7 +12,11 @@ from PySide6.QtGui import QCloseEvent  # noqa: E402
 from grimoire.gui.app import MainWindow  # noqa: E402
 from grimoire.gui.config import GuiConfig  # noqa: E402
 from grimoire.gui.errors import AuthFailed, ConnectionFailed  # noqa: E402
-from grimoire.gui.workers import ApiWorker  # noqa: E402
+from grimoire.gui.workers import (  # noqa: E402
+    ApiWorker,
+    _active_workers,
+    run_api_call,
+)
 
 
 class _StubClient:
@@ -54,6 +58,76 @@ class TestApiWorker:
         error = blocker.args[0]
         assert isinstance(error, GuiError)
         assert "kaboom" not in error.message, "raw exception text must not leak"
+
+
+class _PlainReceiver:
+    """A non-QObject object whose bound method is used as a slot.
+
+    Nothing but `run_api_call`'s own bookkeeping keeps this instance (and
+    the worker holding a reference to its bound method) alive once the
+    call returns - unlike a QWidget, which Qt's parent/child ownership
+    would keep alive regardless.
+    """
+
+    def __init__(self) -> None:
+        self.results: list[object] = []
+
+    def on_ok(self, result: object) -> None:
+        self.results.append(result)
+
+
+class TestRunApiCall:
+    """`run_api_call` must deliver to ANY callable slot, not just QWidgets.
+
+    Nothing else in this module holds a reference to the ApiWorker that
+    `run_api_call` creates, so without `_active_workers` keeping one, the
+    worker (and its WorkerSignals) can be garbage collected before the
+    queued signal is delivered on the GUI thread.
+    """
+
+    def test_delivers_to_a_lambda_slot(self, qtbot) -> None:
+        results: list[object] = []
+        pool = QThreadPool()
+
+        run_api_call(pool, lambda: "done", results.append, lambda _e: None)
+
+        qtbot.waitUntil(lambda: bool(results), timeout=3000)
+        assert results == ["done"]
+
+    def test_delivers_to_a_bound_method_of_a_plain_object(self, qtbot) -> None:
+        import gc
+
+        receiver = _PlainReceiver()
+        pool = QThreadPool()
+
+        run_api_call(pool, lambda: "done", receiver.on_ok, lambda _e: None)
+        gc.collect()
+
+        qtbot.waitUntil(lambda: bool(receiver.results), timeout=3000)
+        assert receiver.results == ["done"]
+
+    def test_active_workers_set_is_empty_after_success(self, qtbot) -> None:
+        results: list[object] = []
+        pool = QThreadPool()
+
+        run_api_call(pool, lambda: "done", results.append, lambda _e: None)
+
+        qtbot.waitUntil(lambda: bool(results), timeout=3000)
+        qtbot.waitUntil(lambda: not _active_workers, timeout=3000)
+        assert _active_workers == set()
+
+    def test_active_workers_set_is_empty_after_failure(self, qtbot) -> None:
+        def boom() -> str:
+            raise AuthFailed("API key rejected.")
+
+        errors: list[object] = []
+        pool = QThreadPool()
+
+        run_api_call(pool, boom, lambda _r: None, errors.append)
+
+        qtbot.waitUntil(lambda: bool(errors), timeout=3000)
+        qtbot.waitUntil(lambda: not _active_workers, timeout=3000)
+        assert _active_workers == set()
 
 
 class TestMainWindow:

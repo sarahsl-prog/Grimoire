@@ -25,6 +25,11 @@ class WorkerSignals(QObject):
 
     finished = Signal(object)
     failed = Signal(object)
+    # Emitted after finished/failed, from a `finally`, regardless of which
+    # of the two fired or whether its connected slot raised.  Used purely
+    # for worker lifetime bookkeeping (see `_active_workers` below), never
+    # by callers.
+    done = Signal()
 
 
 class ApiWorker(QRunnable):
@@ -42,21 +47,42 @@ class ApiWorker(QRunnable):
 
     @Slot()
     def run(self) -> None:
-        """Execute the call, emitting finished or failed exactly once."""
+        """Execute the call, emitting finished or failed exactly once.
+
+        `done` always follows, from a `finally`, so lifetime bookkeeping in
+        `run_api_call` fires even if `finished`/`failed` has no connected
+        slot yet or a connected slot raises.
+        """
         try:
-            result = self._fn()
-        except GuiError as exc:
-            self.signals.failed.emit(exc)
-        except Exception as exc:
-            # An exception escaping a QRunnable kills the pool thread without
-            # a word and leaves the UI spinning forever.  Log the real cause,
-            # show the user something generic.
-            logger.exception(f"Unexpected error in GUI worker: {exc}")
-            self.signals.failed.emit(
-                GuiError("Something went wrong. See the log for details.")
-            )
-        else:
-            self.signals.finished.emit(result)
+            try:
+                result = self._fn()
+            except GuiError as exc:
+                self.signals.failed.emit(exc)
+            except Exception as exc:
+                # An exception escaping a QRunnable kills the pool thread
+                # without a word and leaves the UI spinning forever.  Log
+                # the real cause, show the user something generic.
+                logger.exception(f"Unexpected error in GUI worker: {exc}")
+                self.signals.failed.emit(
+                    GuiError("Something went wrong. See the log for details.")
+                )
+            else:
+                self.signals.finished.emit(result)
+        finally:
+            self.signals.done.emit()
+
+
+# Workers currently running on the pool, keyed by identity.  QThreadPool
+# does not keep a Python reference to the QRunnable it runs, and nothing
+# else does either once run_api_call() returns.  Without this, a worker
+# (and its WorkerSignals, which carries the connected on_ok/on_err) can be
+# garbage collected before its result is delivered: reproduced reliably for
+# a lambda slot (the callback simply never fires, no forced gc.collect()
+# needed) and for a bound method of a plain object under gc.collect().
+# Every current caller happens to pass a QWidget bound method, which Qt's
+# own parent/child ownership keeps alive and which masked this bug - do not
+# "clean up" this set on the assumption it is unused dead weight.
+_active_workers: set[ApiWorker] = set()
 
 
 def run_api_call(
@@ -67,6 +93,11 @@ def run_api_call(
 ) -> None:
     """Submit a client call and route its outcome to two slots.
 
+    Holds a strong reference to the worker in `_active_workers` for the
+    lifetime of the call (see that module-level comment for why) so that
+    any callable slot - lambda or bound method of any object, not just a
+    QWidget - reliably receives its result.
+
     Args:
         pool: The window's thread pool.
         fn: The call to make.
@@ -74,6 +105,11 @@ def run_api_call(
         on_err: Receives a GuiError, on the GUI thread.
     """
     worker = ApiWorker(fn)
+    _active_workers.add(worker)
     worker.signals.finished.connect(on_ok)
     worker.signals.failed.connect(on_err)
+    # `done` fires from a `finally` after finished/failed regardless of
+    # outcome, so the worker is released even if on_ok/on_err itself
+    # raises. `discard` (vs `remove`) makes the cleanup idempotent.
+    worker.signals.done.connect(lambda: _active_workers.discard(worker))
     pool.start(worker)
