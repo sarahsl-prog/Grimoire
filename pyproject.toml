@@ -157,6 +157,10 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Ignore S101 (bandit assert) in tests - pytest uses assert
 "tests/**/*.py" = ["S101", "S105"]
+# N818: these exception names are a fixed cross-module interface (GUI widgets
+# import them verbatim); GuiError already makes the "this is an error" role
+# clear, so an -Error suffix would be redundant on every subclass.
+"grimoire/gui/errors.py" = ["N818"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
