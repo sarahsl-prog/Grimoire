@@ -127,6 +127,24 @@ async def status(ctx: click.Context, detailed: bool) -> None:
                         click.style(f"\n  Vector store: unreachable ({e})", fg="red")
                     )
 
+            # Ollama reachability -- a bad GRIMOIRE_OLLAMA_URL only otherwise
+            # surfaces later, mid-query or mid-generation, as a 404/connect error.
+            import httpx
+
+            llm = settings.llm
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    resp = await client.get(f"{llm.url}/api/tags")
+                    resp.raise_for_status()
+                click.echo(f"\n  Ollama ({llm.model}): reachable at {llm.url}")
+            except Exception as e:
+                click.echo(
+                    click.style(
+                        f"\n  Ollama ({llm.model}): unreachable at {llm.url} ({e})",
+                        fg="red",
+                    )
+                )
+
             # Cache stats
             try:
                 cache = CacheFactory.create(

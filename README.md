@@ -247,7 +247,7 @@ grimoire config show          # Display current settings
 grimoire config show llm      # Show specific section
 
 # System status
-grimoire status --detailed   # doc/chunk counts, vector store backend + sync check
+grimoire status --detailed   # doc/chunk counts, vector store sync, cache, Ollama reachability
 grimoire cache stats
 grimoire cache clear
 ```

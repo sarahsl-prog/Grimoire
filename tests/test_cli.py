@@ -18,8 +18,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from click.testing import CliRunner
+from pytest_httpx import HTTPXMock
 
 from grimoire.cli.main import cli
 from grimoire.cli.status import _vector_store_summary
@@ -1097,6 +1099,83 @@ class TestStatusCommand:
 
         result = runner.invoke(cli, ["status", "--detailed"])
         assert result.exit_code == 0
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_ollama_reachable(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+        httpx_mock: HTTPXMock,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store_cls.return_value = mock_store
+
+        from grimoire.config.settings import get_settings
+
+        llm_url = get_settings().llm.url
+        httpx_mock.add_response(
+            url=f"{llm_url}/api/tags",
+            json={"models": []},
+        )
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "Ollama" in result.output
+        assert f"reachable at {llm_url}" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_ollama_unreachable(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+        httpx_mock: HTTPXMock,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store_cls.return_value = mock_store
+
+        from grimoire.config.settings import get_settings
+
+        llm_url = get_settings().llm.url
+        httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "Ollama" in result.output
+        assert f"unreachable at {llm_url}" in result.output
 
 
 class TestVectorStoreSummary:

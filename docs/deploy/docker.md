@@ -200,7 +200,10 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 Ollama URL — check `GRIMOIRE_OLLAMA_URL` in `.env`. If the URL is correct,
 confirm the host's Ollama daemon is actually listening on the Docker bridge
 interface, not just `127.0.0.1`; by default Ollama binds to localhost only,
-which containers can't reach through `host.docker.internal`.
+which containers can't reach through `host.docker.internal`. Check this
+before it bites a real query: `grimoire status --detailed` pings
+`<GRIMOIRE_OLLAMA_URL>/api/tags` and reports `Ollama (<model>): reachable`
+or `unreachable at <url> (...)`.
 
 **Chroma connection refused.** Either the `chromadb` service is unhealthy
 (`docker compose ps chromadb`; check `docker compose logs chromadb`), or
