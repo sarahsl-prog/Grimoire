@@ -17,11 +17,19 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
+        # pre-commit hands each tool an explicit list of changed files, and
+        # an explicit path overrides the exclusions in pyproject.toml. Both
+        # hooks therefore need this filter, or a commit touching alembic/
+        # gets those files reformatted despite [tool.ruff]/[tool.black]
+        # excluding them. Verified: without it, a full run rewrote seven
+        # migration files.
+        exclude: ^(alembic|migrations)/
 
   - repo: https://github.com/psf/black
     rev: 26.3.1
     hooks:
       - id: black
+        exclude: ^(alembic|migrations)/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.20.0
