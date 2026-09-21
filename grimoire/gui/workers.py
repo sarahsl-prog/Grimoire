@@ -11,8 +11,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import shiboken6
 from loguru import logger
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, SignalInstance, Slot
 
 from grimoire.gui.errors import GuiError
 
@@ -52,24 +53,43 @@ class ApiWorker(QRunnable):
         `done` always follows, from a `finally`, so lifetime bookkeeping in
         `run_api_call` fires even if `finished`/`failed` has no connected
         slot yet or a connected slot raises.
+
+        Closing the window mid-request can delete `self.signals` (owned,
+        transitively, by the window) out from under this pool thread before
+        the call returns. Emitting on a deleted QObject raises `RuntimeError:
+        Signal source has been deleted`, which would otherwise escape this
+        QRunnable override and print a raw traceback to stderr - forbidden
+        outright regardless of who is or isn't still listening. Every emit
+        goes through `_safe_emit`, which checks liveness and also swallows
+        the RuntimeError for the window between that check and the call.
         """
         try:
             try:
                 result = self._fn()
             except GuiError as exc:
-                self.signals.failed.emit(exc)
+                self._safe_emit(self.signals.failed, exc)
             except Exception as exc:
                 # An exception escaping a QRunnable kills the pool thread
                 # without a word and leaves the UI spinning forever.  Log
                 # the real cause, show the user something generic.
                 logger.exception(f"Unexpected error in GUI worker: {exc}")
-                self.signals.failed.emit(
-                    GuiError("Something went wrong. See the log for details.")
+                self._safe_emit(
+                    self.signals.failed,
+                    GuiError("Something went wrong. See the log for details."),
                 )
             else:
-                self.signals.finished.emit(result)
+                self._safe_emit(self.signals.finished, result)
         finally:
-            self.signals.done.emit()
+            self._safe_emit(self.signals.done)
+
+    def _safe_emit(self, signal: SignalInstance, *args: object) -> None:
+        """Emit a signal unless its owning QObject has been torn down."""
+        if not shiboken6.isValid(self.signals):
+            return
+        try:
+            signal.emit(*args)
+        except RuntimeError:
+            pass
 
 
 # Workers currently running on the pool, keyed by identity.  QThreadPool

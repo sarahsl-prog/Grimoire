@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,39 @@ class TestQueueFiltering:
         qtbot.waitUntil(lambda: bool(_statuses(tab)), timeout=3000)
 
         assert client.uploaded == []
+
+
+class TestShutdown:
+    def test_shutdown_empties_a_nonempty_pending_queue(self, qtbot, tmp_path) -> None:
+        """Closing mid-upload must not let the queue start another upload.
+
+        MainWindow.closeEvent duck-types for `shutdown()` on every tab;
+        IngestTab is the only tab with a queue and, before this fix, had no
+        such method. Uploading is one-at-a-time, so right after enqueueing
+        two files the first is already in flight and the second still sits
+        in `_pending` - shutdown() must clear it.
+        """
+        client = _StubClient()
+        tab = _make_tab(qtbot, client)
+        first = tmp_path / "a.md"
+        second = tmp_path / "b.md"
+        first.write_text("a")
+        second.write_text("b")
+
+        tab.enqueue([first, second])
+        assert tab._pending, "the second file should still be queued"
+
+        tab.shutdown()
+
+        assert tab._pending == deque()
+
+    def test_shutdown_is_a_noop_on_an_empty_queue(self, qtbot) -> None:
+        client = _StubClient()
+        tab = _make_tab(qtbot, client)
+
+        tab.shutdown()
+
+        assert tab._pending == deque()
 
 
 class TestUploading:

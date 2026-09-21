@@ -59,6 +59,25 @@ class TestApiWorker:
         assert isinstance(error, GuiError)
         assert "kaboom" not in error.message, "raw exception text must not leak"
 
+    def test_run_does_not_raise_when_signals_object_is_deleted(self) -> None:
+        """Closing the window mid-request must not crash the worker thread.
+
+        Closing tears down the WorkerSignals QObject (owned, transitively,
+        by the window) out from under a pool thread that is still running.
+        Emitting on it then raises `RuntimeError: Signal source has been
+        deleted`; before the `_safe_emit` guard, that escaped `run()`
+        (a QRunnable override, called directly by Qt's pool - nothing here
+        catches an exception raised out of it) and printed a raw traceback,
+        which CLAUDE.md forbids surfacing at all. Calling `run()` directly
+        (not through the pool) keeps this test synchronous and deterministic.
+        """
+        import shiboken6
+
+        worker = ApiWorker(lambda: "done")
+        shiboken6.delete(worker.signals)
+
+        worker.run()  # must not raise
+
 
 class _PlainReceiver:
     """A non-QObject object whose bound method is used as a slot.

@@ -144,6 +144,19 @@ class IngestTab(QWidget):
         """Swap in a client rebuilt around a new session key."""
         self._client = client
 
+    def shutdown(self) -> None:
+        """Stop queuing new uploads as the window closes.
+
+        MainWindow.closeEvent duck-types for this on every tab. IngestTab is
+        the only one with a queue: without this, an upload already in
+        flight (via ApiWorker's own shutdown guard) still finishes, but
+        _finish_one would then pop and start the next _pending entry against
+        a window that is going away. Clearing the deque here removes that
+        entry point; the in-flight upload's own result is still handled
+        safely by ApiWorker (see workers.py).
+        """
+        self._pending.clear()
+
     def _browse(self) -> None:
         names, _ = QFileDialog.getOpenFileNames(self, "Select files to ingest")
         if names:
