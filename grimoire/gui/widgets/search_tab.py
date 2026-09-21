@@ -47,6 +47,7 @@ class SearchTab(QWidget):
         self._client = client
         self._pool = pool
         self._on_error = on_error
+        self._in_flight = False
 
         self.query_field = QLineEdit()
         self.query_field.setPlaceholderText("Ask a question, or search for a phrase")
@@ -76,6 +77,12 @@ class SearchTab(QWidget):
 
         self.answer_view = QTextBrowser()
         self.answer_view.setOpenExternalLinks(False)
+        # setOpenExternalLinks(False) alone leaves openLinks at its default
+        # of True, so QTextBrowser still tries to navigate to a clicked URL
+        # itself, fails for an http(s) scheme, and clears the document -
+        # a one-click way for a link in a generated answer to blank the
+        # panel. Disabling in-browser navigation too keeps clicks inert.
+        self.answer_view.setOpenLinks(False)
         self.answer_view.setMinimumHeight(180)
 
         self.error_label = QLabel()
@@ -112,7 +119,15 @@ class SearchTab(QWidget):
         self.cache_checkbox.setEnabled(self.ask_radio.isChecked())
 
     def submit(self) -> None:
-        """Run the current mode's query, unless the box is empty."""
+        """Run the current mode's query, unless the box is empty.
+
+        Guarded by `_in_flight` rather than the button's enabled state alone:
+        `submit` is wired to both the button's `clicked` and the query
+        field's `returnPressed`, and disabling the button does nothing to
+        stop Enter from firing a second (or third) concurrent request.
+        """
+        if self._in_flight:
+            return
         query = self.query_field.text().strip()
         if not query:
             return
@@ -120,6 +135,7 @@ class SearchTab(QWidget):
         self._clear_results()
         self.error_label.clear()
         self.footer_label.setText("Working…")
+        self._in_flight = True
         self.submit_button.setEnabled(False)
 
         if self.ask_radio.isChecked():
@@ -141,6 +157,7 @@ class SearchTab(QWidget):
             )
 
     def _on_ask_result(self, result: QueryResponse) -> None:
+        self._in_flight = False
         self.submit_button.setEnabled(True)
         self.answer_view.setMarkdown(result.answer or "_(no answer returned)_")
         for citation in result.citations:
@@ -161,6 +178,7 @@ class SearchTab(QWidget):
             self._show_empty("No sources matched this question.")
 
     def _on_search_result(self, result: SearchResponse) -> None:
+        self._in_flight = False
         self.submit_button.setEnabled(True)
         for item in result.results:
             self.results_layout.addWidget(
@@ -178,6 +196,7 @@ class SearchTab(QWidget):
             self._show_empty("No chunks matched that search.")
 
     def _on_failure(self, error: GuiError) -> None:
+        self._in_flight = False
         self.submit_button.setEnabled(True)
         self.footer_label.clear()
         self.error_label.setText(error.message)

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 pytest.importorskip("PySide6", reason="GUI extra not installed")
 
 from PySide6.QtCore import QThreadPool  # noqa: E402
+from PySide6.QtWidgets import QLabel  # noqa: E402
 
 from grimoire.api.schemas import (  # noqa: E402
     CitationResponse,
@@ -141,6 +144,72 @@ class TestSearchMode:
         qtbot.waitUntil(lambda: bool(client.search_calls), timeout=3000)
 
         assert client.search_calls == [("x", 7)]
+
+
+class TestNoStacking:
+    def test_repeated_submit_while_in_flight_makes_exactly_one_call(
+        self, qtbot
+    ) -> None:
+        """Click + two Enter presses must issue exactly one request.
+
+        `submit()` is wired to both the button's `clicked` and the query
+        field's `returnPressed`. Before the `_in_flight` guard, disabling
+        the button did nothing to stop the Enter path, so one click plus
+        two Enter presses fired three concurrent `ask()` calls, each
+        clearing and re-appending its own cards ("stacking").
+        """
+        release = threading.Event()
+        client = _StubClient()
+        original_ask = client.ask
+
+        def blocking_ask(query, *, top_k=5, use_cache=True):
+            release.wait(timeout=3)
+            return original_ask(query, top_k=top_k, use_cache=use_cache)
+
+        client.ask = blocking_ask  # type: ignore[method-assign]
+        tab = _make_tab(qtbot, client)
+        tab.query_field.setText("why x")
+
+        tab.submit()  # the click
+        tab.submit()  # simulated Enter #1, while the first call is in flight
+        tab.submit()  # simulated Enter #2
+
+        release.set()
+        qtbot.waitUntil(lambda: _card_count(tab) > 0, timeout=3000)
+
+        assert len(client.ask_calls) == 1
+        assert _card_count(tab) == 1, "stacking would leave duplicate cards"
+
+    def test_submit_works_again_once_the_prior_call_completes(self, qtbot) -> None:
+        client = _StubClient()
+        tab = _make_tab(qtbot, client)
+        tab.query_field.setText("why x")
+
+        tab.submit()
+        qtbot.waitUntil(lambda: bool(client.ask_calls), timeout=3000)
+        qtbot.waitUntil(lambda: not tab._in_flight, timeout=3000)
+
+        tab.submit()
+        qtbot.waitUntil(lambda: len(client.ask_calls) == 2, timeout=3000)
+
+
+class TestEmptyResults:
+    def test_search_mode_shows_empty_state(self, qtbot) -> None:
+        client = _StubClient()
+        client.search = lambda query, *, top_k=10: SearchResponse(
+            query=query, results=[], total_results=0, duration_ms=5
+        )
+        tab = _make_tab(qtbot, client)
+        tab.query_field.setText("x")
+        tab.search_radio.setChecked(True)
+
+        tab.submit()
+        qtbot.waitUntil(lambda: _card_count(tab) > 0, timeout=3000)
+
+        assert _card_count(tab) == 1
+        empty_label = tab.results_layout.itemAt(0).widget()
+        assert isinstance(empty_label, QLabel)
+        assert "No chunks matched" in empty_label.text()
 
 
 class TestEmptyAndErrorStates:
