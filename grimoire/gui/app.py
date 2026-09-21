@@ -33,6 +33,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.client = client
         self.config = config
+        # Clients retired by a pasted API key: an ApiWorker already running
+        # on a pool thread holds a closure over the OLD client, so closing
+        # it immediately would fail that in-flight call.  These are only
+        # closed once closeEvent confirms the pool has drained.
+        self._retired_clients: list[Any] = []
         self.pool = QThreadPool()
         # The pipeline is CPU- and GPU-bound server side; more client
         # threads would only queue deeper on the API.
@@ -85,7 +90,11 @@ class MainWindow(QMainWindow):
             setter = getattr(tab, "set_client", None)
             if callable(setter):
                 setter(self.client)
-        old_client.close()
+        # Retire rather than close: a worker already in flight on the pool
+        # holds a closure over old_client, and closing it under that call
+        # would surface as a confusing generic failure in an unrelated tab.
+        # closeEvent closes it once the pool is confirmed drained.
+        self._retired_clients.append(old_client)
         self.connection_bar.set_state(self.config.is_configured, self.config.base_url)
         self.statusBar().showMessage("API key updated for this session", 5000)
 
@@ -96,7 +105,19 @@ class MainWindow(QMainWindow):
             shutdown = getattr(tab, "shutdown", None)
             if callable(shutdown):
                 shutdown()
-        if not self.pool.waitForDone(_SHUTDOWN_GRACE_MS):
-            logger.warning("GUI worker pool did not drain before shutdown")
-        self.client.close()
+        drained = self.pool.waitForDone(_SHUTDOWN_GRACE_MS)
+        if drained:
+            self.client.close()
+            for retired in self._retired_clients:
+                retired.close()
+        else:
+            # A pool thread may still hold a closure over one of these
+            # clients.  The process is exiting either way, so leaking the
+            # sockets is strictly better than closing them under a live
+            # worker and corrupting its result.
+            logger.warning(
+                "GUI worker pool did not drain before shutdown; "
+                f"leaking {1 + len(self._retired_clients)} client(s) "
+                "instead of closing them under a live worker"
+            )
         super().closeEvent(event)

@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("PySide6", reason="GUI extra not installed")
 
 from PySide6.QtCore import QThreadPool  # noqa: E402
+from PySide6.QtGui import QCloseEvent  # noqa: E402
 
 from grimoire.gui.app import MainWindow  # noqa: E402
 from grimoire.gui.config import GuiConfig  # noqa: E402
@@ -19,9 +20,10 @@ class _StubClient:
 
     def __init__(self, config: GuiConfig) -> None:
         self.config = config
+        self.closed = False
 
     def close(self) -> None:
-        pass
+        self.closed = True
 
 
 class TestApiWorker:
@@ -101,6 +103,57 @@ class TestMainWindow:
         assert window.client is original_client
         assert window.config is config
         assert "Invalid Grimoire API URL" in window.statusBar().currentMessage()
+
+    def test_retires_old_client_instead_of_closing_it(self, qtbot, monkeypatch) -> None:
+        """A pasted key must not close the client an in-flight worker holds.
+
+        _on_api_key_entered must move the outgoing client to
+        _retired_clients rather than closing it immediately: an ApiWorker
+        already running on the pool holds a closure over that exact
+        instance, and closing it mid-request would fail that call.
+        """
+        config = GuiConfig(base_url="http://testapi:8001", api_key="k")
+        original_client = _StubClient(config)
+        window = MainWindow(original_client, config)
+        qtbot.addWidget(window)
+
+        monkeypatch.setattr("grimoire.gui.client.GrimoireClient", _StubClient)
+
+        window._on_api_key_entered("new-key")
+
+        assert original_client.closed is False
+        assert original_client in window._retired_clients
+        assert window.client is not original_client
+
+    def test_close_event_only_closes_clients_once_pool_drains(
+        self, qtbot, monkeypatch
+    ) -> None:
+        """closeEvent must not close clients while pool threads are alive.
+
+        When waitForDone times out, a pool thread may still hold a closure
+        over a client; closing it then would corrupt that worker's result.
+        Only once the pool is confirmed drained should the current client
+        and every retired client be closed.
+        """
+        config = GuiConfig(base_url="http://testapi:8001", api_key="k")
+        original_client = _StubClient(config)
+        window = MainWindow(original_client, config)
+        qtbot.addWidget(window)
+
+        retired_client = _StubClient(config)
+        window._retired_clients.append(retired_client)
+
+        monkeypatch.setattr(window.pool, "waitForDone", lambda ms: False)
+        window.closeEvent(QCloseEvent())
+
+        assert original_client.closed is False
+        assert retired_client.closed is False
+
+        monkeypatch.setattr(window.pool, "waitForDone", lambda ms: True)
+        window.closeEvent(QCloseEvent())
+
+        assert original_client.closed is True
+        assert retired_client.closed is True
 
 
 class TestMainEntryPoint:
