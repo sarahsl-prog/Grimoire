@@ -43,6 +43,11 @@ def _make_test_api_key() -> ApiKey:
     return key
 
 
+def _upload_dir_patch_target() -> str:
+    """Dotted path of the staging-dir helper, patched to a tmp_path in tests."""
+    return f"{_ROUTES_INGEST}._staging_dir"
+
+
 @pytest.fixture
 def app():
     """Create a test FastAPI application (skip lifespan DB init)."""
@@ -176,6 +181,116 @@ class TestIngestAPI:
             import shutil
 
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    @patch(f"{_ROUTES_INGEST}.get_ingestion_agent")
+    def test_upload_ingests_file(self, mock_get_agent, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+        mock_agent = MagicMock()
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "file_path": "staged",
+            "document_id": "doc-1",
+            "status": "completed",
+            "chunks_created": 5,
+            "vectors_stored": 5,
+            "tags_applied": 2,
+            "error_message": None,
+            "duration_ms": 100,
+        }
+        mock_agent.ingest_file = AsyncMock(return_value=mock_result)
+        mock_get_agent.return_value = mock_agent
+
+        resp = client.post(
+            "/api/v1/ingest/upload",
+            files={"file": ("notes.md", b"# hello", "text/markdown")},
+            data={"auto_tag": "false"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["document_id"] == "doc-1"
+        staged = list(tmp_path.iterdir())
+        assert len(staged) == 1
+        assert staged[0].name.endswith("_notes.md")
+        assert staged[0].read_bytes() == b"# hello"
+        mock_agent.ingest_file.assert_awaited_once()
+        assert mock_agent.ingest_file.await_args.kwargs["auto_tag"] is False
+
+    def test_upload_rejects_unsupported_extension(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+
+        resp = client.post(
+            "/api/v1/ingest/upload",
+            files={"file": ("payload.exe", b"MZ", "application/octet-stream")},
+        )
+
+        assert resp.status_code == 415
+        assert ".exe" in resp.json()["detail"]
+        assert list(tmp_path.iterdir()) == []
+
+    def test_upload_rejects_oversized_file(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+        monkeypatch.setattr(f"{_ROUTES_INGEST}._max_upload_bytes", lambda: 8)
+
+        resp = client.post(
+            "/api/v1/ingest/upload",
+            files={"file": ("big.txt", b"x" * 4096, "text/plain")},
+        )
+
+        assert resp.status_code == 413
+        assert list(tmp_path.iterdir()) == [], "partial file must be removed"
+
+    @patch(f"{_ROUTES_INGEST}.get_ingestion_agent")
+    def test_upload_sanitizes_traversal_filename(
+        self, mock_get_agent, client, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+        mock_agent = MagicMock()
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "file_path": "staged",
+            "document_id": "doc-2",
+            "status": "completed",
+            "chunks_created": 1,
+            "vectors_stored": 1,
+            "tags_applied": 0,
+            "error_message": None,
+            "duration_ms": 10,
+        }
+        mock_agent.ingest_file = AsyncMock(return_value=mock_result)
+        mock_get_agent.return_value = mock_agent
+
+        resp = client.post(
+            "/api/v1/ingest/upload",
+            files={"file": ("../../etc/passwd.txt", b"root", "text/plain")},
+        )
+
+        assert resp.status_code == 200
+        staged = list(tmp_path.iterdir())
+        assert len(staged) == 1
+        assert staged[0].parent == tmp_path
+        assert staged[0].name.endswith("_passwd.txt")
+        assert ".." not in staged[0].name
+
+    def test_upload_requires_api_key(self, app, tmp_path, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from grimoire.api.dependencies import get_db_session
+
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+
+        async def override_db():
+            yield AsyncMock()
+
+        app.dependency_overrides[get_db_session] = override_db
+        try:
+            with TestClient(app, raise_server_exceptions=False) as unauth:
+                resp = unauth.post(
+                    "/api/v1/ingest/upload",
+                    files={"file": ("notes.md", b"# hello", "text/markdown")},
+                )
+            assert resp.status_code == 401
+        finally:
+            app.dependency_overrides.clear()
 
 
 # =============================================================================

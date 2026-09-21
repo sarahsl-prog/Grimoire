@@ -39,6 +39,7 @@ dependencies = [
     "httpx>=0.27",
     "aiofiles>=23.2",
     "python-magic>=0.4",
+    "python-multipart>=0.0.9",
     "aiohttp>=3.9",
     "rich>=13.0",
     "pyyaml>=6.0",
