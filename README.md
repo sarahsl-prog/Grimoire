@@ -98,6 +98,12 @@ troubleshooting. Both paths — bare-metal and Docker — are fully supported.
 # Run tests
 uv run pytest
 
+# Install with the GUI extra as well
+uv sync --extra dev --extra gui
+
+# Run the GUI tests headless
+QT_QPA_PLATFORM=offscreen uv run pytest tests/test_gui_*.py -v
+
 # Run linting
 uv run ruff check .
 
@@ -285,6 +291,12 @@ curl -X POST http://localhost:8001/api/v1/ingest/directory \
   -H "Content-Type: application/json" \
   -d '{"directory": "/path/to/docs", "recursive": true}'
 
+# Upload and ingest a file directly (no shared filesystem needed)
+curl -X POST http://localhost:8001/api/v1/ingest/upload \
+  -H "X-API-Key: $GRIMOIRE_API_KEY" \
+  -F "file=@/path/to/document.pdf" \
+  -F "auto_tag=true"
+
 # List documents
 curl http://localhost:8001/api/v1/documents
 
@@ -296,6 +308,43 @@ curl -X POST http://localhost:8001/api/v1/generate \
 # List categories
 curl http://localhost:8001/api/v1/categories
 ```
+
+### Desktop GUI
+
+A PySide6 desktop client with four tabs: Search/Ask, Recent ingests,
+drag-and-drop ingest, and a CLI runner.
+
+```bash
+# Install the optional GUI dependencies
+uv sync --extra gui
+
+# Point it at an API and launch
+export GRIMOIRE_API_URL=http://localhost:8001   # default
+export GRIMOIRE_API_KEY=grim_dvl_...            # required
+grimoire-gui
+```
+
+The GUI is a thin HTTP client: it talks to the REST API and never imports the
+ingestion pipeline, so it starts in a second and works identically against a
+bare-metal API or the containerized stack. Drag-and-drop uses the same
+`POST /api/v1/ingest/upload` endpoint documented above, so the GUI and the API
+do **not** need to share a filesystem.
+
+An API key pasted into the connection bar is kept in memory for that session
+only; nothing writes it to disk. Set `GRIMOIRE_API_KEY` in `.env` to avoid
+retyping it.
+
+**On WSL2 the GUI needs WSLg** (shipped with Windows 11). Check with
+`echo "$DISPLAY $WAYLAND_DISPLAY"` — if both are empty, no window can open.
+Qt picks the `wayland` platform plugin under WSLg; forcing
+`QT_QPA_PLATFORM=xcb` (e.g. for X11 forwarding) fails here because
+`libxcb-cursor0` isn't installed — `sudo apt install libxcb-cursor0` first.
+
+The CLI tab runs a fixed set of read-only commands (`status`, `status
+--detailed`, `search`, `ask`, `docs`, `config show`, `cache stats`,
+`categories list`). Anything that issues
+credentials, migrates the schema, or starts a daemon stays in a terminal by
+design.
 
 ### MCP (Model Context Protocol)
 

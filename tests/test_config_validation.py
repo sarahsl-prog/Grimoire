@@ -1063,3 +1063,29 @@ def test_config_export_json() -> None:
     assert isinstance(data, dict)
     assert "llm" in data
     assert "database" in data
+
+
+class TestAPIConfigUploads:
+    """Upload staging configuration on APIConfig."""
+
+    def test_upload_defaults(self) -> None:
+        from grimoire.config.settings import APIConfig
+
+        cfg = APIConfig()
+        assert cfg.upload_dir == Path("uploads")
+        assert cfg.max_upload_bytes == 100 * 1024 * 1024
+
+    def test_upload_dir_accepts_absolute_path(self) -> None:
+        from grimoire.config.settings import APIConfig
+
+        cfg = APIConfig(upload_dir=Path("/app/uploads"))
+        assert cfg.upload_dir == Path("/app/uploads")
+
+    def test_max_upload_bytes_rejects_zero(self) -> None:
+        from pydantic import ValidationError
+
+        from grimoire.config.settings import APIConfig
+
+        with pytest.raises(ValidationError) as exc_info:
+            APIConfig(max_upload_bytes=0)
+        assert "greater than or equal to 1" in str(exc_info.value)

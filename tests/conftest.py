@@ -121,3 +121,20 @@ async def async_context() -> AsyncGenerator[dict[str, Any], None]:
     finally:
         # Cleanup
         context.clear()
+
+
+# =============================================================================
+# Qt Fixtures
+# =============================================================================
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _qt_offscreen() -> None:
+    """Force Qt's offscreen platform so GUI tests run headless in CI.
+
+    Set before any QApplication is constructed; pytest-qt reads it when it
+    creates the app for the first qtbot fixture.
+    """
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
