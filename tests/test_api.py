@@ -22,6 +22,7 @@ from grimoire.api.main import create_app
 from grimoire.db.models import ApiKey, ApiKeyTier
 
 _DEPS = "grimoire.api.dependencies"
+_ROUTES_MAIN = "grimoire.api.main"
 _ROUTES_INGEST = "grimoire.api.routes.ingest"
 _ROUTES_QUERY = "grimoire.api.routes.query"
 _ROUTES_GENERATE = "grimoire.api.routes.generate"
@@ -215,6 +216,80 @@ class TestIngestAPI:
         mock_agent.ingest_file.assert_awaited_once()
         assert mock_agent.ingest_file.await_args.kwargs["auto_tag"] is False
 
+    @patch(f"{_ROUTES_INGEST}.get_ingestion_agent")
+    def test_upload_unlinks_staged_copy_when_agent_result_is_skipped(
+        self, mock_get_agent, client, tmp_path, monkeypatch
+    ):
+        """A skipped (deduplicated) upload must not leak its staged copy.
+
+        Dedup returns without creating a Document row; the pre-existing
+        document's source_path already points at the ORIGINAL file, so the
+        newly staged copy this request just wrote is referenced by nothing.
+        Left alone it would sit on the uploads volume forever, and
+        re-dragging the same file is the ordinary case, not an edge case.
+        """
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+        mock_agent = MagicMock()
+        mock_result = MagicMock()
+        # `.status` must be set explicitly, not just inferred from
+        # `model_dump.return_value`: the route reads `result.status`
+        # directly (before it ever calls `.model_dump()`) to decide
+        # whether to unlink the staged copy.
+        mock_result.status = "skipped"
+        mock_result.model_dump.return_value = {
+            "file_path": "staged",
+            "document_id": "doc-existing",
+            "status": "skipped",
+            "chunks_created": 0,
+            "vectors_stored": 0,
+            "tags_applied": 0,
+            "error_message": None,
+            "duration_ms": 5,
+        }
+        mock_agent.ingest_file = AsyncMock(return_value=mock_result)
+        mock_get_agent.return_value = mock_agent
+
+        resp = client.post(
+            "/api/v1/ingest/upload",
+            files={"file": ("dup.md", b"# hello", "text/markdown")},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "skipped"
+        assert list(tmp_path.iterdir()) == [], "skipped upload must not orphan a file"
+
+    @patch(f"{_ROUTES_INGEST}.get_ingestion_agent")
+    def test_upload_keeps_staged_copy_when_agent_result_is_completed(
+        self, mock_get_agent, client, tmp_path, monkeypatch
+    ):
+        """A completed result's Document.source_path points at the staged
+        file, so - unlike "skipped" - it must be left in place.
+        """
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+        mock_agent = MagicMock()
+        mock_result = MagicMock()
+        mock_result.status = "completed"
+        mock_result.model_dump.return_value = {
+            "file_path": "staged",
+            "document_id": "doc-new",
+            "status": "completed",
+            "chunks_created": 2,
+            "vectors_stored": 2,
+            "tags_applied": 0,
+            "error_message": None,
+            "duration_ms": 5,
+        }
+        mock_agent.ingest_file = AsyncMock(return_value=mock_result)
+        mock_get_agent.return_value = mock_agent
+
+        resp = client.post(
+            "/api/v1/ingest/upload",
+            files={"file": ("new.md", b"# hello", "text/markdown")},
+        )
+
+        assert resp.status_code == 200
+        assert len(list(tmp_path.iterdir())) == 1, "completed upload stays staged"
+
     def test_upload_rejects_unsupported_extension(self, client, tmp_path, monkeypatch):
         monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
 
@@ -228,8 +303,18 @@ class TestIngestAPI:
         assert list(tmp_path.iterdir()) == []
 
     def test_upload_rejects_oversized_file(self, client, tmp_path, monkeypatch):
+        """A file over the cap must be rejected and its partial write removed.
+
+        `_UPLOAD_CHUNK_BYTES` is patched down to 4 bytes: at the default
+        1 MB chunk size, a 4096-byte body is smaller than one chunk, so the
+        very first `handle.write` never runs and this test would only prove
+        that an empty freshly-created file gets unlinked. Forcing several
+        real chunks makes this prove a genuine multi-chunk PARTIAL write
+        (some bytes already on disk) is removed, not just an empty file.
+        """
         monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
         monkeypatch.setattr(f"{_ROUTES_INGEST}._max_upload_bytes", lambda: 8)
+        monkeypatch.setattr(f"{_ROUTES_INGEST}._UPLOAD_CHUNK_BYTES", 4)
 
         resp = client.post(
             "/api/v1/ingest/upload",
@@ -305,6 +390,58 @@ class TestIngestAPI:
         assert staged[0].name.endswith("_passwd.txt")
         assert ".." not in staged[0].name
 
+    def test_content_length_guard_rejects_oversized_declared_body_before_routing(
+        self, client, tmp_path, monkeypatch
+    ):
+        """A declared Content-Length over the cap must be rejected by the
+        middleware alone, before FastAPI parses the multipart body at all.
+
+        Only `_upload_cap_with_margin` is patched here - `_staging_dir` and
+        `_max_upload_bytes` (ingest.py's own streaming guard) are left at
+        their real values, so a 413 here can only come from the new
+        Content-Length middleware, not from `_stream_upload_to_disk`.
+        """
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+        monkeypatch.setattr(f"{_ROUTES_MAIN}._upload_cap_with_margin", lambda: 8)
+
+        resp = client.post(
+            "/api/v1/ingest/upload",
+            files={"file": ("big.txt", b"x" * 4096, "text/plain")},
+        )
+
+        assert resp.status_code == 413
+        assert list(tmp_path.iterdir()) == [], "nothing must be staged"
+
+    def test_content_length_guard_allows_a_normal_small_upload(
+        self, client, tmp_path, monkeypatch
+    ):
+        """The guard must not interfere with an ordinary upload under the cap."""
+        monkeypatch.setattr(_upload_dir_patch_target(), lambda: tmp_path)
+
+        with patch(f"{_ROUTES_INGEST}.get_ingestion_agent") as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_result = MagicMock()
+            mock_result.model_dump.return_value = {
+                "file_path": "staged",
+                "document_id": "doc-3",
+                "status": "completed",
+                "chunks_created": 1,
+                "vectors_stored": 1,
+                "tags_applied": 0,
+                "error_message": None,
+                "duration_ms": 10,
+            }
+            mock_agent.ingest_file = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            resp = client.post(
+                "/api/v1/ingest/upload",
+                files={"file": ("notes.md", b"# hello", "text/markdown")},
+            )
+
+        assert resp.status_code == 200
+        assert len(list(tmp_path.iterdir())) == 1
+
     def test_upload_requires_api_key(self, app, tmp_path, monkeypatch):
         from fastapi.testclient import TestClient
 
@@ -323,8 +460,110 @@ class TestIngestAPI:
                     files={"file": ("notes.md", b"# hello", "text/markdown")},
                 )
             assert resp.status_code == 401
+            assert (
+                list(tmp_path.iterdir()) == []
+            ), "unauthenticated upload must not stage"
         finally:
             app.dependency_overrides.clear()
+
+
+class TestContentLengthGuard:
+    """Unit-level tests for the middleware directly, independent of the app.
+
+    These isolate the property that matters most: an oversized request
+    never reaches `call_next` at all, i.e. it never reaches routing or
+    FastAPI's whole-body multipart parsing.
+    """
+
+    @staticmethod
+    def _request(headers: dict[str, str], path: str = "/api/v1/ingest/upload"):
+        from starlette.requests import Request
+
+        raw_headers = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": path,
+            "headers": raw_headers,
+        }
+        return Request(scope)
+
+    async def test_rejects_and_never_calls_next_when_over_cap(self, monkeypatch):
+        from grimoire.api.main import _content_length_guard
+
+        monkeypatch.setattr(f"{_ROUTES_MAIN}._upload_cap_with_margin", lambda: 100)
+        called = False
+
+        async def call_next(_request):
+            nonlocal called
+            called = True
+            raise AssertionError("call_next must not run for an oversized request")
+
+        response = await _content_length_guard(
+            self._request({"content-length": "999999"}), call_next
+        )
+
+        assert response.status_code == 413
+        assert called is False
+
+    async def test_calls_next_when_under_cap(self, monkeypatch):
+        from starlette.responses import PlainTextResponse
+
+        from grimoire.api.main import _content_length_guard
+
+        monkeypatch.setattr(f"{_ROUTES_MAIN}._upload_cap_with_margin", lambda: 100)
+
+        async def call_next(_request):
+            return PlainTextResponse("ok")
+
+        response = await _content_length_guard(
+            self._request({"content-length": "10"}), call_next
+        )
+
+        assert response.status_code == 200
+
+    async def test_missing_content_length_falls_through_to_call_next(self):
+        from starlette.responses import PlainTextResponse
+
+        from grimoire.api.main import _content_length_guard
+
+        async def call_next(_request):
+            return PlainTextResponse("ok")
+
+        response = await _content_length_guard(self._request({}), call_next)
+
+        assert response.status_code == 200
+
+    async def test_unparseable_content_length_falls_through_to_call_next(self):
+        from starlette.responses import PlainTextResponse
+
+        from grimoire.api.main import _content_length_guard
+
+        async def call_next(_request):
+            return PlainTextResponse("ok")
+
+        response = await _content_length_guard(
+            self._request({"content-length": "not-a-number"}), call_next
+        )
+
+        assert response.status_code == 200
+
+    async def test_other_paths_are_not_capped(self, monkeypatch):
+        from starlette.responses import PlainTextResponse
+
+        from grimoire.api.main import _content_length_guard
+
+        monkeypatch.setattr(f"{_ROUTES_MAIN}._upload_cap_with_margin", lambda: 100)
+
+        async def call_next(_request):
+            return PlainTextResponse("ok")
+
+        response = await _content_length_guard(
+            self._request({"content-length": "999999"}, path="/api/v1/query/ask"),
+            call_next,
+        )
+
+        assert response.status_code == 200
 
 
 # =============================================================================

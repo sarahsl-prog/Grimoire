@@ -221,6 +221,15 @@ async def ingest_upload(
 
     agent = get_ingestion_agent()
     result = await agent.ingest_file(db, str(destination), auto_tag=auto_tag)
+    if result.status == "skipped":
+        # A skipped result means the agent deduplicated against a
+        # pre-existing Document whose source_path already points at the
+        # ORIGINAL file, not this one - so nothing references the copy just
+        # staged here. Unlike "completed"/"failed", which create a Document
+        # row whose source_path IS this destination, a skipped upload would
+        # otherwise leak the staged copy on the (non-rebuildable) uploads
+        # volume forever, every time the same file is re-dragged.
+        _safe_unlink(destination)
     return IngestResultResponse(**result.model_dump())
 
 

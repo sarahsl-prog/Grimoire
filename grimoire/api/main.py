@@ -2,14 +2,78 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from grimoire.api.routes import categories, documents, generate, ingest, query, watch
+
+# FastAPI resolves an `UploadFile = File(...)` parameter by parsing the
+# ENTIRE multipart body before the route handler's first line runs, so
+# ingest.py's own streaming byte counter only bounds what gets STAGED to
+# disk, not what gets RECEIVED - an oversized body is already spooled by
+# the time that guard sees it. This margin absorbs the multipart framing
+# around a file's raw bytes (boundary markers, per-part headers, trailing
+# CRLFs) that isn't part of the file itself, so a request whose file is
+# exactly at the configured cap isn't rejected for its envelope.
+_MULTIPART_FRAMING_MARGIN_BYTES = 8 * 1024
+
+_UPLOAD_PATH_SUFFIX = "/ingest/upload"
+
+
+def _upload_cap_with_margin() -> int:
+    """Configured upload cap plus the multipart-framing margin.
+
+    Patched in tests, mirroring ingest.py's ``_max_upload_bytes``.
+    """
+    from grimoire.config.settings import get_settings
+
+    return int(get_settings().api.max_upload_bytes) + _MULTIPART_FRAMING_MARGIN_BYTES
+
+
+async def _content_length_guard(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Reject an oversized upload by its Content-Length header alone.
+
+    This must run before routing/body parsing - it is registered as the
+    outermost middleware (added last; Starlette wraps in LIFO order) so it
+    sees the request before FastAPI ever resolves the route's ``UploadFile``
+    parameter. Scoped to the upload path only: every other endpoint takes a
+    small JSON body, so applying the same cap there would be meaningless
+    weight on every request for no protection gained.
+
+    A missing or unparseable Content-Length must not block the request:
+    that just means this fast-path guard does not apply, and ingest.py's
+    existing streaming guard (``_stream_upload_to_disk``) still bounds the
+    bytes actually received for those requests.
+    """
+    if request.method == "POST" and request.url.path.endswith(_UPLOAD_PATH_SUFFIX):
+        declared = request.headers.get("content-length")
+        if declared is not None:
+            try:
+                declared_bytes = int(declared)
+            except ValueError:
+                declared_bytes = None
+            if (
+                declared_bytes is not None
+                and declared_bytes > _upload_cap_with_margin()
+            ):
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": (
+                            "Request body exceeds the maximum upload size of "
+                            f"{_upload_cap_with_margin()} bytes"
+                        )
+                    },
+                )
+    return await call_next(request)
 
 
 @asynccontextmanager
@@ -58,6 +122,13 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Added last so it is the OUTERMOST middleware (Starlette wraps
+    # add_middleware calls in LIFO order - see _content_length_guard's
+    # docstring): it must see every request before CORS, rate limiting, or
+    # routing get anywhere near it, so an oversized upload never reaches
+    # FastAPI's whole-body multipart parsing.
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_content_length_guard)
 
     # API routes
     app.include_router(ingest.router, prefix="/api/v1")
