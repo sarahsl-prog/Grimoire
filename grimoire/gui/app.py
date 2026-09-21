@@ -57,6 +57,11 @@ class MainWindow(QMainWindow):
         self.search_tab = SearchTab(self.client, self.pool, self.show_error)
         self.tabs.addTab(self.search_tab, "Search / Ask")
 
+        from grimoire.gui.widgets.recent_tab import RecentTab
+
+        self.recent_tab = RecentTab(self.client, self.pool, self.show_error)
+        self.tabs.addTab(self.recent_tab, "Recent ingests")
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
