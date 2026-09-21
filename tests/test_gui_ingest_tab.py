@@ -9,12 +9,13 @@ import pytest
 
 pytest.importorskip("PySide6", reason="GUI extra not installed")
 
-from PySide6.QtCore import QThreadPool  # noqa: E402
+from PySide6.QtCore import QMimeData, QPoint, Qt, QThreadPool, QUrl  # noqa: E402
+from PySide6.QtGui import QDragEnterEvent  # noqa: E402
 
 from grimoire.api.schemas import IngestResultResponse  # noqa: E402
 from grimoire.gui.config import GuiConfig  # noqa: E402
 from grimoire.gui.errors import RequestRejected  # noqa: E402
-from grimoire.gui.widgets.ingest_tab import IngestTab  # noqa: E402
+from grimoire.gui.widgets.ingest_tab import DropZone, IngestTab  # noqa: E402
 
 
 class _StubClient:
@@ -88,6 +89,54 @@ class TestQueueFiltering:
         qtbot.waitUntil(lambda: bool(_statuses(tab)), timeout=3000)
 
         assert client.uploaded == []
+
+
+def _drag_enter_event(urls: list[QUrl]) -> QDragEnterEvent:
+    mime = QMimeData()
+    mime.setUrls(urls)
+    event = QDragEnterEvent(
+        QPoint(0, 0),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    # QDragEnterEvent does not keep `mime` alive from Python's side, so
+    # without a reference held here it can be garbage-collected while the
+    # event (which only wraps a C++ pointer to it) is still in use -
+    # reproduced as a segfault, not a Python exception.
+    event._mime = mime  # type: ignore[attr-defined]
+    return event
+
+
+class TestDropZoneDragFiltering:
+    """A drag that carries no local file must not show the copy cursor.
+
+    Before this fix, `dragEnterEvent` accepted any `hasUrls()` drag - true
+    even for a URL dragged out of a browser tab - so the cursor promised a
+    drop that `dropEvent`'s own `isLocalFile()` filter would then silently
+    do nothing with.
+    """
+
+    def test_non_local_url_is_not_accepted(self, qtbot) -> None:
+        zone = DropZone()
+        qtbot.addWidget(zone)
+        event = _drag_enter_event([QUrl("https://example.com/report.pdf")])
+
+        zone.dragEnterEvent(event)
+
+        assert not event.isAccepted()
+
+    def test_local_file_url_is_accepted(self, qtbot, tmp_path) -> None:
+        zone = DropZone()
+        qtbot.addWidget(zone)
+        sample = tmp_path / "a.md"
+        sample.write_text("a")
+        event = _drag_enter_event([QUrl.fromLocalFile(str(sample))])
+
+        zone.dragEnterEvent(event)
+
+        assert event.isAccepted()
 
 
 class TestShutdown:

@@ -54,8 +54,15 @@ class DropZone(QFrame):
         layout.addWidget(label)
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
-        """Accept the drag only when it carries local files."""
-        if event.mimeData().hasUrls():
+        """Accept the drag only when it carries at least one local file.
+
+        `hasUrls()` alone is also true for a URL dragged out of a browser
+        (a non-local, non-file URL): accepting that shows the copy cursor
+        and then dropEvent's own `isLocalFile()` filter silently drops
+        everything, producing exactly the "a file that vanishes from a
+        drop" confusion this tab's docstring says it exists to prevent.
+        """
+        if any(url.isLocalFile() for url in event.mimeData().urls()):
             event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
