@@ -47,16 +47,25 @@ class GrimoireClient:
 
     def __init__(self, config: GuiConfig) -> None:
         self.config = config
-        self._http = httpx.Client(
-            base_url=config.base_url,
-            headers=self._headers(config),
-            timeout=httpx.Timeout(
-                connect=config.connect_timeout,
-                read=config.read_timeout,
-                write=config.read_timeout,
-                pool=config.connect_timeout,
-            ),
-        )
+        try:
+            self._http = httpx.Client(
+                base_url=config.base_url,
+                headers=self._headers(config),
+                timeout=httpx.Timeout(
+                    connect=config.connect_timeout,
+                    read=config.read_timeout,
+                    write=config.read_timeout,
+                    pool=config.connect_timeout,
+                ),
+            )
+        except httpx.InvalidURL as exc:
+            # httpx.InvalidURL does not subclass httpx.HTTPError, so _request's
+            # translation never sees it - a malformed base_url must be caught
+            # here instead, since Task 6 constructs a client at startup and
+            # whenever a pasted API key changes.
+            raise ConnectionFailed(
+                f"Invalid Grimoire API URL: {config.base_url}"
+            ) from exc
 
     @staticmethod
     def _headers(config: GuiConfig) -> dict[str, str]:
@@ -89,7 +98,7 @@ class GrimoireClient:
             "POST",
             f"{_API_PREFIX}/query/ask",
             json=payload,
-            timeout=self.config.long_read_timeout,
+            timeout=self._long_timeout(),
         )
         return self._parse(response, QueryResponse)
 
@@ -117,17 +126,37 @@ class GrimoireClient:
         obviously doomed upload costs nothing and reports immediately.
         """
         self._preflight_upload(path)
-        with path.open("rb") as handle:
+        try:
+            handle = path.open("rb")
+        except OSError as exc:
+            # TOCTOU: _preflight_upload's is_file() check and this open() are
+            # not atomic - the file can vanish or lose permissions in between.
+            raise RequestRejected(
+                f"Could not read {path.name}: {exc.strerror}"
+            ) from exc
+        with handle:
             response = self._request(
                 "POST",
                 f"{_API_PREFIX}/ingest/upload",
                 files={"file": (path.name, handle, "application/octet-stream")},
                 data={"auto_tag": "true" if auto_tag else "false"},
-                timeout=self.config.long_read_timeout,
+                timeout=self._long_timeout(),
             )
         return self._parse(response, IngestResultResponse)
 
     # -- internals ---------------------------------------------------------
+
+    def _long_timeout(self) -> httpx.Timeout:
+        """Timeout for slow endpoints (LLM generation, document parsing).
+
+        A bare float widens every phase - including connect - to the long
+        read timeout, which would make the client hang for minutes trying to
+        reach a dead server instead of failing fast.  Only read/write/pool
+        should be long; connect stays governed by connect_timeout.
+        """
+        return httpx.Timeout(
+            self.config.long_read_timeout, connect=self.config.connect_timeout
+        )
 
     def _preflight_upload(self, path: Path) -> None:
         """Reject a file the server is certain to refuse."""

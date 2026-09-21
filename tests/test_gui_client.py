@@ -6,6 +6,9 @@ display server.
 
 from __future__ import annotations
 
+import os
+from typing import Any
+
 import httpx
 import pytest
 
@@ -277,3 +280,85 @@ class TestUploadPreflight:
         with pytest.raises(RequestRejected) as exc:
             client.upload(sample)
         assert ".exe" in exc.value.message
+
+    def test_rejects_a_file_that_becomes_unreadable_after_preflight(
+        self, client, tmp_path
+    ) -> None:
+        # TOCTOU: is_file() passes preflight, but the actual open() can still
+        # fail (permissions changed, file removed by another process). That
+        # must surface as RequestRejected, not a raw OSError.
+        if os.geteuid() == 0:
+            pytest.skip("root bypasses file permission checks")
+        sample = tmp_path / "vanishing.md"
+        sample.write_text("# hello")
+        sample.chmod(0o000)
+        try:
+            with pytest.raises(RequestRejected) as exc:
+                client.upload(sample)
+            assert sample.name in exc.value.message
+        finally:
+            sample.chmod(0o644)
+
+
+class TestTimeouts:
+    """A bare float widens every phase - including connect - to the long
+    read timeout, so the client would hang for minutes reaching a dead
+    server instead of failing fast.  These capture the actual timeout object
+    handed to httpx, rather than relying on wire-level timing.
+    """
+
+    def test_ask_keeps_connect_timeout_short(self, config, monkeypatch) -> None:
+        captured: dict[str, Any] = {}
+        original_request = httpx.Client.request
+
+        def spy(self: httpx.Client, method: str, url: str, **kwargs: Any):
+            captured["timeout"] = kwargs.get("timeout")
+            return original_request(self, method, url, **kwargs)
+
+        monkeypatch.setattr(httpx.Client, "request", spy)
+        client = GrimoireClient(config)
+        try:
+            # testapi:8001 does not resolve, so this fails fast regardless
+            # of the timeout value - only the captured kwarg is asserted on.
+            with pytest.raises(ConnectionFailed):
+                client.ask("q")
+        finally:
+            client.close()
+
+        timeout = captured["timeout"]
+        assert timeout.connect == config.connect_timeout
+        assert timeout.read == config.long_read_timeout
+
+    def test_upload_keeps_connect_timeout_short(
+        self, config, monkeypatch, tmp_path
+    ) -> None:
+        captured: dict[str, Any] = {}
+        original_request = httpx.Client.request
+
+        def spy(self: httpx.Client, method: str, url: str, **kwargs: Any):
+            captured["timeout"] = kwargs.get("timeout")
+            return original_request(self, method, url, **kwargs)
+
+        monkeypatch.setattr(httpx.Client, "request", spy)
+        sample = tmp_path / "notes.md"
+        sample.write_text("# hello")
+        client = GrimoireClient(config)
+        try:
+            with pytest.raises(ConnectionFailed):
+                client.upload(sample)
+        finally:
+            client.close()
+
+        timeout = captured["timeout"]
+        assert timeout.connect == config.connect_timeout
+        assert timeout.read == config.long_read_timeout
+
+
+class TestClientConstruction:
+    def test_malformed_base_url_raises_connection_failed(self) -> None:
+        # httpx.InvalidURL does not subclass httpx.HTTPError, so it would
+        # otherwise escape __init__ as a raw exception.
+        cfg = GuiConfig(base_url="http://[::1", api_key="k")
+        with pytest.raises(ConnectionFailed) as exc:
+            GrimoireClient(cfg)
+        assert "[::1" in exc.value.message
