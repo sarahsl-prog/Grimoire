@@ -111,5 +111,16 @@ def run_api_call(
     # `done` fires from a `finally` after finished/failed regardless of
     # outcome, so the worker is released even if on_ok/on_err itself
     # raises. `discard` (vs `remove`) makes the cleanup idempotent.
+    #
+    # Thread safety: this lambda runs on the pool thread that emits `done`,
+    # but `WorkerSignals` was constructed on the GUI thread, and Qt's
+    # AutoConnection compares the SIGNAL OWNER's thread affinity against
+    # the emitting thread - not the receiver's - so the connection is
+    # queued regardless of the slot being a plain lambda. The discard is
+    # therefore always run on the GUI thread by its single event loop, and
+    # queued delivery is FIFO, so `finished`/`failed` always reach on_ok/
+    # on_err before `done` releases the reference. No lock needed here;
+    # don't add one, and don't copy this pattern where that affinity
+    # guarantee doesn't hold.
     worker.signals.done.connect(lambda: _active_workers.discard(worker))
     pool.start(worker)

@@ -112,6 +112,15 @@ class TestRunApiCall:
 
         run_api_call(pool, lambda: "done", results.append, lambda _e: None)
 
+        # `run_api_call` adds to `_active_workers` synchronously, before
+        # `pool.start()`; the cross-thread `done` connection is queued and
+        # cannot be delivered until we hand control back to the event loop
+        # below, so this is not a race. Asserting non-empty here - not just
+        # empty again at the end - is the point: without the `.add(...)`
+        # call, the set would be empty throughout and the final assert
+        # alone would pass vacuously.
+        assert len(_active_workers) >= 1
+
         qtbot.waitUntil(lambda: bool(results), timeout=3000)
         qtbot.waitUntil(lambda: not _active_workers, timeout=3000)
         assert _active_workers == set()
@@ -124,6 +133,10 @@ class TestRunApiCall:
         pool = QThreadPool()
 
         run_api_call(pool, boom, lambda _r: None, errors.append)
+
+        # See test_active_workers_set_is_empty_after_success for why this
+        # assertion is deterministic, not a race.
+        assert len(_active_workers) >= 1
 
         qtbot.waitUntil(lambda: bool(errors), timeout=3000)
         qtbot.waitUntil(lambda: not _active_workers, timeout=3000)
