@@ -16,6 +16,16 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **Desktop GUI** (`grimoire-gui`, `uv sync --extra gui`) – a PySide6 client
+  with Search/Ask (including source chunk inspection), recent ingests,
+  drag-and-drop ingest, and a read-only CLI runner. It is a thin HTTP client
+  over the REST API and never imports the ingestion pipeline.
+- `POST /api/v1/ingest/upload` – multipart upload that stages the file
+  server side, so ingestion no longer requires a shared filesystem between
+  the client and the API.
+  - New `GRIMOIRE_API__UPLOAD_DIR` and `GRIMOIRE_API__MAX_UPLOAD_BYTES`
+    settings, and an `app_uploads` named volume in `docker-compose.yml` to
+    persist staged uploads across restarts.
 - **Container image and Compose services** – `Dockerfile` builds a
   multi-stage `grimoire:latest` image (CPU torch by default); `api`,
   `mcp`, `watcher`, and a one-shot `db-migrate` service run it in
