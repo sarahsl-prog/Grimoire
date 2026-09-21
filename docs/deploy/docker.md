@@ -176,7 +176,8 @@ Run `grimoire status --detailed` to check for exactly this: it prints which
 vector store backend is active (`chromadb (embedded, path=...)` vs
 `chromadb (remote host:port)`) and compares the Postgres chunk count against
 the live embedding count in that backend, flagging a `WARNING` when they
-drift apart.
+drift apart. The same `--detailed` run also reports cache backend stats
+(disk or Redis, whichever `GRIMOIRE_CACHE__STORAGE` is set to).
 
 ## Troubleshooting
 

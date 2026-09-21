@@ -1023,6 +1023,81 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "Vector store: unreachable" in result.output
 
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.CacheFactory")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_redis_cache(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_factory: MagicMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store_cls.return_value = mock_store
+
+        mock_cache = AsyncMock()
+        mock_cache.client.info = AsyncMock(
+            return_value={"redis_version": "7.2.0", "connected_clients": 3}
+        )
+        mock_factory.create.return_value = mock_cache
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "Cache (redis)" in result.output
+        assert "7.2.0" in result.output
+        assert "3" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.CacheFactory")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_redis_cache_error_is_swallowed(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_factory: MagicMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store_cls.return_value = mock_store
+
+        mock_cache = AsyncMock()
+        mock_cache.client.info = AsyncMock(side_effect=ConnectionError("refused"))
+        mock_factory.create.return_value = mock_cache
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+
 
 class TestVectorStoreSummary:
     """Test the _vector_store_summary status helper."""

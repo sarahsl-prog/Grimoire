@@ -137,6 +137,19 @@ async def status(ctx: click.Context, detailed: bool) -> None:
                     click.echo("\n  Cache:")
                     click.echo(f"    Size:     {stats.get('size', 0)} items")
                     click.echo(f"    Disk:     {stats.get('volume', 0)} bytes")
+                else:
+                    # Redis cache -- same fields `grimoire cache stats` reports
+                    # for this backend, so --detailed doesn't go quiet on it.
+                    info = (
+                        await cache.client.info() if hasattr(cache, "client") else {}
+                    )
+                    click.echo("\n  Cache (redis):")
+                    click.echo(
+                        f"    Version:  {info.get('redis_version', 'Unknown')}"
+                    )
+                    click.echo(
+                        f"    Clients:  {info.get('connected_clients', 'Unknown')}"
+                    )
             except Exception as e:
                 # A status command should say why it could not read cache stats.
                 logger.debug(f"Could not read cache stats: {e}")
