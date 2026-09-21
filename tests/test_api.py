@@ -471,99 +471,281 @@ class TestContentLengthGuard:
     """Unit-level tests for the middleware directly, independent of the app.
 
     These isolate the property that matters most: an oversized request
-    never reaches `call_next` at all, i.e. it never reaches routing or
-    FastAPI's whole-body multipart parsing.
+    never reaches the wrapped ASGI app at all, i.e. it never reaches
+    routing or FastAPI's whole-body multipart parsing. They also pin down
+    the pure-ASGI property that motivated the rewrite away from
+    `BaseHTTPMiddleware`: a non-upload request is forwarded with its
+    original `receive`/`send` untouched, never wrapped.
     """
 
     @staticmethod
-    def _request(headers: dict[str, str], path: str = "/api/v1/ingest/upload"):
-        from starlette.requests import Request
-
+    def _scope(
+        headers: dict[str, str],
+        path: str = "/api/v1/ingest/upload",
+        method: str = "POST",
+        scope_type: str = "http",
+    ) -> dict:
         raw_headers = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
-        scope = {
-            "type": "http",
-            "method": "POST",
+        return {
+            "type": scope_type,
+            "method": method,
             "path": path,
             "headers": raw_headers,
         }
-        return Request(scope)
 
-    async def test_rejects_and_never_calls_next_when_over_cap(self, monkeypatch):
-        from grimoire.api.main import _content_length_guard
+    @staticmethod
+    async def _receive() -> dict:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    @staticmethod
+    def _capture_send() -> tuple[list[dict], object]:
+        messages: list[dict] = []
+
+        async def send(message: dict) -> None:
+            messages.append(message)
+
+        return messages, send
+
+    async def test_rejects_and_never_calls_downstream_app_when_over_cap(
+        self, monkeypatch
+    ):
+        from grimoire.api.main import ContentLengthGuard
 
         monkeypatch.setattr(f"{_ROUTES_MAIN}._upload_cap_with_margin", lambda: 100)
         called = False
 
-        async def call_next(_request):
+        async def downstream(scope, receive, send):
             nonlocal called
             called = True
-            raise AssertionError("call_next must not run for an oversized request")
+            raise AssertionError("downstream app must not run for an oversized body")
 
-        response = await _content_length_guard(
-            self._request({"content-length": "999999"}), call_next
-        )
+        guard = ContentLengthGuard(downstream)
+        messages, send = self._capture_send()
 
-        assert response.status_code == 413
+        await guard(self._scope({"content-length": "999999"}), self._receive, send)
+
         assert called is False
+        start = next(m for m in messages if m["type"] == "http.response.start")
+        assert start["status"] == 413
 
-    async def test_calls_next_when_under_cap(self, monkeypatch):
+    async def test_calls_downstream_app_when_under_cap(self, monkeypatch):
         from starlette.responses import PlainTextResponse
 
-        from grimoire.api.main import _content_length_guard
+        from grimoire.api.main import ContentLengthGuard
 
         monkeypatch.setattr(f"{_ROUTES_MAIN}._upload_cap_with_margin", lambda: 100)
 
-        async def call_next(_request):
-            return PlainTextResponse("ok")
+        async def downstream(scope, receive, send):
+            await PlainTextResponse("ok")(scope, receive, send)
 
-        response = await _content_length_guard(
-            self._request({"content-length": "10"}), call_next
-        )
+        guard = ContentLengthGuard(downstream)
+        messages, send = self._capture_send()
 
-        assert response.status_code == 200
+        await guard(self._scope({"content-length": "10"}), self._receive, send)
 
-    async def test_missing_content_length_falls_through_to_call_next(self):
+        start = next(m for m in messages if m["type"] == "http.response.start")
+        assert start["status"] == 200
+
+    async def test_missing_content_length_falls_through_to_downstream_app(self):
         from starlette.responses import PlainTextResponse
 
-        from grimoire.api.main import _content_length_guard
+        from grimoire.api.main import ContentLengthGuard
 
-        async def call_next(_request):
-            return PlainTextResponse("ok")
+        async def downstream(scope, receive, send):
+            await PlainTextResponse("ok")(scope, receive, send)
 
-        response = await _content_length_guard(self._request({}), call_next)
+        guard = ContentLengthGuard(downstream)
+        messages, send = self._capture_send()
 
-        assert response.status_code == 200
+        await guard(self._scope({}), self._receive, send)
 
-    async def test_unparseable_content_length_falls_through_to_call_next(self):
+        start = next(m for m in messages if m["type"] == "http.response.start")
+        assert start["status"] == 200
+
+    async def test_unparseable_content_length_falls_through_to_downstream_app(self):
         from starlette.responses import PlainTextResponse
 
-        from grimoire.api.main import _content_length_guard
+        from grimoire.api.main import ContentLengthGuard
 
-        async def call_next(_request):
-            return PlainTextResponse("ok")
+        async def downstream(scope, receive, send):
+            await PlainTextResponse("ok")(scope, receive, send)
 
-        response = await _content_length_guard(
-            self._request({"content-length": "not-a-number"}), call_next
+        guard = ContentLengthGuard(downstream)
+        messages, send = self._capture_send()
+
+        await guard(
+            self._scope({"content-length": "not-a-number"}), self._receive, send
         )
 
-        assert response.status_code == 200
+        start = next(m for m in messages if m["type"] == "http.response.start")
+        assert start["status"] == 200
 
     async def test_other_paths_are_not_capped(self, monkeypatch):
         from starlette.responses import PlainTextResponse
 
-        from grimoire.api.main import _content_length_guard
+        from grimoire.api.main import ContentLengthGuard
 
         monkeypatch.setattr(f"{_ROUTES_MAIN}._upload_cap_with_margin", lambda: 100)
 
-        async def call_next(_request):
-            return PlainTextResponse("ok")
+        async def downstream(scope, receive, send):
+            await PlainTextResponse("ok")(scope, receive, send)
 
-        response = await _content_length_guard(
-            self._request({"content-length": "999999"}, path="/api/v1/query/ask"),
-            call_next,
+        guard = ContentLengthGuard(downstream)
+        messages, send = self._capture_send()
+
+        await guard(
+            self._scope({"content-length": "999999"}, path="/api/v1/query/ask"),
+            self._receive,
+            send,
         )
 
-        assert response.status_code == 200
+        start = next(m for m in messages if m["type"] == "http.response.start")
+        assert start["status"] == 200
+
+    async def test_non_http_scope_passes_through_untouched(self):
+        """A websocket or lifespan scope must never be inspected at all."""
+        from grimoire.api.main import ContentLengthGuard
+
+        seen_scope = None
+
+        async def downstream(scope, receive, send):
+            nonlocal seen_scope
+            seen_scope = scope
+
+        guard = ContentLengthGuard(downstream)
+        scope = self._scope({"content-length": "999999"}, scope_type="websocket")
+
+        await guard(scope, self._receive, self._capture_send()[1])
+
+        assert seen_scope is scope
+
+    async def test_non_upload_request_forwards_the_original_receive_and_send(self):
+        """The regression this middleware exists to avoid: `BaseHTTPMiddleware`
+        wraps every request's `receive`/`send` in its own caching layer, even
+        for traffic it does nothing with. A pure-ASGI implementation must
+        forward the exact same callables for anything that isn't an upload,
+        so a long-lived stream (like the MCP SSE endpoint) is never at risk
+        of that wrapping.
+        """
+        from grimoire.api.main import ContentLengthGuard
+
+        seen_receive = None
+        seen_send = None
+
+        async def downstream(scope, receive, send):
+            nonlocal seen_receive, seen_send
+            seen_receive = receive
+            seen_send = send
+
+        guard = ContentLengthGuard(downstream)
+        receive = self._receive
+        _messages, send = self._capture_send()
+
+        await guard(self._scope({}, path="/health", method="GET"), receive, send)
+
+        assert seen_receive is receive
+        assert seen_send is send
+
+    async def test_streaming_response_arrives_incrementally_through_the_guard(self):
+        """Regression check for the SSE-buffering concern, at the ASGI level.
+
+        `BaseHTTPMiddleware` collects a streaming response's generator via a
+        background task and a memory-object stream before the client sees
+        anything, which can break incremental delivery - a real risk for the
+        long-lived `/mcp/sse` stream mounted in this same app. A prior
+        version of this test tried to observe that through a real HTTP
+        client (`httpx.ASGITransport`), but that transport buffers the whole
+        response body itself before returning it, so the test deadlocked
+        regardless of the guard's behavior - it could not distinguish
+        buffering by the middleware from buffering by the transport.
+
+        Driving the guard directly at the ASGI level sidesteps that: the
+        downstream app emits an `http.response.body` with `more_body=True`,
+        then blocks on an event, then sends the final body message. If
+        `ContentLengthGuard` forwarded messages as they are produced (as it
+        must, since it delegates to the exact `send` it was given rather
+        than collecting anything), the first body message must already be
+        recorded before the event is set - not just eventually, but
+        strictly before. `asyncio.wait_for` bounds every await so a future
+        regression that reintroduces buffering fails loudly instead of
+        hanging the suite.
+        """
+        import asyncio
+
+        from grimoire.api.main import ContentLengthGuard
+
+        release_second_chunk = asyncio.Event()
+        first_chunk_seen_before_release: bool | None = None
+
+        async def downstream(scope, receive, send):
+            nonlocal first_chunk_seen_before_release
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [[b"content-type", b"text/plain"]],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b"first\n",
+                    "more_body": True,
+                }
+            )
+            # The guard must have already handed the first chunk to `send`
+            # by this point - it is not observing this coroutine's internal
+            # state, only what actually reached the recording `send` below.
+            first_chunk_seen_before_release = release_second_chunk.is_set()
+            await release_second_chunk.wait()
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b"second\n",
+                    "more_body": False,
+                }
+            )
+
+        guard = ContentLengthGuard(downstream)
+        messages: list[dict] = []
+
+        async def send(message: dict) -> None:
+            messages.append(message)
+
+        async def receive() -> dict:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/stream",
+            "headers": [],
+        }
+
+        guard_task = asyncio.ensure_future(guard(scope, receive, send))
+
+        # Wait until the first body chunk has actually reached `send`,
+        # bounded so a regression (the guard withholding it) fails instead
+        # of hanging.
+        async def wait_for_first_chunk() -> None:
+            while not any(
+                m.get("type") == "http.response.body" and m.get("body") == b"first\n"
+                for m in messages
+            ):
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(wait_for_first_chunk(), timeout=5)
+
+        # The first chunk was observed by `send` while the downstream app
+        # was still blocked on the event - proving it wasn't withheld until
+        # the whole response finished.
+        assert first_chunk_seen_before_release is False
+
+        release_second_chunk.set()
+        await asyncio.wait_for(guard_task, timeout=5)
+
+        bodies = [m["body"] for m in messages if m.get("type") == "http.response.body"]
+        assert bodies == [b"first\n", b"second\n"]
 
 
 # =============================================================================
