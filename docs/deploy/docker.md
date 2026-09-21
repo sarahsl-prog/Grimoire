@@ -179,6 +179,12 @@ the live embedding count in that backend, flagging a `WARNING` when they
 drift apart. The same `--detailed` run also reports cache backend stats
 (disk or Redis, whichever `GRIMOIRE_CACHE__STORAGE` is set to).
 
+If it does flag a drift, fix the `GRIMOIRE_VECTOR_STORE__HOST`/`PORT`
+mismatch first, then run `grimoire reindex` — it re-embeds just the chunks
+missing from the (now correctly targeted) vector store, using the chunk
+text already in Postgres, instead of re-ingesting the whole corpus. Use
+`grimoire reindex --dry-run` first to see what it would touch.
+
 ## Troubleshooting
 
 **`grimoire status` (or any CLI command) fails with `ConnectionRefusedError` on

@@ -234,7 +234,13 @@ the one change that invalidates your whole vector store.
 vectors match the configured model's dimension — a mismatch surfaces later
 as an opaque Chroma error on insert or query, or (worse, same dimension,
 different model) as quietly terrible search results. Changing
-`GRIMOIRE_EMBEDDINGS__MODEL` therefore means re-embedding everything:
+`GRIMOIRE_EMBEDDINGS__MODEL` therefore means re-embedding everything.
+
+**`grimoire reindex` will not do this for you** — it only fills in chunk ids
+the vector store is missing, so it treats every already-embedded chunk
+(right model or wrong) as done and skips it. It's the right tool for a
+Postgres/vector-store *count* drift (see `docs/deploy/docker.md`), not for
+a model swap:
 
 1. Back up (step 1) — you are about to destroy the vector store.
 2. Either point `vector_store.chroma.collection_name` at a **new**
