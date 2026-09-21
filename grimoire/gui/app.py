@@ -71,6 +71,11 @@ class MainWindow(QMainWindow):
         # A completed ingest is the one event worth refreshing the table for.
         self.ingest_tab.ingest_completed.connect(self.recent_tab.refresh)
 
+        from grimoire.gui.widgets.cli_tab import CliTab
+
+        self.cli_tab = CliTab()
+        self.tabs.addTab(self.cli_tab, "CLI")
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
