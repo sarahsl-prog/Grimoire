@@ -170,14 +170,17 @@ class CliTab(QWidget):
 
     def _on_process_error(self, error: QProcess.ProcessError) -> None:
         logger.warning(f"CLI process error: {error}")
-        if (
-            self._process is not None
-            and self._process.state() == QProcess.ProcessState.NotRunning
-        ):
-            self._append("Could not start the command. Is grimoire on your PATH?")
-            self._process = None
-            self.run_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
+        if self._process is None or error != QProcess.ProcessError.FailedToStart:
+            # A process that started and then crashed or was killed by
+            # stop() also reaches this handler, but Qt emits `finished` for
+            # those too, which already reports the real outcome. Only a
+            # genuine failure to launch belongs here, so nothing here
+            # duplicates or contradicts what `_on_finished` says.
+            return
+        self._append("Could not start the command. Is grimoire on your PATH?")
+        self._process = None
+        self.run_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
 
     def _append(self, text: str) -> None:
         self.output_view.append(text)

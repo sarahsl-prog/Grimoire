@@ -105,3 +105,29 @@ class TestProcessLifecycle:
         tab.stop()
 
         qtbot.waitUntil(lambda: tab.run_button.isEnabled(), timeout=10000)
+
+    def test_stop_does_not_report_a_start_failure(self, qtbot) -> None:
+        # A process that was deliberately killed still started fine; it must
+        # not be reported as though it never launched.
+        tab = CliTab()
+        qtbot.addWidget(tab)
+        tab.start_process(sys.executable, ["-c", "import time; time.sleep(30)"])
+        qtbot.waitUntil(lambda: not tab.run_button.isEnabled(), timeout=5000)
+
+        tab.stop()
+
+        qtbot.waitUntil(lambda: tab.run_button.isEnabled(), timeout=10000)
+        text = tab.output_view.toPlainText().lower()
+        assert "could not start" not in text
+        assert "exit code" in text
+
+    def test_genuine_start_failure_is_reported(self, qtbot) -> None:
+        tab = CliTab()
+        qtbot.addWidget(tab)
+        tab.start_process("definitely-not-a-real-grimoire-executable", [])
+
+        qtbot.waitUntil(
+            lambda: "could not start" in tab.output_view.toPlainText().lower(),
+            timeout=10000,
+        )
+        assert tab.run_button.isEnabled()
