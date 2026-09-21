@@ -720,6 +720,10 @@ class APIConfig(BaseModel):
         reload: Enable auto-reload (development only).
         workers: Number of worker processes.
         secret_key: Secret key for JWT tokens.
+        upload_dir: Staging directory for uploaded files. Uploads are kept,
+            not deleted after ingest, because Document.source_path points at
+            them.
+        max_upload_bytes: Hard cap enforced while streaming an upload.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -731,6 +735,15 @@ class APIConfig(BaseModel):
     secret_key: str | None = Field(
         default=None,
         description="Secret key for JWT or signed URLs (required in production)",
+    )
+    upload_dir: Path = Field(
+        default=Path("uploads"),
+        description="Staging directory for files uploaded through /ingest/upload",
+    )
+    max_upload_bytes: int = Field(
+        default=100 * 1024 * 1024,
+        ge=1,
+        description="Maximum accepted upload size in bytes",
     )
 
     @field_validator("secret_key")
