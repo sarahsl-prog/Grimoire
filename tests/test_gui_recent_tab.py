@@ -98,3 +98,37 @@ class TestRecentTab:
         qtbot.waitUntil(lambda: client.calls >= 1, timeout=3000)
 
         assert client.calls == 1, "tab activation must not stack requests"
+
+    def test_refresh_button_shows_busy_and_resets(self, qtbot) -> None:
+        # Success path.
+        client = _StubClient()
+        tab = RecentTab(client, QThreadPool(), lambda _m: None)
+        qtbot.addWidget(tab)
+
+        assert tab.refresh_button.text() == "Refresh"
+        assert tab.refresh_button.isEnabled()
+
+        tab.refresh()
+        # The worker's result is delivered via a queued signal, which only
+        # runs once the event loop is pumped - so immediately after refresh()
+        # returns, the button must still show the busy state it set
+        # synchronously.
+        assert tab.refresh_button.text() == "Refreshing…"
+        assert not tab.refresh_button.isEnabled()
+
+        qtbot.waitUntil(lambda: tab.table.rowCount() == 2, timeout=3000)
+        assert tab.refresh_button.text() == "Refresh"
+        assert tab.refresh_button.isEnabled()
+
+        # Same reset on the failure path.
+        client = _StubClient(error=AuthFailed("API key rejected."))
+        tab = RecentTab(client, QThreadPool(), lambda _m: None)
+        qtbot.addWidget(tab)
+
+        tab.refresh()
+        assert tab.refresh_button.text() == "Refreshing…"
+        assert not tab.refresh_button.isEnabled()
+
+        qtbot.waitUntil(lambda: bool(tab.error_label.text()), timeout=3000)
+        assert tab.refresh_button.text() == "Refresh"
+        assert tab.refresh_button.isEnabled()

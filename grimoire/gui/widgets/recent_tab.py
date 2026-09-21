@@ -30,6 +30,8 @@ from grimoire.gui.workers import run_api_call
 _COLUMNS = ("Title", "Type", "Status", "Chunks", "Tags", "Size", "Created")
 _ROW_LIMIT = 10
 _FAILED_ROW_COLOR = QColor(120, 30, 30)
+_REFRESH_LABEL = "Refresh"
+_REFRESH_BUSY_LABEL = "Refreshing…"
 
 
 class RecentTab(QWidget):
@@ -50,7 +52,7 @@ class RecentTab(QWidget):
         self._on_error = on_error
         self._in_flight = False
 
-        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button = QPushButton(_REFRESH_LABEL)
         self.error_label = QLabel()
         self.error_label.setWordWrap(True)
 
@@ -91,9 +93,11 @@ class RecentTab(QWidget):
             return
         self._in_flight = True
         self.refresh_button.setEnabled(False)
-        # No interim "Loading…" text: tests (and the window's own status
-        # bar) detect completion by the label going from empty to non-empty,
-        # so writing a placeholder here would make that check fire early.
+        # Busy state lives on the button, not error_label: that label is
+        # reserved for errors, and writing status text into it would make
+        # the "did the request finish" checks fire on a placeholder instead
+        # of the real result.
+        self.refresh_button.setText(_REFRESH_BUSY_LABEL)
         run_api_call(
             self._pool,
             lambda: self._client.recent_documents(limit=_ROW_LIMIT),
@@ -104,6 +108,7 @@ class RecentTab(QWidget):
     def _on_result(self, result: DocumentListResponse) -> None:
         self._in_flight = False
         self.refresh_button.setEnabled(True)
+        self.refresh_button.setText(_REFRESH_LABEL)
         self.table.setRowCount(len(result.documents))
         for row, document in enumerate(result.documents):
             self._fill_row(row, document)
@@ -136,6 +141,7 @@ class RecentTab(QWidget):
     def _on_failure(self, error: GuiError) -> None:
         self._in_flight = False
         self.refresh_button.setEnabled(True)
+        self.refresh_button.setText(_REFRESH_LABEL)
         self.error_label.setText(error.message)
         self._on_error(error.message)
 
