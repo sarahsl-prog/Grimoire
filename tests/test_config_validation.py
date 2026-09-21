@@ -1086,5 +1086,6 @@ class TestAPIConfigUploads:
 
         from grimoire.config.settings import APIConfig
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as exc_info:
             APIConfig(max_upload_bytes=0)
+        assert "greater than or equal to 1" in str(exc_info.value)
