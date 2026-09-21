@@ -172,6 +172,12 @@ target the same service over its host-exposed port, or always ingest through
 a container (`docker compose exec watcher grimoire ingest ...`, since
 `watcher` is the one service with `./documents` mounted).
 
+Run `grimoire status --detailed` to check for exactly this: it prints which
+vector store backend is active (`chromadb (embedded, path=...)` vs
+`chromadb (remote host:port)`) and compares the Postgres chunk count against
+the live embedding count in that backend, flagging a `WARNING` when they
+drift apart.
+
 ## Troubleshooting
 
 **`grimoire status` (or any CLI command) fails with `ConnectionRefusedError` on
@@ -200,7 +206,9 @@ which containers can't reach through `host.docker.internal`.
 `GRIMOIRE_VECTOR_STORE__HOST` isn't set, in which case the app silently falls
 back to an embedded (in-process) Chroma client instead of the service — the
 compose file sets this for you, but if you're overriding `environment:`
-locally, make sure that variable survives.
+locally, make sure that variable survives. `grimoire status --detailed`
+reports `Vector store: unreachable (...)` when the configured backend can't
+be reached at all.
 
 **App containers exit immediately at first start.** Check `db-migrate`
 first — `db-migrate` runs `alembic upgrade head` once, and `api`, `mcp`, and
