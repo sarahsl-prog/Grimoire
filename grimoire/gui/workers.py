@@ -8,6 +8,7 @@ delivered on the GUI thread.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from typing import Any
 
@@ -86,10 +87,8 @@ class ApiWorker(QRunnable):
         """Emit a signal unless its owning QObject has been torn down."""
         if not shiboken6.isValid(self.signals):
             return
-        try:
+        with contextlib.suppress(RuntimeError):
             signal.emit(*args)
-        except RuntimeError:
-            pass
 
 
 # Workers currently running on the pool, keyed by identity.  QThreadPool
