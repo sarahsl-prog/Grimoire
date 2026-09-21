@@ -340,8 +340,9 @@ Qt picks the `wayland` platform plugin under WSLg; forcing
 `QT_QPA_PLATFORM=xcb` (e.g. for X11 forwarding) fails here because
 `libxcb-cursor0` isn't installed — `sudo apt install libxcb-cursor0` first.
 
-The CLI tab runs a fixed set of read-only commands (`status`, `search`, `ask`,
-`docs`, `config show`, `cache stats`, `categories list`). Anything that issues
+The CLI tab runs a fixed set of read-only commands (`status`, `status
+--detailed`, `search`, `ask`, `docs`, `config show`, `cache stats`,
+`categories list`). Anything that issues
 credentials, migrates the schema, or starts a daemon stays in a terminal by
 design.
 
