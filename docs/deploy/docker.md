@@ -157,6 +157,21 @@ volume), not a local path. Once you've re-ingested your corpus into the
 containerized stack and confirmed the `chromadb` service has the vectors,
 `./chroma_db` is safe to delete.
 
+**Running `grimoire ingest` / `grimoire search` etc. bare-metal on the host
+silently uses the embedded `./chroma_db` instead of the shared containerized
+service.** `GRIMOIRE_VECTOR_STORE__HOST`/`GRIMOIRE_VECTOR_STORE__PORT` are
+only set inside containers (via `x-grimoire-env`); a host shell has neither,
+so `VectorStoreConfig.host` defaults to `None` and the app falls back to a
+per-process embedded client at `CHROMADB_PATH`. The document row still lands
+in the shared Postgres (host and containers point at the same instance via
+`POSTGRES_PORT`), so `grimoire docs list` looks correct — but the embeddings
+are invisible to `api`/`mcp`, so containerized search/query finds nothing for
+that document. Set `GRIMOIRE_VECTOR_STORE__HOST=localhost` and
+`GRIMOIRE_VECTOR_STORE__PORT=<CHROMADB_PORT>` in `.env` so host-side commands
+target the same service over its host-exposed port, or always ingest through
+a container (`docker compose exec watcher grimoire ingest ...`, since
+`watcher` is the one service with `./documents` mounted).
+
 ## Troubleshooting
 
 **`grimoire status` (or any CLI command) fails with `ConnectionRefusedError` on
