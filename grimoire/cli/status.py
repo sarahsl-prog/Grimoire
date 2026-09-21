@@ -9,7 +9,9 @@ from loguru import logger
 
 from grimoire.cli.helpers import (
     async_command,
+    echo_error,
     echo_success,
+    echo_warning,
     get_db_context,
     setup_db,
     teardown_db,
@@ -171,6 +173,166 @@ async def status(ctx: click.Context, detailed: bool) -> None:
             except Exception as e:
                 # A status command should say why it could not read cache stats.
                 logger.debug(f"Could not read cache stats: {e}")
+    finally:
+        await teardown_db()
+
+
+@click.command()
+@click.option(
+    "--dry-run", is_flag=True, help="Report missing chunks without repairing them."
+)
+@click.option("--confirm/--no-confirm", default=True, help="Require confirmation.")
+@click.option(
+    "--batch-size",
+    type=click.IntRange(min=1),
+    default=500,
+    show_default=True,
+    help="Chunks to check/re-embed per batch.",
+)
+@click.pass_context
+@async_command
+async def reindex(
+    ctx: click.Context, dry_run: bool, confirm: bool, batch_size: int
+) -> None:
+    """Re-embed chunks that are missing from the vector store.
+
+    Compares every chunk in Postgres against the configured vector store and
+    re-embeds any chunk id the vector store doesn't have, using the chunk
+    text already stored in Postgres -- no re-parsing of source documents.
+    Run this after `grimoire status --detailed` reports a chunk/embedding
+    drift.
+
+    Examples:
+
+        grimoire reindex --dry-run
+
+        grimoire reindex
+    """
+    settings = get_settings()
+    if settings.vector_store.type != VectorStoreType.CHROMADB:
+        echo_error("`grimoire reindex` only supports the chromadb backend today.")
+        raise SystemExit(1)
+
+    await setup_db()
+    try:
+        from sqlalchemy import select, update
+
+        from grimoire.core.cache import CacheFactory
+        from grimoire.core.embedder import Embedder, EmbeddingConfig
+        from grimoire.db.models import Chunk as ChunkModel
+        from grimoire.vectorstore.chromadb import ChromaDBStore
+
+        vector_store = ChromaDBStore(
+            persist_directory=settings.vector_store.chromadb.path,
+            collection_name=settings.vector_store.chromadb.collection_name,
+            host=settings.vector_store.host,
+            port=settings.vector_store.port,
+        )
+        try:
+            await vector_store.initialize(
+                settings.vector_store.chromadb.collection_name, embedding_dim=1
+            )
+        except Exception as e:
+            echo_error(f"Could not reach the vector store: {e}")
+            raise SystemExit(1) from e
+
+        async with get_db_context() as db:
+            all_chunks = (
+                (await db.execute(select(ChunkModel).order_by(ChunkModel.id)))
+                .scalars()
+                .all()
+            )
+
+        if not all_chunks:
+            echo_success("No chunks in Postgres -- nothing to reindex.")
+            return
+
+        # A chunk id doubles as its vector store id (see
+        # IngestionAgent._embed_and_store), so a batched `get()` tells us
+        # exactly which chunk ids the vector store is missing -- this catches
+        # both a failed embed write and the host/container vector-store split
+        # footgun (vector_id set in Postgres, but against the wrong backend).
+        missing: list[ChunkModel] = []
+        for i in range(0, len(all_chunks), batch_size):
+            batch = all_chunks[i : i + batch_size]
+            found_ids = {r["id"] for r in await vector_store.get([c.id for c in batch])}
+            missing.extend(c for c in batch if c.id not in found_ids)
+
+        if not missing:
+            echo_success(
+                f"All {len(all_chunks)} chunks are present in the vector store."
+            )
+            return
+
+        click.echo(
+            f"{len(missing)} of {len(all_chunks)} chunks are missing from the "
+            "vector store."
+        )
+        if dry_run:
+            for c in missing[:20]:
+                click.echo(
+                    f"  {c.id}  doc={c.document_id}  chunk_index={c.chunk_index}"
+                )
+            if len(missing) > 20:
+                click.echo(f"  ... and {len(missing) - 20} more")
+            return
+
+        if confirm and not click.confirm(
+            f"Re-embed {len(missing)} chunk(s) and write them to the vector store?"
+        ):
+            return
+
+        embed_config = EmbeddingConfig(
+            model=settings.embeddings.model,
+            fallback_model=settings.embeddings.fallback_model,
+            device=settings.embeddings.device,
+            batch_size=settings.embeddings.batch_size,
+        )
+        cache = CacheFactory.create(
+            backend=settings.cache.storage, path=settings.cache.path
+        )
+        embedder = Embedder(config=embed_config, cache=cache)
+
+        repaired = 0
+        async with get_db_context() as db:
+            for i in range(0, len(missing), batch_size):
+                batch = missing[i : i + batch_size]
+                texts = [c.content for c in batch]
+                embeddings = await embedder.embed(texts)
+                ids = [c.id for c in batch]
+                metadatas = [
+                    {
+                        "document_id": c.document_id,
+                        "chunk_index": c.chunk_index,
+                        "token_count": c.token_count,
+                    }
+                    for c in batch
+                ]
+
+                await vector_store.add_documents(
+                    ids=ids,
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                    documents=texts,
+                )
+                await db.execute(
+                    update(ChunkModel)
+                    .where(ChunkModel.id.in_(ids))
+                    .values(
+                        vector_id=ChunkModel.id,
+                        embedding_model=settings.embeddings.model,
+                    )
+                )
+                repaired += len(batch)
+                click.echo(f"  Re-embedded {repaired}/{len(missing)}")
+            await db.commit()
+
+        echo_warning(
+            "Security metadata (e.g. CVE/Sigma fields) is not restored by "
+            "reindex -- re-ingest affected documents if you rely on it for "
+            "filtered search."
+        )
+        echo_success(f"Re-embedded {repaired} chunk(s).")
     finally:
         await teardown_db()
 

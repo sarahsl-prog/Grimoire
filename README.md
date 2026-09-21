@@ -248,6 +248,8 @@ grimoire config show llm      # Show specific section
 
 # System status
 grimoire status --detailed   # doc/chunk counts, vector store sync, cache, Ollama reachability
+grimoire reindex --dry-run   # preview chunks missing from the vector store
+grimoire reindex             # re-embed them, without a full re-ingest
 grimoire cache stats
 grimoire cache clear
 ```

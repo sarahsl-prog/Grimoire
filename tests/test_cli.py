@@ -16,6 +16,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -70,6 +71,7 @@ class TestCommandRegistration:
             "category",
             "watch",
             "status",
+            "reindex",
             "config",
             "cache",
             "tag",
@@ -1176,6 +1178,241 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "Ollama" in result.output
         assert f"unreachable at {llm_url}" in result.output
+
+
+def _reindex_settings(vs_type: VectorStoreType = VectorStoreType.CHROMADB) -> Any:
+    return SimpleNamespace(
+        vector_store=SimpleNamespace(
+            type=vs_type,
+            host=None,
+            port=None,
+            chromadb=SimpleNamespace(path="./chroma_db", collection_name="documents"),
+            qdrant=SimpleNamespace(url="http://localhost:6333"),
+        ),
+        embeddings=SimpleNamespace(
+            model="sentence-transformers/all-mpnet-base-v2",
+            fallback_model="sentence-transformers/all-MiniLM-L6-v2",
+            device="cpu",
+            batch_size=32,
+        ),
+        cache=SimpleNamespace(storage="disk", path="/tmp/grimoire-test-cache"),
+    )
+
+
+def _make_chunk(
+    chunk_id: str, document_id: str = "doc-1", chunk_index: int = 0
+) -> MagicMock:
+    chunk = MagicMock()
+    chunk.id = chunk_id
+    chunk.document_id = document_id
+    chunk.chunk_index = chunk_index
+    chunk.content = f"content for {chunk_id}"
+    chunk.token_count = 5
+    return chunk
+
+
+class TestReindexCommand:
+    """Test the reindex command that repairs chunk/embedding drift."""
+
+    @patch(f"{_STATUS}.get_settings")
+    def test_reindex_rejects_qdrant(
+        self, mock_settings: MagicMock, runner: CliRunner
+    ) -> None:
+        mock_settings.return_value = _reindex_settings(VectorStoreType.QDRANT)
+
+        result = runner.invoke(cli, ["reindex"])
+        assert result.exit_code != 0
+        assert "only supports the chromadb backend" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.get_settings")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_reindex_no_chunks(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_settings: MagicMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_settings.return_value = _reindex_settings()
+
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = []
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store_cls.return_value = AsyncMock()
+
+        result = runner.invoke(cli, ["reindex"])
+        assert result.exit_code == 0
+        assert "nothing to reindex" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.get_settings")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_reindex_all_present(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_settings: MagicMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_settings.return_value = _reindex_settings()
+
+        chunks = [_make_chunk("c1"), _make_chunk("c2")]
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = chunks
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.get = AsyncMock(
+            return_value=[{"id": "c1"}, {"id": "c2"}]
+        )
+        mock_store_cls.return_value = mock_store
+
+        result = runner.invoke(cli, ["reindex"])
+        assert result.exit_code == 0
+        assert "All 2 chunks are present" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.get_settings")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_reindex_dry_run_lists_missing_without_writing(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_settings: MagicMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_settings.return_value = _reindex_settings()
+
+        chunks = [_make_chunk("c1"), _make_chunk("c2")]
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = chunks
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.get = AsyncMock(return_value=[])  # nothing found -> both missing
+        mock_store_cls.return_value = mock_store
+
+        result = runner.invoke(cli, ["reindex", "--dry-run"])
+        assert result.exit_code == 0
+        assert "2 of 2 chunks are missing" in result.output
+        assert "c1" in result.output
+        assert "c2" in result.output
+        mock_store.add_documents.assert_not_called()
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.get_settings")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_reindex_declined_confirmation_does_not_write(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_settings: MagicMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_settings.return_value = _reindex_settings()
+
+        chunks = [_make_chunk("c1")]
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = chunks
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.get = AsyncMock(return_value=[])
+        mock_store_cls.return_value = mock_store
+
+        result = runner.invoke(cli, ["reindex"], input="n\n")
+        assert result.exit_code == 0
+        mock_store.add_documents.assert_not_called()
+
+    @patch("grimoire.core.embedder.Embedder")
+    @patch("grimoire.core.cache.CacheFactory")
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.get_settings")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_reindex_repairs_missing_chunks(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_settings: MagicMock,
+        mock_store_cls: MagicMock,
+        mock_cache_factory: MagicMock,
+        mock_embedder_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_settings.return_value = _reindex_settings()
+
+        chunks = [_make_chunk("c1"), _make_chunk("c2")]
+        mock_session = AsyncMock()
+        mock_exec = MagicMock()
+        mock_exec.scalars.return_value.all.return_value = chunks
+        mock_session.execute = AsyncMock(return_value=mock_exec)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.get = AsyncMock(return_value=[])  # both missing
+        mock_store_cls.return_value = mock_store
+
+        mock_embedder = AsyncMock()
+        mock_embedder.embed = AsyncMock(return_value=[[0.1, 0.2], [0.3, 0.4]])
+        mock_embedder_cls.return_value = mock_embedder
+
+        result = runner.invoke(cli, ["reindex", "--no-confirm"])
+        assert result.exit_code == 0
+        assert "Re-embedded 2 chunk(s)" in result.output
+
+        mock_store.add_documents.assert_called_once()
+        call_kwargs = mock_store.add_documents.call_args.kwargs
+        assert set(call_kwargs["ids"]) == {"c1", "c2"}
+        assert call_kwargs["embeddings"] == [[0.1, 0.2], [0.3, 0.4]]
 
 
 class TestVectorStoreSummary:
