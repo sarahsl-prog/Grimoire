@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -43,6 +44,19 @@ _UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 class _UploadTooLargeError(Exception):
     """Internal signal that a streamed upload passed the configured cap."""
+
+
+def _safe_unlink(path: Path) -> None:
+    """Best-effort removal of a partial upload.
+
+    Swallows failures too: a filename with an embedded null byte makes
+    ``Path.unlink`` raise ``ValueError`` (not ``OSError``) just like
+    ``Path.open`` does, so cleanup itself can fail with the same class of
+    error it is being called to recover from. It must never escape and
+    override the caller's own error handling.
+    """
+    with contextlib.suppress(OSError, ValueError):
+        path.unlink(missing_ok=True)
 
 
 def _staging_dir() -> Path:
@@ -98,13 +112,21 @@ async def _stream_upload_to_disk(
                     raise _UploadTooLargeError
                 handle.write(chunk)
     except _UploadTooLargeError:
-        destination.unlink(missing_ok=True)
+        # Must be caught before (OSError, ValueError) below: it is a plain
+        # Exception subclass with no relation to either, but if that ever
+        # changes this ordering is what keeps the 413 path from being
+        # swallowed by the 500 path.
+        _safe_unlink(destination)
         raise HTTPException(
             status_code=413,
             detail=f"File exceeds the maximum upload size of {max_bytes} bytes",
         ) from None
-    except OSError as exc:
-        destination.unlink(missing_ok=True)
+    except (OSError, ValueError) as exc:
+        # ValueError alongside OSError: a filename with an embedded null
+        # byte (e.g. "a\x00b.txt") passes the extension check but makes
+        # Path.open() raise ValueError rather than OSError, so it must be
+        # caught here too or it escapes as a raw traceback to the client.
+        _safe_unlink(destination)
         logger.error(f"Failed to write upload to {destination}: {exc}")
         raise HTTPException(
             status_code=500, detail="Could not store the uploaded file"

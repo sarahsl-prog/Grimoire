@@ -239,6 +239,40 @@ class TestIngestAPI:
         assert resp.status_code == 413
         assert list(tmp_path.iterdir()) == [], "partial file must be removed"
 
+    async def test_stream_upload_null_byte_path_returns_500(self, tmp_path):
+        """A destination path with an embedded null byte must not crash raw.
+
+        ``Path.open`` (and ``Path.unlink``, used for cleanup) raise
+        ``ValueError`` rather than ``OSError`` for a null byte, so this
+        exercises ``_stream_upload_to_disk`` directly rather than through the
+        ASGI layer: httpx sanitizes a raw NUL in a multipart filename to
+        "%00" before the request ever leaves the client, so an end-to-end
+        upload would never reach this code path.
+        """
+        from fastapi import HTTPException
+
+        from grimoire.api.routes.ingest import _stream_upload_to_disk
+
+        class _FakeUpload:
+            def __init__(self, data: bytes) -> None:
+                self._chunks = [data, b""]
+
+            async def read(self, _size: int) -> bytes:
+                return self._chunks.pop(0)
+
+        destination = tmp_path / "a\x00b.txt"
+
+        with pytest.raises(HTTPException) as exc_info:
+            # _FakeUpload duck-types UploadFile's async read(); it is not a
+            # subclass, so mypy sees a structural mismatch here.
+            await _stream_upload_to_disk(
+                _FakeUpload(b"hello"),  # type: ignore[arg-type]
+                destination,
+                1024,
+            )
+
+        assert exc_info.value.status_code == 500
+
     @patch(f"{_ROUTES_INGEST}.get_ingestion_agent")
     def test_upload_sanitizes_traversal_filename(
         self, mock_get_agent, client, tmp_path, monkeypatch
