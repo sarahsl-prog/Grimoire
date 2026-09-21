@@ -15,12 +15,17 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from click.testing import CliRunner
+from pytest_httpx import HTTPXMock
 
 from grimoire.cli.main import cli
+from grimoire.cli.status import _vector_store_summary
+from grimoire.config.settings import VectorStoreType
 
 
 @pytest.fixture
@@ -923,6 +928,295 @@ class TestStatusCommand:
         result = runner.invoke(cli, ["status"])
         assert result.exit_code == 0
         assert "Documents" in result.output
+        assert "Vector store" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_vector_store_in_sync(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 10
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=10)
+        mock_store_cls.return_value = mock_store
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "10 embeddings" in result.output
+        assert "WARNING" not in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_vector_store_drift_warns(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 10
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=999)
+        mock_store_cls.return_value = mock_store
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "999 embeddings" in result.output
+        assert "WARNING" in result.output
+        assert "out of sync" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_vector_store_unreachable(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 10
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.initialize = AsyncMock(
+            side_effect=ConnectionError("refused")
+        )
+        mock_store_cls.return_value = mock_store
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "Vector store: unreachable" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.CacheFactory")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_redis_cache(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_factory: MagicMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store_cls.return_value = mock_store
+
+        mock_cache = AsyncMock()
+        mock_cache.client.info = AsyncMock(
+            return_value={"redis_version": "7.2.0", "connected_clients": 3}
+        )
+        mock_factory.create.return_value = mock_cache
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "Cache (redis)" in result.output
+        assert "7.2.0" in result.output
+        assert "3" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.CacheFactory")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_redis_cache_error_is_swallowed(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_factory: MagicMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store_cls.return_value = mock_store
+
+        mock_cache = AsyncMock()
+        mock_cache.client.info = AsyncMock(side_effect=ConnectionError("refused"))
+        mock_factory.create.return_value = mock_cache
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_ollama_reachable(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+        httpx_mock: HTTPXMock,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store_cls.return_value = mock_store
+
+        from grimoire.config.settings import get_settings
+
+        llm_url = get_settings().llm.url
+        httpx_mock.add_response(
+            url=f"{llm_url}/api/tags",
+            json={"models": []},
+        )
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "Ollama" in result.output
+        assert f"reachable at {llm_url}" in result.output
+
+    @patch("grimoire.vectorstore.chromadb.ChromaDBStore")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_ollama_unreachable(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_store_cls: MagicMock,
+        runner: CliRunner,
+        httpx_mock: HTTPXMock,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        mock_store = AsyncMock()
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store_cls.return_value = mock_store
+
+        from grimoire.config.settings import get_settings
+
+        llm_url = get_settings().llm.url
+        httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+        assert result.exit_code == 0
+        assert "Ollama" in result.output
+        assert f"unreachable at {llm_url}" in result.output
+
+
+class TestVectorStoreSummary:
+    """Test the _vector_store_summary status helper."""
+
+    def _settings(
+        self,
+        vs_type: VectorStoreType,
+        host: str | None,
+        port: int | None,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            vector_store=SimpleNamespace(
+                type=vs_type,
+                host=host,
+                port=port,
+                chromadb=SimpleNamespace(path="./chroma_db"),
+                qdrant=SimpleNamespace(url="http://localhost:6333"),
+            )
+        )
+
+    def test_embedded_chromadb(self) -> None:
+        settings = self._settings(VectorStoreType.CHROMADB, host=None, port=None)
+        assert (
+            _vector_store_summary(settings)
+            == "chromadb (embedded, path=./chroma_db)"
+        )
+
+    def test_remote_chromadb(self) -> None:
+        settings = self._settings(
+            VectorStoreType.CHROMADB, host="chromadb", port=8000
+        )
+        assert _vector_store_summary(settings) == "chromadb (remote chromadb:8000)"
+
+    def test_remote_chromadb_default_port(self) -> None:
+        settings = self._settings(VectorStoreType.CHROMADB, host="chromadb", port=None)
+        assert _vector_store_summary(settings) == "chromadb (remote chromadb:8000)"
+
+    def test_qdrant(self) -> None:
+        settings = self._settings(VectorStoreType.QDRANT, host=None, port=None)
+        assert _vector_store_summary(settings) == "qdrant (http://localhost:6333)"
 
     @patch("grimoire.cli.status.CacheFactory")
     @patch("grimoire.cli.status.get_settings")

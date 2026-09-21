@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import click
 from loguru import logger
 
@@ -12,8 +14,18 @@ from grimoire.cli.helpers import (
     setup_db,
     teardown_db,
 )
-from grimoire.config.settings import get_settings
+from grimoire.config.settings import VectorStoreType, get_settings
 from grimoire.core.cache import CacheFactory, DiskCache
+
+
+def _vector_store_summary(settings: Any) -> str:
+    """Describe the configured vector store backend without connecting to it."""
+    vs = settings.vector_store
+    if vs.type == VectorStoreType.QDRANT:
+        return f"qdrant ({vs.qdrant.url})"
+    if vs.host:
+        return f"chromadb (remote {vs.host}:{vs.port or 8000})"
+    return f"chromadb (embedded, path={vs.chromadb.path})"
 
 
 @click.command()
@@ -29,6 +41,7 @@ async def status(ctx: click.Context, detailed: bool) -> None:
 
         grimoire status --detailed
     """
+    settings = get_settings()
     await setup_db()
     try:
         from sqlalchemy import func, select
@@ -57,6 +70,7 @@ async def status(ctx: click.Context, detailed: bool) -> None:
         click.echo(click.style("Grimoire Status", bold=True))
         click.echo(f"  Documents:  {total}")
         click.echo(f"  Categories: {cat_count}")
+        click.echo(f"  Vector store: {_vector_store_summary(settings)}")
 
         if status_counts:
             click.echo("\n  Processing status:")
@@ -77,9 +91,62 @@ async def status(ctx: click.Context, detailed: bool) -> None:
             click.echo(f"\n  Chunks:     {chunk_count}")
             click.echo(f"  Generated:  {gen_count}")
 
+            # Vector store reachability + drift check against Postgres.
+            # A chunk row lands in Postgres before its embedding reaches the
+            # vector store, and the two can point at entirely different
+            # ChromaDB instances (see docs/deploy/docker.md's host-vs-container
+            # vector-store split footgun) -- a count mismatch is the fastest
+            # signal something is out of sync.
+            if settings.vector_store.type == VectorStoreType.CHROMADB:
+                from grimoire.vectorstore.chromadb import ChromaDBStore
+
+                vector_store = ChromaDBStore(
+                    persist_directory=settings.vector_store.chromadb.path,
+                    collection_name=settings.vector_store.chromadb.collection_name,
+                    host=settings.vector_store.host,
+                    port=settings.vector_store.port,
+                )
+                try:
+                    await vector_store.initialize(
+                        settings.vector_store.chromadb.collection_name,
+                        embedding_dim=1,
+                    )
+                    vector_count = await vector_store.count()
+                    click.echo(f"\n  Vector store: {vector_count} embeddings")
+                    if vector_count != chunk_count:
+                        click.echo(
+                            click.style(
+                                f"    WARNING: {chunk_count} chunks in Postgres "
+                                f"vs {vector_count} embeddings in the vector "
+                                "store -- they may be out of sync.",
+                                fg="yellow",
+                            )
+                        )
+                except Exception as e:
+                    click.echo(
+                        click.style(f"\n  Vector store: unreachable ({e})", fg="red")
+                    )
+
+            # Ollama reachability -- a bad GRIMOIRE_OLLAMA_URL only otherwise
+            # surfaces later, mid-query or mid-generation, as a 404/connect error.
+            import httpx
+
+            llm = settings.llm
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    resp = await client.get(f"{llm.url}/api/tags")
+                    resp.raise_for_status()
+                click.echo(f"\n  Ollama ({llm.model}): reachable at {llm.url}")
+            except Exception as e:
+                click.echo(
+                    click.style(
+                        f"\n  Ollama ({llm.model}): unreachable at {llm.url} ({e})",
+                        fg="red",
+                    )
+                )
+
             # Cache stats
             try:
-                settings = get_settings()
                 cache = CacheFactory.create(
                     backend=settings.cache.storage, path=settings.cache.path
                 )
@@ -88,6 +155,19 @@ async def status(ctx: click.Context, detailed: bool) -> None:
                     click.echo("\n  Cache:")
                     click.echo(f"    Size:     {stats.get('size', 0)} items")
                     click.echo(f"    Disk:     {stats.get('volume', 0)} bytes")
+                else:
+                    # Redis cache -- same fields `grimoire cache stats` reports
+                    # for this backend, so --detailed doesn't go quiet on it.
+                    info = (
+                        await cache.client.info() if hasattr(cache, "client") else {}
+                    )
+                    click.echo("\n  Cache (redis):")
+                    click.echo(
+                        f"    Version:  {info.get('redis_version', 'Unknown')}"
+                    )
+                    click.echo(
+                        f"    Clients:  {info.get('connected_clients', 'Unknown')}"
+                    )
             except Exception as e:
                 # A status command should say why it could not read cache stats.
                 logger.debug(f"Could not read cache stats: {e}")
