@@ -22,12 +22,16 @@ from grimoire.gui.workers import (  # noqa: E402
 class _StubClient:
     """Stands in for GrimoireClient in window tests."""
 
-    def __init__(self, config: GuiConfig) -> None:
+    def __init__(self, config: GuiConfig, healthy: bool = True) -> None:
         self.config = config
         self.closed = False
+        self._healthy = healthy
 
     def close(self) -> None:
         self.closed = True
+
+    def health(self) -> bool:
+        return self._healthy
 
 
 class TestApiWorker:
@@ -260,6 +264,32 @@ class TestMainWindow:
 
         assert original_client.closed is True
         assert retired_client.closed is True
+
+
+class TestStartupHealthCheck:
+    """MainWindow must call health() on startup (Important 6 / Minor 5).
+
+    GrimoireClient.health() previously had zero callers and zero tests
+    despite the spec naming a health indicator for this widget.
+    """
+
+    def test_reachable_client_reports_connected(self, qtbot) -> None:
+        config = GuiConfig(base_url="http://testapi:8001", api_key="k")
+        window = MainWindow(_StubClient(config, healthy=True), config)
+        qtbot.addWidget(window)
+
+        qtbot.waitUntil(
+            lambda: "Connected" in window.connection_bar.status_text(), timeout=3000
+        )
+
+    def test_unreachable_client_reports_cannot_reach(self, qtbot) -> None:
+        config = GuiConfig(base_url="http://testapi:8001", api_key="k")
+        window = MainWindow(_StubClient(config, healthy=False), config)
+        qtbot.addWidget(window)
+
+        qtbot.waitUntil(
+            lambda: "Cannot reach" in window.connection_bar.status_text(), timeout=3000
+        )
 
 
 class TestMainEntryPoint:

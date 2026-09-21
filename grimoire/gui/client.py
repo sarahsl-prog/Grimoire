@@ -102,7 +102,7 @@ class GrimoireClient:
         )
         return self._parse(response, QueryResponse)
 
-    def search(self, query: str, *, top_k: int = 10) -> SearchResponse:
+    def search(self, query: str, *, top_k: int = 5) -> SearchResponse:
         """Retrieval only — no LLM in the path, so this is the fast check."""
         payload = {"query": query, "top_k": top_k}
         response = self._request("POST", f"{_API_PREFIX}/query/search", json=payload)
@@ -256,10 +256,15 @@ class GrimoireClient:
     def _parse(response: httpx.Response, model: type[ModelT]) -> ModelT:
         """Validate a successful response against the server's own schema.
 
-        Every field on these response models has a default, so a body that
-        shares none of the model's field names would otherwise validate
-        silently into an all-defaults instance instead of failing loudly.
-        That is caught explicitly, before pydantic ever sees the body.
+        The explicit "shares no fields" check below is only load-bearing
+        for DocumentListResponse: it is the one model among this client's
+        four whose fields are all optional, so it is the one a body sharing
+        none of its field names would otherwise validate silently into an
+        all-defaults instance for, instead of failing loudly. (The other
+        three - QueryResponse, SearchResponse, IngestResultResponse - each
+        have at least one required field and pydantic would already reject
+        such a body on its own.) The guard is cheap and harmless for all
+        four, so it stays here rather than being special-cased to one.
         """
         try:
             body = response.json()

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from grimoire.gui.config import GuiConfig
 from grimoire.gui.errors import ConnectionFailed
 from grimoire.gui.widgets.connection_bar import ConnectionBar
+from grimoire.gui.workers import run_api_call
 
 _ERROR_TIMEOUT_MS = 15_000
 _SHUTDOWN_GRACE_MS = 3_000
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
         self.connection_bar = ConnectionBar()
         self.connection_bar.set_state(config.is_configured, config.base_url)
         self.connection_bar.api_key_entered.connect(self._on_api_key_entered)
+        self._check_health()
 
         self.tabs = QTabWidget()
 
@@ -84,6 +86,29 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
         self.statusBar().showMessage("Ready")
+
+    def _check_health(self) -> None:
+        """Startup reachability check, reflected in the connection bar.
+
+        GrimoireClient.health() never raises - it catches httpx errors
+        itself and returns False - so on_err below is unreachable in
+        practice but is still required by run_api_call's signature.
+
+        This is the startup half of Important 6's health indicator only.
+        Re-checking on every ConnectionFailed reported through show_error
+        was judged too invasive for this fix: show_error's callback is
+        typed Callable[[str], None] and shared verbatim by every tab
+        (SearchTab, RecentTab, IngestTab already all call
+        `self._on_error(error.message)`), so threading a GuiError/
+        ConnectionFailed instance through it would mean widening that
+        signature - and every tab's tests - well past this widget.
+        """
+        run_api_call(
+            self.pool,
+            self.client.health,
+            self.connection_bar.set_health,
+            lambda _err: None,
+        )
 
     def show_error(self, message: str) -> None:
         """Surface an error in the status bar.

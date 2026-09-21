@@ -26,6 +26,12 @@ class ConnectionBar(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._configured = False
+        self._base_url = ""
+        # None = no health check has completed yet. Distinct from True/False
+        # so the status text can avoid claiming "Connected" - or "Cannot
+        # reach" - until a real check has actually run.
+        self._reachable: bool | None = None
         self._status = QLabel()
         self._key_field = QLineEdit()
         self._key_field.setEchoMode(QLineEdit.EchoMode.Password)
@@ -50,21 +56,50 @@ class ConnectionBar(QWidget):
     def set_state(self, configured: bool, base_url: str) -> None:
         """Update the displayed connection state.
 
+        The key field and Use-key button are never hidden: `configured`
+        means only `bool(api_key)` (see GuiConfig.is_configured), and
+        nothing here has verified that key actually works. A key rejected
+        by the server (stale, revoked, mistyped) needs to be replaceable
+        without restarting the app, and this field is the only way to do
+        that - hiding it the moment any key is present removes the sole
+        recovery path exactly when it is needed.
+
         Args:
             configured: Whether an API key is present.
             base_url: The API root currently in use.
         """
-        if configured:
-            self._status.setText(f"Connected to {base_url}")
-            self._key_field.setVisible(False)
-            self._apply.setVisible(False)
+        self._configured = configured
+        self._base_url = base_url
+        # A previous health check no longer speaks to this state - a key
+        # change likely means a different server or a different key's
+        # permissions - so don't let a stale "Connected" or "Cannot reach"
+        # linger until the next check completes.
+        self._reachable = None
+        self._render_status()
+
+    def set_health(self, reachable: bool) -> None:
+        """Reflect the result of a GrimoireClient.health() check.
+
+        Called once at startup. "Connected" is reserved for this - a state
+        a real health check has actually confirmed - rather than being
+        claimed the moment a key is merely present.
+        """
+        self._reachable = reachable
+        self._render_status()
+
+    def _render_status(self) -> None:
+        if self._reachable is False:
+            self._status.setText(f"Cannot reach {self._base_url}")
+        elif self._configured:
+            if self._reachable:
+                self._status.setText(f"Connected to {self._base_url}")
+            else:
+                self._status.setText(f"Key set · {self._base_url}")
         else:
             self._status.setText(
-                f"No API key. Set GRIMOIRE_API_KEY (API at {base_url}) "
+                f"No API key. Set GRIMOIRE_API_KEY (API at {self._base_url}) "
                 "or paste one here."
             )
-            self._key_field.setVisible(True)
-            self._apply.setVisible(True)
 
     def status_text(self) -> str:
         """Current status line. Used by tests and by the status bar."""

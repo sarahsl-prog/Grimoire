@@ -111,6 +111,33 @@ class TestSearch:
         assert result.total_results == 1
         assert result.results[0].document_title == "Primer"
 
+    def test_default_top_k_matches_the_product_default_of_five(
+        self, client, httpx_mock
+    ) -> None:
+        """search()'s own default must match what the GUI actually sends.
+
+        SearchTab's top_k spinner defaults to 5 (Ruling 17) and always
+        passes it explicitly, so this default is never exercised by the
+        GUI - but a direct caller of GrimoireClient should get the same
+        default the product uses, not a stale value copied from elsewhere.
+        """
+        httpx_mock.add_response(
+            url=f"{BASE}/api/v1/query/search",
+            json={
+                "query": "sigma",
+                "results": [],
+                "total_results": 0,
+                "duration_ms": 1,
+            },
+        )
+
+        client.search("sigma")
+
+        import json as _json
+
+        body = _json.loads(httpx_mock.get_request().content)
+        assert body["top_k"] == 5
+
 
 class TestRecentDocuments:
     def test_requests_limit_and_parses_rows(self, client, httpx_mock) -> None:
