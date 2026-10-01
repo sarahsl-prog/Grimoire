@@ -27,6 +27,7 @@ from grimoire.tui.formatting import (
     TOP_K_MIN,
     SourceView,
     build_filter_dict,
+    display_url,
     format_size,
     format_timestamp,
     parse_top_k,
@@ -354,3 +355,28 @@ class TestChoiceConstants:
 
         assert set(SOURCE_TYPES) == {t.value for t in corpus.SourceType}
         assert set(SEVERITIES) == {s.value for s in metadata.Severity}
+
+
+class TestDisplayUrl:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("http://localhost:8001", "http://localhost:8001"),
+            ("https://box.example:9000/api", "https://box.example:9000"),
+            ("http://user:s3cret@host:1", "http://host:1"),
+            ("http://user@host", "http://host"),
+            ("http://a@b@host:1", "http://host:1"),
+        ],
+    )
+    def test_strips_credentials_and_paths(self, raw: str, expected: str) -> None:
+        assert display_url(raw) == expected
+
+    def test_never_contains_the_password(self) -> None:
+        assert "s3cret" not in display_url("http://user:s3cret@host:1")
+
+    @pytest.mark.parametrize("bad", ["http://[red]:1", "http://[::1", "http://[x]/"])
+    def test_unparseable_urls_do_not_raise(self, bad: str) -> None:
+        assert display_url(bad) == "(invalid URL)"
+
+    def test_ipv6_hosts_keep_their_brackets(self) -> None:
+        assert display_url("http://[::1]:8001/x") == "http://[::1]:8001"

@@ -1,0 +1,21 @@
+/* Colours come from Textual's theme variables, so light and dark themes both
+   work and the app follows whichever theme is active. */
+
+StatusBar {
+    height: 1;
+    padding: 0 1;
+    background: $panel;
+    color: $text-muted;
+}
+
+StatusBar.-checking {
+    color: $warning;
+}
+
+StatusBar.-connected {
+    color: $success;
+}
+
+StatusBar.-unreachable {
+    color: $error;
+}

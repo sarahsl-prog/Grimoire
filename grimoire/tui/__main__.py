@@ -80,13 +80,6 @@ def _is_valid_base_url(url: str) -> bool:
     return parts.scheme in {"http", "https"} and bool(parts.hostname)
 
 
-def _display_url(url: str) -> str:
-    """The URL without any ``user:pass@`` part, safe to write to a log."""
-    parts = urlsplit(url)
-    host = parts.netloc.rpartition("@")[2]
-    return f"{parts.scheme}://{host}"
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     """Start the TUI.
 
@@ -113,6 +106,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from loguru import logger
 
+    from grimoire.tui.formatting import display_url
     from grimoire.tui.logsetup import configure_tui_logging
 
     session_id = uuid4().hex[:12]
@@ -139,7 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = dataclasses.replace(config, session_id=session_id)
 
     logger.info(
-        f"Starting Grimoire TUI against {_display_url(config.base_url)} "
+        f"Starting Grimoire TUI against {display_url(config.base_url)} "
         f"(key {'set' if config.api_key else 'missing'})"
     )
 

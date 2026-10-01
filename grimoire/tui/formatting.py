@@ -15,6 +15,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from grimoire.api.schemas import QueryResponse, SearchResponse
 
@@ -133,6 +134,22 @@ def sources_from_search(response: SearchResponse) -> list[SourceView]:
         )
         for r in response.results
     ]
+
+
+def display_url(url: str) -> str:
+    """``scheme://host[:port]`` with any credentials and path removed.
+
+    Safe to show on screen and write to a log: a base URL from the environment
+    can carry ``user:password@``.  ``rpartition`` on the last ``@`` means a
+    password that itself contains ``@`` cannot leave a fragment behind.  A URL
+    that cannot be parsed yields ``"(invalid URL)"`` rather than raising, so a
+    bad value can never take the status bar down.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:  # e.g. an unbalanced or non-IPv6 "[...]" host
+        return "(invalid URL)"
+    return f"{parts.scheme}://{parts.netloc.rpartition('@')[2]}"
 
 
 def format_size(size_bytes: int) -> str:
