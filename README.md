@@ -104,6 +104,9 @@ uv sync --extra dev --extra gui
 # Run the GUI tests headless
 QT_QPA_PLATFORM=offscreen uv run pytest tests/test_gui_*.py -v
 
+# Run the TUI tests (Textual is in the dev extra; no display needed)
+uv run pytest tests/tui -v
+
 # Run linting
 uv run ruff check .
 
@@ -346,6 +349,65 @@ The CLI tab runs a fixed set of read-only commands (`status`, `status
 credentials, migrates the schema, or starts a daemon stays in a terminal by
 design.
 
+### Terminal UI
+
+A [Textual](https://textual.textualize.io/) client for the same REST API, for
+when you are already in a terminal (including over SSH, where the desktop GUI
+cannot open a window). Two screens: **Search / Ask**, with the retrieved source
+chunks next to the answer, and **Documents**, a paged, filterable table of
+what the corpus holds with a detail view for each document.
+
+```bash
+# Install the optional TUI dependencies
+uv sync --extra tui
+
+# Point it at an API and launch
+export GRIMOIRE_API_URL=http://localhost:8001   # default
+export GRIMOIRE_API_KEY=grim_dvl_...            # required
+grimoire-tui
+```
+
+`grimoire-tui` is the canonical launcher. `grimoire --tui` and `grimoire tui`
+start the same app (both skip the CLI's settings validation and log setup, so
+a broken `grimoire.yaml` cannot stop them). `--url` overrides
+`GRIMOIRE_API_URL`, and `--debug` adds DEBUG records to the log file. There is
+deliberately **no `--api-key` option**: command-line arguments leak into
+process listings and shell history.
+
+Like the GUI, the TUI is a thin HTTP client and never imports the ingestion
+pipeline, so it starts instantly. **The API server must already be running**
+(for example `docker compose up -d`). It reads its settings from the *process
+environment*, not from `.env`; to use a `.env` file, load it into your shell
+first: `set -a; source .env; set +a`.
+
+| Key | Where | Action |
+|---|---|---|
+| `F1` / `F2` | anywhere | Switch to Search / Ask or Documents |
+| `Ctrl+R` | anywhere | Re-check the API; on Documents, reload the current page |
+| `?` | when not typing in a box | Key help panel (`Ctrl+P` opens the command palette) |
+| `Ctrl+Q` | anywhere | Quit |
+| `Enter` | Search / Ask | Run the query (Ask or Search, chosen with the toggle) |
+| `Esc` | while a query runs | Abandon it (the server may keep working) |
+| `o` or `Enter` | on a source | Open that source's document |
+| `]` / `[` | Documents | Next / previous page of 50 |
+| `Enter` | on a document row | Open the document's detail |
+| `Esc` or `q` | in the detail view | Close it |
+
+The filter row on **Search / Ask** (tags, source type, severity, CVE id) sends
+the same metadata filters as `grimoire ask --severity ...`. **Documents** can be
+filtered by processing status and file type; both filters are applied by the
+server.
+
+The status bar shows the API address (never the key), whether a key is set, and
+whether the API answered. Its indicator uses `GET /health`, which needs Redis
+(the API's rate limiter): if it says *unreachable* while the API process is
+running, check Redis first.
+
+Nothing is ever printed over the screen. Logs go to `./logs/grimoire-tui.log`
+(falling back to `~/.local/state/grimoire/logs/` when that is not writable).
+Each launch gets a session id, written on every log line and sent to the API as
+an `X-Session-Id` header so a server-side record can be matched to it.
+
 ### MCP (Model Context Protocol)
 
 Grimoire exposes its full functionality as an MCP server, allowing AI assistants (Claude, Cursor, etc.) to query and manage your knowledge base natively.
@@ -484,6 +546,8 @@ uv run pytest -m integration
 grimoire/
 ├── cli/              # Click CLI commands
 ├── api/              # FastAPI REST API
+├── gui/              # PySide6 desktop client (HTTP client over the API)
+├── tui/              # Textual terminal client (HTTP client over the API)
 ├── agents/           # LangChain Deep Agents
 ├── core/             # Core business logic
 ├── storage/          # Storage adapters (local, cloud)

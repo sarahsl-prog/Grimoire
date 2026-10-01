@@ -16,6 +16,17 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **Terminal UI** (`grimoire-tui`, `grimoire --tui`, `grimoire tui`;
+  `uv sync --extra tui`) – a Textual client for the REST API with Search/Ask
+  (the answer beside its source chunks, metadata filters, `Esc` to abandon a
+  slow query) and Documents (a paged table filterable by status and file type,
+  with a detail view). It is a thin HTTP client and never imports the
+  ingestion pipeline. It logs to `./logs/grimoire-tui.log` only, never to the
+  terminal, and sends a per-launch `X-Session-Id` header so server-side
+  records can be matched to it.
+  - `GrimoireClient` gains `list_documents`, `get_document`, and an optional
+    `filter_dict` on `ask`/`search`; `GuiConfig` gains an optional validated
+    `session_id`. The desktop GUI's requests are unchanged.
 - **Desktop GUI** (`grimoire-gui`, `uv sync --extra gui`) – a PySide6 client
   with Search/Ask (including source chunk inspection), recent ingests,
   drag-and-drop ingest, and a read-only CLI runner. It is a thin HTTP client
