@@ -535,3 +535,52 @@ class TestQueryFilters:
             "use_cache": False,
         }
         assert json.loads(search_req.content) == {"query": "q", "top_k": 3}
+
+
+class TestSessionIdHeader:
+    def test_sent_when_configured(self, httpx_mock) -> None:
+        httpx_mock.add_response(json={"query": "q", "results": []})
+        c = GrimoireClient(GuiConfig(base_url=BASE, session_id="a1b2c3d4e5f6"))
+        try:
+            c.search("q")
+        finally:
+            c.close()
+
+        assert httpx_mock.get_request().headers["X-Session-Id"] == "a1b2c3d4e5f6"
+
+    def test_absent_when_not_configured(self, client, httpx_mock) -> None:
+        """The desktop GUI does not opt in yet; its requests must not change."""
+        httpx_mock.add_response(json={"query": "q", "results": []})
+
+        client.search("q")
+
+        assert "X-Session-Id" not in httpx_mock.get_request().headers
+
+    def test_sent_on_every_endpoint_including_health(self, httpx_mock) -> None:
+        httpx_mock.add_response(url=f"{BASE}/health", json={})
+        httpx_mock.add_response(json={"documents": [], "total": 0})
+        c = GrimoireClient(GuiConfig(base_url=BASE, session_id="sess-1"))
+        try:
+            c.health()
+            c.list_documents()
+        finally:
+            c.close()
+
+        assert [r.headers.get("X-Session-Id") for r in httpx_mock.get_requests()] == [
+            "sess-1",
+            "sess-1",
+        ]
+
+    def test_coexists_with_the_api_key_header(self, httpx_mock) -> None:
+        httpx_mock.add_response(json={"query": "q", "results": []})
+        c = GrimoireClient(
+            GuiConfig(base_url=BASE, api_key="grim_agt_test", session_id="sess-1")
+        )
+        try:
+            c.search("q")
+        finally:
+            c.close()
+
+        headers = httpx_mock.get_request().headers
+        assert headers["X-API-Key"] == "grim_agt_test"
+        assert headers["X-Session-Id"] == "sess-1"

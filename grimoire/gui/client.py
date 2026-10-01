@@ -74,6 +74,10 @@ class GrimoireClient:
         headers = {"Accept": "application/json"}
         if config.api_key:
             headers["X-API-Key"] = config.api_key
+        if config.session_id:
+            # Set once on the client's default headers, so every request,
+            # health checks included, carries it.
+            headers["X-Session-Id"] = config.session_id
         return headers
 
     def close(self) -> None:
