@@ -155,7 +155,17 @@ class GrimoireApp(App[None]):
     # -- actions -----------------------------------------------------------
 
     def action_show_tab(self, tab_id: str) -> None:
-        self.query_one(TabbedContent).active = tab_id
+        tabs = self.query_one(TabbedContent)
+        if tabs.active == tab_id:
+            return
+        # Drop focus first.  When the pane being left is hidden, Textual
+        # refocuses a widget in it, and that late focus event makes
+        # TabbedContent activate the pane we are leaving: the switch silently
+        # undoes itself (about one try in six when pressing F2 from the query
+        # box).  With nothing focused there is nothing to refocus; the shown
+        # pane's `focus_primary()` then takes the keyboard.
+        self.set_focus(None)
+        tabs.active = tab_id
 
     def action_refresh_all(self) -> None:
         """Re-check the API and ask the visible pane to reload.

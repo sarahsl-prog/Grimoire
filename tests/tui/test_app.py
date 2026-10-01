@@ -467,3 +467,57 @@ class TestTabSwitchingDoesNotFight:
 
             assert app.query_one(TabbedContent).active == "documents"
             assert search.shown_calls == before
+
+
+class TestTabSwitchIsReliable:
+    """Regression: pressing F2 from the query box sometimes undid itself.
+
+    When the pane being left is hidden, Textual refocuses a widget inside it,
+    and that late focus event makes ``TabbedContent`` activate the pane that was
+    just left.  Roughly one try in six ended back where it started.
+    """
+
+    async def test_focus_is_dropped_before_the_switch(
+        self, stub_client: StubClient
+    ) -> None:
+        """The mechanism, deterministically: nothing is left focused in the pane
+        being left, so there is nothing for Textual to refocus."""
+        app = _FocusingApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            for _ in range(6):
+                await pilot.pause()
+            assert app.focused is not None  # the Search box has the keyboard
+
+            app.action_show_tab("documents")
+
+            assert app.focused is None  # synchronously, before any event runs
+
+    async def test_switching_to_the_active_tab_is_a_no_op(
+        self, stub_client: StubClient
+    ) -> None:
+        app = _FocusingApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            for _ in range(6):
+                await pilot.pause()
+            focused = app.focused
+
+            app.action_show_tab("search")  # already there
+            await pilot.pause()
+
+            assert app.focused is focused  # not needlessly dropped
+
+    async def test_f2_from_the_query_box_always_lands_on_documents(
+        self, stub_client: StubClient
+    ) -> None:
+        """The behaviour, repeated: before the fix about one trial in six failed."""
+        for _ in range(8):
+            app = _FocusingApp(stub_client, stub_client.config, None)
+            async with app.run_test() as pilot:
+                for _ in range(6):
+                    await pilot.pause()
+                await pilot.press("f2")
+                for _ in range(10):
+                    await pilot.pause(0.02)
+
+                assert app.query_one(TabbedContent).active == "documents"
+                assert app.focused is app.query_one("#documents-pane-input")
