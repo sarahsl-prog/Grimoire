@@ -23,12 +23,13 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.widget import Widget
-from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
+from textual.widgets import Footer, Header, TabbedContent, TabPane
 from textual.worker import get_current_worker
 
 from grimoire.gui.client import GrimoireClient
 from grimoire.gui.config import GuiConfig
 from grimoire.tui.messages import ConnectionReport
+from grimoire.tui.widgets.documents_pane import DocumentsPane
 from grimoire.tui.widgets.search_pane import SearchPane
 from grimoire.tui.widgets.status_bar import StatusBar
 
@@ -76,8 +77,8 @@ class GrimoireApp(App[None]):
         return SearchPane(self._client, id="search-pane")
 
     def make_documents_pane(self) -> Widget:
-        """Build the Documents pane.  Replaced by the real pane in a later task."""
-        return Static("Documents are coming.", id="documents-pane")
+        """Build the Documents pane."""
+        return DocumentsPane(self._client, id="documents-pane")
 
     # -- composition and lifecycle ----------------------------------------
 

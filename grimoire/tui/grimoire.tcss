@@ -101,3 +101,42 @@ SearchPane {
     padding: 0 1;
     border-left: tall $primary-muted;
 }
+
+/* -- Documents pane ------------------------------------------------------- */
+
+DocumentsPane {
+    padding: 0 1;
+}
+
+#doc-filters {
+    height: 3;
+}
+
+#status-filter, #type-filter {
+    width: 28;
+    margin-right: 1;
+}
+
+#doc-status {
+    height: auto;
+    color: $text-muted;
+}
+
+#doc-status.-error {
+    color: $error;
+}
+
+#documents-table {
+    height: 1fr;
+}
+
+#documents-empty {
+    height: 1fr;
+    content-align: center middle;
+    color: $text-muted;
+}
+
+#doc-footer {
+    height: 1;
+    color: $text-muted;
+}

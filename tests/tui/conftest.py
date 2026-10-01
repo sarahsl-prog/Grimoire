@@ -40,6 +40,7 @@ class StubClient:
     closed: int = 0
     ask_script: list[_Step] = field(default_factory=list)
     search_script: list[_Step] = field(default_factory=list)
+    documents_script: list[_Step] = field(default_factory=list)
     # Every ask/search call, in order: (method, positional args, keyword args).
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(
         default_factory=list
@@ -65,6 +66,10 @@ class StubClient:
     def search(self, query: str, **kwargs: Any) -> Any:
         self.calls.append(("search", (query,), kwargs))
         return self._run(self.search_script.pop(0))
+
+    def list_documents(self, **kwargs: Any) -> Any:
+        self.calls.append(("list_documents", (), kwargs))
+        return self._run(self.documents_script.pop(0))
 
     def calls_to(self, method: str) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
         return [(a, k) for m, a, k in self.calls if m == method]
