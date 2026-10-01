@@ -46,7 +46,9 @@ from grimoire.tui.screens.document_detail import DocumentDetailScreen
 # index times this, never taken from a response.
 PAGE_SIZE = 50
 
-_TITLE_WIDTH = 60
+# One long title sets the whole column's width.  At 60 it pushed Size and Added
+# off a 100-column terminal; 40 leaves room for every column there.
+_TITLE_WIDTH = 40
 _CELL_WIDTH = 24  # type and status come from enums, so anything longer is noise
 _UNTITLED = "(untitled)"
 _LOADING = "Loading…"

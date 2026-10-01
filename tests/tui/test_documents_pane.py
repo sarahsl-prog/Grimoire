@@ -389,7 +389,7 @@ class TestTitles:
             await _open(app, pilot)
 
             title = _cells(app, 0)[0]
-            assert len(title) <= 60 and title.endswith("\u2026")
+            assert len(title) <= 40 and title.endswith("\u2026")
 
     async def test_hostile_text_renders_literally_in_every_cell(
         self, stub_client, step
@@ -1021,6 +1021,25 @@ class TestLayout:
             key_bar = app.query_one(Footer)
             assert footer_line.region.bottom <= key_bar.region.y
             assert "Rows 1-3 of 312" in screen_text(app)
+
+    async def test_one_long_title_does_not_push_the_last_column_off_screen(
+        self, stub_client, step
+    ) -> None:
+        """Found by running against a real server: a single long title widened
+        the Title column to its cap and pushed Size and Added off a 100-column
+        terminal, so every row lost its date."""
+        resp = DocumentListResponse(
+            documents=[_doc(0, title="a very long document title " * 6), _doc(1)],
+            total=2,
+        )
+        stub_client.documents_script = [step(resp)]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open(app, pilot)
+
+            visible = screen_text(app)
+            assert visible.count("2026-10-01 10:30") == 2
+            assert "2.0 KB" in visible
 
     async def test_the_table_fills_the_space_down_to_the_range_line(
         self, stub_client, step
