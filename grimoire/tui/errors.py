@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from loguru import logger
 
-from grimoire.gui.errors import GuiError
+from grimoire.gui.errors import ConnectionFailed, GuiError, TimedOut
 
 GENERIC_ERROR = "Unexpected error. See the log file for details."
 
@@ -31,3 +31,23 @@ def user_message(exc: BaseException) -> str:
         return exc.message
     logger.opt(exception=exc).error("Unexpected error in a TUI worker")
     return GENERIC_ERROR
+
+
+def reachability(error: BaseException) -> bool | None:
+    """What a failed request says about whether the API is up.
+
+    Panes use this to keep the status bar honest between health checks.
+
+    Returns:
+        False for a connection failure (the API is down).  True for any other
+        client error: a 401, 429, 500 or unreadable body is still an *answer*,
+        so the API is up.  None when it proves nothing either way: a timeout
+        (a slow server and a dead one look alike) or an unexpected exception.
+    """
+    if isinstance(error, ConnectionFailed):
+        return False
+    if isinstance(error, TimedOut):
+        return None
+    if isinstance(error, GuiError):
+        return True
+    return None

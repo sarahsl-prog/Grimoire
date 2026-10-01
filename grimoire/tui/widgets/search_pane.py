@@ -53,8 +53,7 @@ from textual.worker import get_current_worker
 
 from grimoire.api.schemas import QueryResponse, SearchResponse
 from grimoire.gui.client import GrimoireClient
-from grimoire.gui.errors import ConnectionFailed, GuiError, TimedOut
-from grimoire.tui.errors import user_message
+from grimoire.tui.errors import reachability, user_message
 from grimoire.tui.formatting import (
     SEVERITIES,
     SOURCE_TYPES,
@@ -95,22 +94,6 @@ class _Request:
     query: str
     top_k: int
     filters: dict[str, Any] | None
-
-
-def _reachability(error: BaseException) -> bool | None:
-    """What a failed request says about whether the API is up.
-
-    A connection failure means down.  Any other client error (401, 429, 500, a
-    malformed body) means the API *answered*, so it is up.  A timeout, and
-    anything unexpected, is not evidence either way.
-    """
-    if isinstance(error, ConnectionFailed):
-        return False
-    if isinstance(error, TimedOut):
-        return None
-    if isinstance(error, GuiError):
-        return True
-    return None
 
 
 def _plural(n: int, noun: str) -> str:
@@ -364,7 +347,7 @@ class SearchPane(Vertical):
         self._set_status(text, error=True)
         # markup=False: the text may come from the server.
         self.app.notify(text, severity="error", markup=False)
-        reachable = _reachability(message.error)
+        reachable = reachability(message.error)
         if reachable is not None:
             self.post_message(ConnectionReport(reachable=reachable))
 

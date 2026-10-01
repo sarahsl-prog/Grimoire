@@ -15,7 +15,7 @@ from grimoire.gui.errors import (
     ServerError,
     TimedOut,
 )
-from grimoire.tui.errors import GENERIC_ERROR, user_message
+from grimoire.tui.errors import GENERIC_ERROR, reachability, user_message
 
 
 @pytest.mark.parametrize(
@@ -79,3 +79,36 @@ def test_gui_errors_are_not_logged_as_unexpected() -> None:
         logger.remove(sink_id)
 
     assert records == []
+
+
+class TestReachability:
+    """What a failed request says about whether the API is up."""
+
+    def test_a_connection_failure_means_down(self) -> None:
+        assert reachability(ConnectionFailed("no route")) is False
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            AuthFailed("401"),
+            RateLimited("429"),
+            ServerError("500"),
+            MalformedResponse("bad body"),
+            RequestRejected("404"),
+        ],
+    )
+    def test_any_other_client_error_means_the_api_answered_so_it_is_up(
+        self, error: GuiError
+    ) -> None:
+        assert reachability(error) is True
+
+    def test_a_timeout_is_not_evidence_either_way(self) -> None:
+        assert reachability(TimedOut("slow")) is None
+
+    @pytest.mark.parametrize(
+        "error", [RuntimeError("bug"), KeyError("k"), ValueError()]
+    )
+    def test_unexpected_exceptions_are_not_evidence_either_way(
+        self, error: Exception
+    ) -> None:
+        assert reachability(error) is None
