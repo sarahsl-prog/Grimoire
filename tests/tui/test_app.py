@@ -521,3 +521,47 @@ class TestTabSwitchIsReliable:
 
                 assert app.query_one(TabbedContent).active == "documents"
                 assert app.focused is app.query_one("#documents-pane-input")
+
+
+class TestHooksRunOncePerSwitch:
+    """Regression: Textual can report one switch twice (it briefly activates the
+    tab the focus just left, then the right one again).  Hooks such as
+    ``tab_shown()`` do real work, like retrying a failed load, so running them
+    twice turned one tab switch into two requests."""
+
+    async def test_the_same_pane_arriving_twice_in_a_row_runs_its_hooks_once(
+        self, stub_client: StubClient
+    ) -> None:
+        app = _FocusingApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            for _ in range(6):
+                await pilot.pause()
+            app.action_show_tab("documents")
+            for _ in range(6):
+                await pilot.pause()
+            documents = app.query_one("#documents-pane", _FocusingPane)
+            pane = app.query_one(TabbedContent).active_pane
+            assert documents.shown_calls == 1
+
+            app._pane_shown(pane)  # the duplicate report
+            app._pane_shown(pane)
+
+            assert documents.shown_calls == 1
+            assert documents.focus_calls == 1
+
+    async def test_going_away_and_coming_back_runs_the_hooks_again(
+        self, stub_client: StubClient
+    ) -> None:
+        """The dedupe must not swallow a genuine second visit."""
+        app = _FocusingApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            for _ in range(6):
+                await pilot.pause()
+            documents = app.query_one("#documents-pane", _FocusingPane)
+
+            for tab in ("documents", "search", "documents"):
+                app.action_show_tab(tab)
+                for _ in range(6):
+                    await pilot.pause()
+
+            assert documents.shown_calls == 2

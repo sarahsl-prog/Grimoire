@@ -67,6 +67,7 @@ class GrimoireApp(App[None]):
         self._client = client
         self._config = config
         self._log_path = log_path
+        self._last_shown_pane: TabPane | None = None
 
     # -- pane factories ---------------------------------------------------
 
@@ -146,6 +147,13 @@ class GrimoireApp(App[None]):
         """
         if self.query_one(TabbedContent).active_pane is not pane:
             return
+        # Textual can report one switch more than once (it briefly activates the
+        # tab the focus just left, then the right one again), so the same pane
+        # arrives twice in a row.  Hooks like `tab_shown()` do real work, such
+        # as retrying a failed load, and must run once per switch.
+        if pane is self._last_shown_pane:
+            return
+        self._last_shown_pane = pane
         for child in pane.children:
             for hook in ("tab_shown", "focus_primary"):
                 callback = getattr(child, hook, None)
