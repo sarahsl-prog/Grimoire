@@ -38,15 +38,36 @@ class StubClient:
     health_script: list[_Step] = field(default_factory=list)
     health_calls: int = 0
     closed: int = 0
+    ask_script: list[_Step] = field(default_factory=list)
+    search_script: list[_Step] = field(default_factory=list)
+    # Every ask/search call, in order: (method, positional args, keyword args).
+    calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(
+        default_factory=list
+    )
 
-    def health(self) -> bool:
-        self.health_calls += 1
-        step = self.health_script.pop(0) if self.health_script else _Step(self.healthy)
+    @staticmethod
+    def _run(step: _Step) -> Any:
         if step.gate is not None:
             step.gate.wait(timeout=5)  # bounded so a broken test cannot hang CI
         if isinstance(step.result, BaseException):
             raise step.result
-        return bool(step.result)
+        return step.result
+
+    def health(self) -> bool:
+        self.health_calls += 1
+        step = self.health_script.pop(0) if self.health_script else _Step(self.healthy)
+        return bool(self._run(step))
+
+    def ask(self, query: str, **kwargs: Any) -> Any:
+        self.calls.append(("ask", (query,), kwargs))
+        return self._run(self.ask_script.pop(0))
+
+    def search(self, query: str, **kwargs: Any) -> Any:
+        self.calls.append(("search", (query,), kwargs))
+        return self._run(self.search_script.pop(0))
+
+    def calls_to(self, method: str) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
+        return [(a, k) for m, a, k in self.calls if m == method]
 
     def close(self) -> None:
         self.closed += 1
@@ -61,3 +82,27 @@ def step() -> type[_Step]:
 @pytest.fixture
 def stub_client() -> StubClient:
     return StubClient()
+
+
+def screen_text(app: Any) -> str:
+    """The text currently visible on screen, one line per terminal row.
+
+    Rebuilt from Textual's SVG export, which escapes characters such as ``[``
+    and splits each row into per-style runs, so a plain substring search of the
+    raw SVG cannot see what a person would read.
+    """
+    import html
+    import re
+
+    svg: str = app.export_screenshot()
+    rows: dict[float, list[tuple[float, str]]] = {}
+    for match in re.finditer(
+        r'<text[^>]*x="([\d.]+)" y="([\d.]+)"[^>]*>(.*?)</text>', svg
+    ):
+        x, y, raw = float(match.group(1)), float(match.group(2)), match.group(3)
+        rows.setdefault(y, []).append((x, html.unescape(raw)))
+    lines = (
+        "".join(text for _, text in sorted(rows[y])).replace("\xa0", " ").rstrip()
+        for y in sorted(rows)
+    )
+    return "\n".join(line for line in lines if line.strip())

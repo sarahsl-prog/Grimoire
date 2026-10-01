@@ -29,6 +29,7 @@ from textual.worker import get_current_worker
 from grimoire.gui.client import GrimoireClient
 from grimoire.gui.config import GuiConfig
 from grimoire.tui.messages import ConnectionReport
+from grimoire.tui.widgets.search_pane import SearchPane
 from grimoire.tui.widgets.status_bar import StatusBar
 
 _NO_KEY_WARNING = "No API key set. Export GRIMOIRE_API_KEY and relaunch."
@@ -70,8 +71,8 @@ class GrimoireApp(App[None]):
     # -- pane factories ---------------------------------------------------
 
     def make_search_pane(self) -> Widget:
-        """Build the Search/Ask pane.  Replaced by the real pane in a later task."""
-        return Static("Search and Ask are coming.", id="search-pane")
+        """Build the Search/Ask pane."""
+        return SearchPane(self._client, id="search-pane")
 
     def make_documents_pane(self) -> Widget:
         """Build the Documents pane.  Replaced by the real pane in a later task."""
@@ -119,6 +120,17 @@ class GrimoireApp(App[None]):
         except NoMatches:
             return  # a late report arriving while the app shuts down
         bar.set_state("connected" if message.reachable else "unreachable")
+
+    def on_tabbed_content_tab_activated(
+        self, event: TabbedContent.TabActivated
+    ) -> None:
+        """Give the shown pane the keyboard: a pane opts in with ``focus_primary()``."""
+        for child in event.pane.children:
+            focus = getattr(child, "focus_primary", None)
+            if callable(focus):
+                # After refresh: the pane is not displayed until the tab switch
+                # has been laid out, and a hidden widget cannot take focus.
+                self.call_after_refresh(focus)
 
     # -- actions -----------------------------------------------------------
 

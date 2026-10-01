@@ -19,3 +19,78 @@ StatusBar.-connected {
 StatusBar.-unreachable {
     color: $error;
 }
+
+/* -- Search / Ask pane ---------------------------------------------------- */
+
+SearchPane {
+    padding: 0 1;
+}
+
+#query-row, #options-row {
+    height: 3;
+}
+
+#query-input {
+    width: 1fr;
+}
+
+#run-button {
+    margin-left: 1;
+}
+
+#mode-set {
+    layout: horizontal;
+    width: auto;
+    height: 3;
+    border: none;
+    padding: 0;
+}
+
+#top-k-label {
+    margin: 1 1 0 2;
+}
+
+#top-k {
+    width: 8;
+}
+
+#spinner {
+    width: 8;
+    height: 1;
+    margin: 1 0 0 2;
+}
+
+#status-line {
+    height: auto;
+    color: $text-muted;
+}
+
+#status-line.-error {
+    color: $error;
+}
+
+#meta-line {
+    height: auto;
+    color: $text-muted;
+}
+
+#answer-box {
+    height: auto;
+    max-height: 40%;
+    border: round $primary-muted;
+    padding: 0 1;
+}
+
+#sources {
+    height: 1fr;
+}
+
+#source-list {
+    width: 40%;
+}
+
+#preview-scroll {
+    width: 1fr;
+    padding: 0 1;
+    border-left: tall $primary-muted;
+}
