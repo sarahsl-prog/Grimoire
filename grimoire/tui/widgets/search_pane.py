@@ -67,6 +67,7 @@ from grimoire.tui.formatting import (
     truncate,
 )
 from grimoire.tui.messages import ConnectionReport
+from grimoire.tui.screens.document_detail import DocumentDetailScreen
 
 Mode = Literal["ask", "search"]
 
@@ -116,7 +117,10 @@ class SearchPane(Vertical):
         preview_text: Plain text of the source preview.
     """
 
-    BINDINGS = [Binding("escape", "abandon", "Abandon request")]
+    BINDINGS = [
+        Binding("escape", "abandon", "Abandon request"),
+        Binding("o", "open_document", "Open document"),
+    ]
 
     class Completed(Message):
         """A request finished successfully."""
@@ -282,7 +286,28 @@ class SearchPane(Vertical):
         # free for whatever else wants it.
         if action == "abandon":
             return self.in_flight
+        if action == "open_document":
+            # Only when the highlighted source names a document to open.
+            return self._highlighted_document_id() is not None
         return super().check_action(action, parameters)
+
+    def _highlighted_document_id(self) -> str | None:
+        """The document behind the highlighted source, if it names one."""
+        index = self.query_one("#source-list", OptionList).highlighted
+        if index is None or not 0 <= index < len(self.sources):
+            return None
+        return self.sources[index].document_id or None
+
+    def action_open_document(self) -> None:
+        document_id = self._highlighted_document_id()
+        if document_id:
+            self.app.push_screen(DocumentDetailScreen(self._client, document_id))
+
+    @on(OptionList.OptionSelected, "#source-list")
+    def _on_source_selected(self, event: OptionList.OptionSelected) -> None:
+        """``Enter`` on a source opens its document, like ``o``."""
+        event.stop()
+        self.action_open_document()
 
     def action_abandon(self) -> None:
         if not self.in_flight:
@@ -397,6 +422,7 @@ class SearchPane(Vertical):
         if views:
             listing.highlighted = 0
         self._show_preview(0)
+        self.refresh_bindings()
 
     @staticmethod
     def _row(view: SourceView) -> str:
@@ -419,3 +445,4 @@ class SearchPane(Vertical):
     def _on_source_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         event.stop()
         self._show_preview(event.option_index)
+        self.refresh_bindings()

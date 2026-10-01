@@ -140,3 +140,63 @@ DocumentsPane {
     height: 1;
     color: $text-muted;
 }
+
+/* -- Document detail modal ------------------------------------------------ */
+
+DocumentDetailScreen {
+    align: center middle;
+}
+
+#detail-box {
+    width: 80%;
+    max-width: 100;
+    height: auto;
+    max-height: 90%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#detail-heading {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#detail-status {
+    height: auto;
+    color: $text-muted;
+}
+
+#detail-status.-error {
+    color: $error;
+}
+
+#detail-scroll {
+    height: auto;
+    max-height: 100%;
+}
+
+#detail-grid {
+    grid-size: 2;
+    grid-columns: 14 1fr;
+    grid-rows: auto;
+    grid-gutter: 0 1;
+    height: auto;
+}
+
+.detail-key {
+    color: $text-muted;
+    text-style: bold;
+}
+
+.detail-value {
+    height: auto;
+}
+
+#detail-error {
+    color: $error;
+}
+
+#detail-close {
+    margin-top: 1;
+}

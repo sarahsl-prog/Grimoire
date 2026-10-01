@@ -33,6 +33,7 @@ from grimoire.gui.errors import (  # noqa: E402
 )
 from grimoire.tui.app import GrimoireApp  # noqa: E402
 from grimoire.tui.errors import GENERIC_ERROR  # noqa: E402
+from grimoire.tui.screens.document_detail import DocumentDetailScreen  # noqa: E402
 from grimoire.tui.widgets.search_pane import SearchPane  # noqa: E402
 from grimoire.tui.widgets.status_bar import StatusBar  # noqa: E402
 
@@ -93,6 +94,16 @@ async def _submit(app: GrimoireApp, pilot: Any, query: str = "what is sigma") ->
     box.value = query
     box.focus()
     await pilot.press("enter")
+
+
+async def _until_screen(pilot: Any, app: GrimoireApp, screen_type: type) -> None:
+    import time
+
+    deadline = time.monotonic() + 5.0
+    while not isinstance(app.screen, screen_type):
+        if time.monotonic() > deadline:
+            raise AssertionError(f"timed out waiting for {screen_type.__name__}")
+        await pilot.pause(0.01)
 
 
 def _sources(app: GrimoireApp) -> OptionList:
@@ -642,6 +653,153 @@ class TestLayout:
                 app.query_one("#sources").region.bottom
                 <= app.query_one(Footer).region.y
             )
+
+
+class TestOpenDocument:
+    @staticmethod
+    def _detail_steps(step: Any, n: int = 3) -> list[Any]:
+        from grimoire.api.schemas import DocumentDetailResponse
+
+        return [
+            step(
+                DocumentDetailResponse(
+                    id="x",
+                    source_path="/p/x.pdf",
+                    file_type="pdf",
+                    storage_backend="local",
+                    processing_status="completed",
+                )
+            )
+            for _ in range(n)
+        ]
+
+    async def _with_sources(self, app: GrimoireApp, pilot: Any) -> None:
+        await _submit(app, pilot)
+        await _settled(app, pilot)
+        _sources(app).focus()
+        await pilot.pause()
+
+    async def test_o_opens_the_highlighted_sources_document(
+        self, stub_client, step
+    ) -> None:
+        stub_client.ask_script = [step(_answer())]
+        stub_client.detail_script = self._detail_steps(step)
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await self._with_sources(app, pilot)
+
+            await pilot.press("o")
+            await _until_screen(pilot, app, DocumentDetailScreen)
+
+            assert stub_client.calls_to("get_document")[0][0] == ("doc-0",)
+
+    async def test_o_follows_the_highlight(self, stub_client, step) -> None:
+        stub_client.ask_script = [step(_answer())]
+        stub_client.detail_script = self._detail_steps(step)
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await self._with_sources(app, pilot)
+
+            await pilot.press("down", "o")
+            await _until_screen(pilot, app, DocumentDetailScreen)
+
+            assert stub_client.calls_to("get_document")[0][0] == ("doc-1",)
+
+    async def test_enter_on_a_source_opens_it_too(self, stub_client, step) -> None:
+        stub_client.ask_script = [step(_answer())]
+        stub_client.detail_script = self._detail_steps(step)
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await self._with_sources(app, pilot)
+
+            await pilot.press("down", "enter")
+            await _until_screen(pilot, app, DocumentDetailScreen)
+
+            assert stub_client.calls_to("get_document")[0][0] == ("doc-1",)
+
+    async def test_works_for_search_results_as_well(self, stub_client, step) -> None:
+        stub_client.search_script = [step(_found())]
+        stub_client.detail_script = self._detail_steps(step)
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            app.query_one("#mode-search").value = True  # type: ignore[attr-defined]
+            await pilot.pause()
+            await self._with_sources(app, pilot)
+
+            await pilot.press("o")
+            await _until_screen(pilot, app, DocumentDetailScreen)
+
+            assert stub_client.calls_to("get_document")[0][0] == ("doc-0",)
+
+    async def test_o_is_unavailable_before_there_are_sources(self, stub_client) -> None:
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            assert _pane(app).check_action("open_document", ()) is False
+
+    async def test_a_source_without_a_document_id_cannot_be_opened(
+        self, stub_client, step
+    ) -> None:
+        resp = QueryResponse(
+            query="q",
+            answer="ok",
+            citations=[
+                CitationResponse(document_id="", chunk_id="c", content_snippet="t")
+            ],
+        )
+        stub_client.ask_script = [step(resp)]
+        stub_client.detail_script = self._detail_steps(step)
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await self._with_sources(app, pilot)
+            assert _pane(app).check_action("open_document", ()) is False
+
+            await pilot.press("o", "enter")
+            for _ in range(4):
+                await pilot.pause()
+
+            assert not isinstance(app.screen, DocumentDetailScreen)
+            assert stub_client.calls_to("get_document") == []
+
+    async def test_typing_o_in_the_query_box_types_an_o(
+        self, stub_client, step
+    ) -> None:
+        stub_client.ask_script = [step(_answer())]
+        stub_client.detail_script = self._detail_steps(step)
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _submit(app, pilot)
+            await _settled(app, pilot)
+            box = app.query_one("#query-input", Input)
+            box.value = ""
+            box.focus()
+            await pilot.pause()
+
+            await pilot.press("o")
+            await pilot.pause()
+
+            assert box.value == "o"
+            assert not isinstance(app.screen, DocumentDetailScreen)
+
+    async def test_closing_returns_the_keyboard_to_the_source_list(
+        self, stub_client, step
+    ) -> None:
+        stub_client.ask_script = [step(_answer())]
+        stub_client.detail_script = self._detail_steps(step)
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await self._with_sources(app, pilot)
+            await pilot.press("down", "o")
+            await _until_screen(pilot, app, DocumentDetailScreen)
+            await _settled(app, pilot)
+
+            await pilot.press("escape")
+            await pilot.pause()
+            await pilot.pause()
+
+            assert app.focused is _sources(app)
+            assert _sources(app).highlighted == 1
 
 
 class TestFocus:

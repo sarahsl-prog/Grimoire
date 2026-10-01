@@ -40,6 +40,7 @@ from grimoire.tui.formatting import (
     truncate,
 )
 from grimoire.tui.messages import ConnectionReport
+from grimoire.tui.screens.document_detail import DocumentDetailScreen
 
 # The API's default page size.  The offset sent is always derived from the page
 # index times this, never taken from a response.
@@ -224,6 +225,15 @@ class DocumentsPane(Vertical):
         # asked for yet, so there is nothing to reload.
         if self._activated:
             self._load(0)
+
+    @on(DataTable.RowSelected, "#documents-table")
+    def _on_row_selected(self, event: DataTable.RowSelected) -> None:
+        """``Enter`` (or a click) on a row opens that document's detail."""
+        event.stop()
+        row = event.cursor_row
+        document_id = self._ids[row] if 0 <= row < len(self._ids) else None
+        if document_id:  # a row the server sent without an id cannot be fetched
+            self.app.push_screen(DocumentDetailScreen(self._client, document_id))
 
     @on(Button.Pressed, "#doc-refresh")
     def _on_refresh_pressed(self, event: Button.Pressed) -> None:

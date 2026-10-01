@@ -24,6 +24,7 @@ from grimoire.gui.errors import (  # noqa: E402
 )
 from grimoire.tui.app import GrimoireApp  # noqa: E402
 from grimoire.tui.errors import GENERIC_ERROR  # noqa: E402
+from grimoire.tui.screens.document_detail import DocumentDetailScreen  # noqa: E402
 from grimoire.tui.widgets.documents_pane import PAGE_SIZE, DocumentsPane  # noqa: E402
 from grimoire.tui.widgets.status_bar import StatusBar  # noqa: E402
 
@@ -1031,3 +1032,85 @@ class TestLayout:
 
             table = app.query_one("#documents-table")
             assert table.region.bottom == app.query_one("#doc-footer").region.y
+
+
+class TestOpenDetail:
+    @staticmethod
+    def _client_with_detail(stub_client: Any, step: Any, pages: list[Any]) -> None:
+        from grimoire.api.schemas import DocumentDetailResponse
+
+        stub_client.documents_script = pages
+        stub_client.detail_script = [
+            step(
+                DocumentDetailResponse(
+                    id="x",
+                    source_path="/p/x.pdf",
+                    file_type="pdf",
+                    storage_backend="local",
+                    processing_status="completed",
+                )
+            )
+            for _ in range(4)
+        ]
+
+    async def test_enter_opens_the_detail_for_the_row_under_the_cursor(
+        self, stub_client, step
+    ) -> None:
+        self._client_with_detail(stub_client, step, [step(_page(3))])
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+
+            await pilot.press("enter")
+            await _until(pilot, lambda: isinstance(app.screen, DocumentDetailScreen))
+
+            assert stub_client.calls_to("get_document")[0][0] == ("doc-0",)
+
+    async def test_enter_on_a_later_row_opens_that_document(
+        self, stub_client, step
+    ) -> None:
+        self._client_with_detail(stub_client, step, [step(_page(3))])
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+
+            await pilot.press("down", "down", "enter")
+            await _until(pilot, lambda: isinstance(app.screen, DocumentDetailScreen))
+
+            assert stub_client.calls_to("get_document")[0][0] == ("doc-2",)
+
+    async def test_a_row_without_an_id_cannot_be_opened(
+        self, stub_client, step
+    ) -> None:
+        resp = DocumentListResponse(documents=[_doc(1, id="")], total=1)
+        self._client_with_detail(stub_client, step, [step(resp)])
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+
+            await pilot.press("enter")
+            for _ in range(4):
+                await pilot.pause()
+
+            assert not isinstance(app.screen, DocumentDetailScreen)
+            assert stub_client.calls_to("get_document") == []
+
+    async def test_closing_returns_the_keyboard_and_cursor_to_the_table(
+        self, stub_client, step
+    ) -> None:
+        self._client_with_detail(stub_client, step, [step(_page(4))])
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await pilot.press("down", "enter")
+            await _until(pilot, lambda: isinstance(app.screen, DocumentDetailScreen))
+            await _settled(app, pilot)
+
+            await pilot.press("escape")
+            await _until(
+                pilot, lambda: not isinstance(app.screen, DocumentDetailScreen)
+            )
+            await pilot.pause()
+
+            assert app.focused is _table(app)
+            assert _pane(app).selected_document_id == "doc-1"
