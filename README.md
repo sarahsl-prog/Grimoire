@@ -334,8 +334,9 @@ bare-metal API or the containerized stack. Drag-and-drop uses the same
 do **not** need to share a filesystem.
 
 An API key pasted into the connection bar is kept in memory for that session
-only; nothing writes it to disk. Set `GRIMOIRE_API_KEY` in `.env` to avoid
-retyping it.
+only; nothing writes it to disk. To avoid retyping it, export
+`GRIMOIRE_API_KEY` in your shell. The GUI reads the process environment, not
+`.env`; to use a `.env` file, load it first with `set -a; source .env; set +a`.
 
 **On WSL2 the GUI needs WSLg** (shipped with Windows 11). Check with
 `echo "$DISPLAY $WAYLAND_DISPLAY"` — if both are empty, no window can open.
