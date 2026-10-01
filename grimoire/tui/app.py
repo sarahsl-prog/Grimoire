@@ -124,13 +124,33 @@ class GrimoireApp(App[None]):
     def on_tabbed_content_tab_activated(
         self, event: TabbedContent.TabActivated
     ) -> None:
-        """Give the shown pane the keyboard: a pane opts in with ``focus_primary()``."""
-        for child in event.pane.children:
-            focus = getattr(child, "focus_primary", None)
-            if callable(focus):
-                # After refresh: the pane is not displayed until the tab switch
-                # has been laid out, and a hidden widget cannot take focus.
-                self.call_after_refresh(focus)
+        """Tell the shown pane it is on screen, once layout has caught up.
+
+        Deferred because the pane is not displayed until the tab switch has been
+        laid out, and a hidden widget cannot take focus.
+        """
+        self.call_after_refresh(self._pane_shown, event.pane)
+
+    def _pane_shown(self, pane: TabPane) -> None:
+        """Run a pane's opt-in hooks: ``tab_shown()`` then ``focus_primary()``.
+
+        ``tab_shown()`` is for first-time work such as loading data;
+        ``focus_primary()`` takes the keyboard.
+
+        Both are skipped unless ``pane`` is *still* the active tab.  This is a
+        correctness guard, not a nicety: focusing a widget inside a pane makes
+        ``TabbedContent`` activate that pane's tab.  If a callback queued for a
+        tab the user has since left were allowed to run, its ``focus_primary()``
+        would pull focus (and so the tab) back, which queues the other pane's
+        callback, which does the same in return: an endless ping-pong.
+        """
+        if self.query_one(TabbedContent).active_pane is not pane:
+            return
+        for child in pane.children:
+            for hook in ("tab_shown", "focus_primary"):
+                callback = getattr(child, hook, None)
+                if callable(callback):
+                    callback()
 
     # -- actions -----------------------------------------------------------
 

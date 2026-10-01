@@ -13,7 +13,8 @@ import pytest
 
 pytest.importorskip("textual", reason="TUI extra not installed")
 
-from textual.widgets import Static, TabbedContent  # noqa: E402
+from textual.containers import Vertical  # noqa: E402
+from textual.widgets import Input, Static, TabbedContent  # noqa: E402
 
 from grimoire.gui.config import GuiConfig  # noqa: E402
 from grimoire.tui.app import GrimoireApp  # noqa: E402
@@ -393,3 +394,76 @@ class TestWithTheRealClient:
                 assert app.is_running
         finally:
             client.close()
+
+
+class _FocusingPane(Vertical):
+    """A pane that takes the keyboard when shown, like the real ones do."""
+
+    def __init__(self, pane_id: str) -> None:
+        super().__init__(id=pane_id)
+        self.focus_calls = 0
+        self.shown_calls = 0
+
+    def compose(self) -> Any:
+        yield Input(id=f"{self.id}-input")
+
+    def focus_primary(self) -> None:
+        self.focus_calls += 1
+        self.query_one(Input).focus()
+
+    def tab_shown(self) -> None:
+        self.shown_calls += 1
+
+
+class _FocusingApp(GrimoireApp):
+    def make_search_pane(self) -> Any:
+        return _FocusingPane("search-pane")
+
+    def make_documents_pane(self) -> Any:
+        return _FocusingPane("documents-pane")
+
+
+class TestTabSwitchingDoesNotFight:
+    """Regression: focusing a widget inside a pane makes TabbedContent activate
+    that pane's tab.  Hook callbacks queued for a tab the user has already left
+    used to run late, steal focus back, and flip the tab again, so two panes
+    that each take the keyboard ping-ponged forever (over a hundred
+    activations, tens of seconds of churn)."""
+
+    async def test_switching_tabs_settles_instead_of_ping_ponging(
+        self, stub_client: StubClient
+    ) -> None:
+        app = _FocusingApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await pilot.press("f2")
+            for _ in range(3):
+                await pilot.pause()
+
+            search = app.query_one("#search-pane", _FocusingPane)
+            documents = app.query_one("#documents-pane", _FocusingPane)
+            assert app.query_one(TabbedContent).active == "documents"
+            assert app.focused is app.query_one("#documents-pane-input")
+            assert search.focus_calls <= 1
+            assert documents.focus_calls == 1
+            assert documents.shown_calls == 1
+
+    async def test_the_pane_for_the_tab_the_user_left_is_not_told_it_is_shown(
+        self, stub_client: StubClient
+    ) -> None:
+        app = _FocusingApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            for _ in range(3):  # let the startup activation finish
+                await pilot.pause()
+            search = app.query_one("#search-pane", _FocusingPane)
+            before = search.shown_calls
+
+            # No awaits between these, so every deferred callback is still queued
+            # when the user has already ended up on Documents.
+            app.action_show_tab("documents")
+            app.action_show_tab("search")
+            app.action_show_tab("documents")
+            for _ in range(3):
+                await pilot.pause()
+
+            assert app.query_one(TabbedContent).active == "documents"
+            assert search.shown_calls == before
