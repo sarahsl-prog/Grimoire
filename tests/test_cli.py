@@ -1018,9 +1018,7 @@ class TestStatusCommand:
         mock_ctx.return_value = ctx
 
         mock_store = AsyncMock()
-        mock_store.initialize = AsyncMock(
-            side_effect=ConnectionError("refused")
-        )
+        mock_store.initialize = AsyncMock(side_effect=ConnectionError("refused"))
         mock_store_cls.return_value = mock_store
 
         result = runner.invoke(cli, ["status", "--detailed"])
@@ -1284,9 +1282,7 @@ class TestReindexCommand:
         mock_ctx.return_value = ctx
 
         mock_store = AsyncMock()
-        mock_store.get = AsyncMock(
-            return_value=[{"id": "c1"}, {"id": "c2"}]
-        )
+        mock_store.get = AsyncMock(return_value=[{"id": "c1"}, {"id": "c2"}])
         mock_store_cls.return_value = mock_store
 
         result = runner.invoke(cli, ["reindex"])
@@ -1437,14 +1433,11 @@ class TestVectorStoreSummary:
     def test_embedded_chromadb(self) -> None:
         settings = self._settings(VectorStoreType.CHROMADB, host=None, port=None)
         assert (
-            _vector_store_summary(settings)
-            == "chromadb (embedded, path=./chroma_db)"
+            _vector_store_summary(settings) == "chromadb (embedded, path=./chroma_db)"
         )
 
     def test_remote_chromadb(self) -> None:
-        settings = self._settings(
-            VectorStoreType.CHROMADB, host="chromadb", port=8000
-        )
+        settings = self._settings(VectorStoreType.CHROMADB, host="chromadb", port=8000)
         assert _vector_store_summary(settings) == "chromadb (remote chromadb:8000)"
 
     def test_remote_chromadb_default_port(self) -> None:
@@ -2101,3 +2094,259 @@ class TestCLIConfigValidation:
 
         assert result.exit_code == 0
         assert output.exists()
+
+
+# =============================================================================
+# Terminal UI shortcuts (--tui flag and `tui` subcommand)
+# =============================================================================
+
+_TUI_MAIN = "grimoire.tui.__main__.main"
+_GET_SETTINGS = "grimoire.config.settings.get_settings"
+_SETUP_LOGGER = "grimoire.utils.logger.setup_logger"
+
+
+class TestTuiShortcuts:
+    """`grimoire --tui` and `grimoire tui` both start the terminal UI.
+
+    The UI is an HTTP client that configures its own file-only logging, so
+    neither shortcut may run the group's settings validation or install its
+    stderr log sink: a broken grimoire.yaml must not stop the TUI, and log lines
+    on stderr would paint over a full-screen UI.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_logging(self) -> Any:
+        """The end-to-end tests run the real TUI entry point, which reconfigures
+        logging for the whole process (drops loguru's sinks, replaces the root
+        logger's handlers).  Put it back so later tests are unaffected."""
+        import logging
+        import sys
+
+        from loguru import logger
+
+        root = logging.getLogger()
+        handlers, level = list(root.handlers), root.level
+        httpx_level = logging.getLogger("httpx").level
+        yield
+        logger.remove()
+        logger.add(sys.stderr)
+        root.handlers[:] = handlers
+        root.setLevel(level)
+        logging.getLogger("httpx").setLevel(httpx_level)
+
+    # -- the --tui flag ------------------------------------------------------
+
+    @pytest.mark.parametrize("code", [0, 1, 3])
+    def test_flag_launches_the_tui_and_exits_with_its_code(
+        self, runner: CliRunner, code: int
+    ) -> None:
+        with patch(_TUI_MAIN, return_value=code) as tui_main:
+            result = runner.invoke(cli, ["--tui"])
+
+        tui_main.assert_called_once_with([])
+        assert result.exit_code == code
+
+    def test_flag_skips_settings_validation_and_the_stderr_log_sink(
+        self, runner: CliRunner
+    ) -> None:
+        with (
+            patch(_TUI_MAIN, return_value=0),
+            patch(_GET_SETTINGS) as get_settings,
+            patch(_SETUP_LOGGER) as setup_logger,
+        ):
+            runner.invoke(cli, ["--tui"])
+
+        get_settings.assert_not_called()
+        setup_logger.assert_not_called()
+
+    def test_flag_still_launches_when_the_config_is_broken(
+        self, runner: CliRunner
+    ) -> None:
+        from grimoire.config.settings import ConfigurationError
+
+        with (
+            patch(_TUI_MAIN, return_value=0) as tui_main,
+            patch(_GET_SETTINGS, side_effect=ConfigurationError("broken yaml")),
+            patch(_SETUP_LOGGER),
+        ):
+            launched = runner.invoke(cli, ["--tui"])
+            # Control: the same broken config does stop an ordinary command, so
+            # the patch above really is in effect.
+            blocked = runner.invoke(cli, ["status"])
+
+        tui_main.assert_called_once()
+        assert launched.exit_code == 0
+        assert blocked.exit_code == 1
+        assert "broken yaml" in blocked.output
+
+    @pytest.mark.parametrize("argv", [["--verbose", "--tui"], ["--tui", "--verbose"]])
+    def test_flag_launches_regardless_of_its_position_among_other_options(
+        self, runner: CliRunner, argv: list[str]
+    ) -> None:
+        with patch(_TUI_MAIN, return_value=0) as tui_main, patch(_SETUP_LOGGER):
+            result = runner.invoke(cli, argv)
+
+        tui_main.assert_called_once_with([])
+        assert result.exit_code == 0
+
+    def test_flag_is_eager_so_it_fires_even_when_another_option_is_invalid(
+        self, runner: CliRunner
+    ) -> None:
+        """Eager parameters are processed first.  `--config` insists the file
+        exists, so without eagerness a stale path would fail before the UI,
+        which does not use that file at all, could start."""
+        with patch(_TUI_MAIN, return_value=0) as tui_main:
+            result = runner.invoke(cli, ["--config", "/no/such/file.yaml", "--tui"])
+
+        tui_main.assert_called_once_with([])
+        assert result.exit_code == 0
+
+    def test_flag_does_not_launch_during_help(self, runner: CliRunner) -> None:
+        with patch(_TUI_MAIN, return_value=0) as tui_main:
+            result = runner.invoke(cli, ["--help"])
+
+        tui_main.assert_not_called()
+        assert result.exit_code == 0
+        assert "--tui" in result.output
+        assert "tui" in result.output.split("Commands:")[1]
+
+    def test_flag_does_not_launch_while_shell_completion_is_parsing(self) -> None:
+        """Completion parses the command line with `resilient_parsing` set; a
+        flag callback that launched a full-screen UI there would hang the shell."""
+        import click
+
+        from grimoire.cli.main import _launch_tui
+
+        ctx = click.Context(cli, resilient_parsing=True)
+        param = click.Option(["--tui"])
+        with patch(_TUI_MAIN, return_value=0) as tui_main:
+            _launch_tui(ctx, param, True)
+
+        tui_main.assert_not_called()
+
+    def test_flag_set_to_false_does_nothing(self, runner: CliRunner) -> None:
+        import click
+
+        from grimoire.cli.main import _launch_tui
+
+        ctx = click.Context(cli)
+        with patch(_TUI_MAIN, return_value=0) as tui_main:
+            _launch_tui(ctx, click.Option(["--tui"]), False)
+
+        tui_main.assert_not_called()
+
+    def test_flag_is_not_passed_on_to_the_group_callback(self) -> None:
+        """expose_value=False: `cli()` must not grow a `tui` parameter."""
+        import inspect
+
+        assert "tui" not in inspect.signature(cli.callback).parameters  # type: ignore[arg-type]
+
+    # -- the `tui` subcommand ------------------------------------------------
+
+    def test_subcommand_launches_with_no_arguments(self, runner: CliRunner) -> None:
+        with patch(_TUI_MAIN, return_value=0) as tui_main:
+            result = runner.invoke(cli, ["tui"])
+
+        tui_main.assert_called_once_with([])
+        assert result.exit_code == 0
+
+    def test_subcommand_forwards_url_and_debug(self, runner: CliRunner) -> None:
+        with patch(_TUI_MAIN, return_value=0) as tui_main:
+            runner.invoke(cli, ["tui", "--url", "http://x:1", "--debug"])
+
+        tui_main.assert_called_once_with(["--url", "http://x:1", "--debug"])
+
+    def test_subcommand_forwards_url_alone(self, runner: CliRunner) -> None:
+        with patch(_TUI_MAIN, return_value=0) as tui_main:
+            runner.invoke(cli, ["tui", "--url", "https://box:9000"])
+
+        tui_main.assert_called_once_with(["--url", "https://box:9000"])
+
+    @pytest.mark.parametrize("code", [0, 1, 3])
+    def test_subcommand_exits_with_the_tuis_code(
+        self, runner: CliRunner, code: int
+    ) -> None:
+        with patch(_TUI_MAIN, return_value=code):
+            result = runner.invoke(cli, ["tui"])
+
+        assert result.exit_code == code
+
+    def test_subcommand_behaves_like_the_flag_on_settings_and_logging(
+        self, runner: CliRunner
+    ) -> None:
+        from grimoire.config.settings import ConfigurationError
+
+        with (
+            patch(_TUI_MAIN, return_value=0) as tui_main,
+            patch(_GET_SETTINGS, side_effect=ConfigurationError("broken yaml")) as gs,
+            patch(_SETUP_LOGGER) as setup_logger,
+        ):
+            result = runner.invoke(cli, ["tui"])
+
+        tui_main.assert_called_once()
+        assert result.exit_code == 0
+        gs.assert_not_called()
+        setup_logger.assert_not_called()
+
+    def test_subcommand_is_listed_with_a_description(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["tui", "--help"])
+
+        assert result.exit_code == 0
+        assert "--url" in result.output
+        assert "--debug" in result.output
+        assert "GRIMOIRE_API_KEY" in result.output
+
+    def test_other_subcommands_still_validate_settings_and_set_up_logging(
+        self, runner: CliRunner
+    ) -> None:
+        """The early return is for `tui` only.  `status --help` runs the group
+        callback without executing the command."""
+        with patch(_GET_SETTINGS) as get_settings, patch(_SETUP_LOGGER) as setup_logger:
+            runner.invoke(cli, ["status", "--help"])
+
+        get_settings.assert_called()
+        setup_logger.assert_called()
+
+    # -- end to end: the real TUI entry point, not a mock --------------------
+
+    def test_a_missing_textual_extra_gives_the_install_hint_via_the_flag(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sys
+
+        monkeypatch.setitem(sys.modules, "textual", None)  # makes the import fail
+
+        result = runner.invoke(cli, ["--tui"])
+
+        assert result.exit_code == 1
+        assert "uv sync --extra tui" in result.output
+        assert "Traceback" not in result.output
+
+    def test_a_missing_textual_extra_gives_the_install_hint_via_the_subcommand(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sys
+
+        monkeypatch.setitem(sys.modules, "textual", None)
+
+        result = runner.invoke(cli, ["tui"])
+
+        assert result.exit_code == 1
+        assert "uv sync --extra tui" in result.output
+
+    def test_a_malformed_url_is_rejected_by_the_real_entry_point(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import sys
+        import types
+
+        monkeypatch.setitem(sys.modules, "textual", types.ModuleType("textual"))
+        monkeypatch.chdir(tmp_path)  # the TUI writes ./logs
+
+        result = runner.invoke(cli, ["tui", "--url", "not a url"])
+
+        assert result.exit_code == 1
+        assert "Invalid Grimoire API URL" in result.output
