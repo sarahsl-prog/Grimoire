@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("textual", reason="TUI extra not installed")
 
-from textual.widgets import Input, Markdown, OptionList, Select  # noqa: E402
+from textual.widgets import Footer, Input, Markdown, OptionList, Select  # noqa: E402
 
 from grimoire.api.schemas import (  # noqa: E402
     CitationResponse,
@@ -627,6 +627,21 @@ class TestUntrustedText:
             await pilot.pause()
 
             assert opened == []
+
+
+class TestLayout:
+    async def test_the_source_list_is_not_hidden_under_the_key_bar(
+        self, stub_client
+    ) -> None:
+        """Regression: the pane's last row sat underneath the docked footer."""
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+
+            assert (
+                app.query_one("#sources").region.bottom
+                <= app.query_one(Footer).region.y
+            )
 
 
 class TestFocus:

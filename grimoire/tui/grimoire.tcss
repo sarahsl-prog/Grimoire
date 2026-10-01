@@ -1,6 +1,13 @@
 /* Colours come from Textual's theme variables, so light and dark themes both
    work and the app follows whichever theme is active. */
 
+/* Take only the space left after the header, status bar and key bar.  With the
+   default auto height the tab area is one row too tall and the last row of every
+   pane sits underneath the docked footer. */
+TabbedContent {
+    height: 1fr;
+}
+
 StatusBar {
     height: 1;
     padding: 0 1;
