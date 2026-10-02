@@ -334,9 +334,9 @@ bare-metal API or the containerized stack. Drag-and-drop uses the same
 do **not** need to share a filesystem.
 
 An API key pasted into the connection bar is kept in memory for that session
-only; nothing writes it to disk. To avoid retyping it, export
-`GRIMOIRE_API_KEY` in your shell. The GUI reads the process environment, not
-`.env`; to use a `.env` file, load it first with `set -a; source .env; set +a`.
+only; nothing writes it to disk. To avoid retyping it, set `GRIMOIRE_API_KEY`
+in your shell or in a `.env` file in the directory you launch from (see
+*Client settings* below).
 
 **On WSL2 the GUI needs WSLg** (shipped with Windows 11). Check with
 `echo "$DISPLAY $WAYLAND_DISPLAY"` — if both are empty, no window can open.
@@ -374,6 +374,17 @@ a broken `grimoire.yaml` cannot stop them). `--url` overrides
 `GRIMOIRE_API_URL`, and `--debug` adds DEBUG records to the log file. There is
 deliberately **no `--api-key` option**: command-line arguments leak into
 process listings and shell history.
+
+#### Client settings (GUI and TUI)
+
+Both clients read `GRIMOIRE_API_URL` and `GRIMOIRE_API_KEY` from, in order of
+precedence: the process environment, then a `.env` file in the **current
+directory**, then the default (`http://localhost:8001`, no key). The TUI's `--url`
+beats all three. A blank value counts as unset at every level. Only those two
+keys are read from the file: nothing from it is exported into the environment,
+`${VAR}` references are not expanded, a missing or unreadable file is ignored,
+and no value is logged. Launch from the project directory to pick up the same
+`.env` the server uses.
 
 Like the GUI, the TUI is a thin HTTP client and never imports the ingestion
 pipeline, so it starts instantly. **The API server must already be running**

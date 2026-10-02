@@ -11,11 +11,18 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
+
+from dotenv import dotenv_values
+from loguru import logger
 
 DEFAULT_BASE_URL = "http://localhost:8001"
 
 ENV_BASE_URL = "GRIMOIRE_API_URL"
 ENV_API_KEY = "GRIMOIRE_API_KEY"
+
+#: Looked up in the current directory when no explicit path is given.
+DEFAULT_DOTENV_PATH = Path(".env")
 
 # The id travels as an HTTP header and ends up in server logs, so it is held to
 # a conservative alphabet.  fullmatch, not `^...$`: `$` also matches before a
@@ -96,20 +103,47 @@ class GuiConfig:
             )
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> GuiConfig:
-        """Build a config from the environment.
+    def from_env(
+        cls,
+        env: Mapping[str, str] | None = None,
+        *,
+        dotenv_path: Path | None = None,
+    ) -> GuiConfig:
+        """Build a config from the environment, then a ``.env`` file.
+
+        Precedence, per key: a real environment variable, then the ``.env``
+        file, then the default.  A blank or whitespace-only value counts as
+        absent at every layer, so ``GRIMOIRE_API_KEY=`` cannot mask a key
+        that is set further down.
+
+        Only ``GRIMOIRE_API_URL`` and ``GRIMOIRE_API_KEY`` are taken from the
+        file.  Nothing is exported into ``os.environ``, variables in the file
+        are not interpolated, and no value is logged.
 
         Args:
-            env: Mapping to read instead of os.environ.  Tests pass an
+            env: Mapping to read instead of ``os.environ``.  Tests pass an
                 explicit dict rather than mutating the process environment.
+            dotenv_path: The file to read.  When omitted, the process
+                environment (``env is None``) also reads ``.env`` in the
+                current directory, while an explicit ``env`` mapping reads no
+                file at all, so a caller or test that supplies its own
+                environment is never influenced by whichever directory it
+                happens to run in.
 
         Returns:
-            A GuiConfig.  Missing values fall back to the defaults; a blank
-            or whitespace-only key counts as absent.
+            A GuiConfig.  Missing values fall back to the defaults.  A missing
+            or unreadable file is not an error.
         """
         source = os.environ if env is None else env
-        raw_url = source.get(ENV_BASE_URL, "").strip() or DEFAULT_BASE_URL
-        raw_key = source.get(ENV_API_KEY, "").strip()
+        if dotenv_path is None and env is None:
+            dotenv_path = DEFAULT_DOTENV_PATH
+        from_file = _read_dotenv(dotenv_path) if dotenv_path is not None else {}
+
+        def pick(name: str) -> str:
+            return source.get(name, "").strip() or from_file.get(name, "").strip()
+
+        raw_url = pick(ENV_BASE_URL) or DEFAULT_BASE_URL
+        raw_key = pick(ENV_API_KEY)
         return cls(base_url=raw_url.rstrip("/"), api_key=raw_key or None)
 
     def with_api_key(self, api_key: str) -> GuiConfig:
@@ -125,6 +159,28 @@ class GuiConfig:
     def is_configured(self) -> bool:
         """Whether the client has a key to authenticate with."""
         return bool(self.api_key)
+
+
+def _read_dotenv(path: Path) -> dict[str, str]:
+    """Return the client's two settings from ``path``, or ``{}`` on any problem.
+
+    ``dotenv_values`` parses without touching ``os.environ``; interpolation is
+    off so ``${VAR}`` in a value cannot pull in the process environment.  A
+    file that is missing, a directory, unreadable or not valid UTF-8 simply
+    contributes nothing: a client must still start from the environment alone.
+    Only the outcome is logged, never a key or a value.
+    """
+    try:
+        values = dotenv_values(path, interpolate=False, encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        # The exception class only: its text can quote the offending bytes.
+        logger.debug(f"Ignoring unreadable .env ({type(exc).__name__})")
+        return {}
+    return {
+        name: value
+        for name, value in values.items()
+        if name in (ENV_BASE_URL, ENV_API_KEY) and value is not None
+    }
 
 
 #: Neutral name for front ends that are not the desktop GUI.
