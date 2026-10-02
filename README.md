@@ -407,7 +407,11 @@ did not answer (wrong `GRIMOIRE_API_URL`, not running, or blocked).
 Nothing is ever printed over the screen. Logs go to `./logs/grimoire-tui.log`
 (falling back to `~/.local/state/grimoire/logs/` when that is not writable).
 Each launch gets a session id, written on every log line and sent to the API as
-an `X-Session-Id` header so a server-side record can be matched to it.
+an `X-Session-Id` header. The API validates it (1-64 characters of
+`A-Z a-z 0-9 _ -`; anything else is ignored, never rejected) and writes it on
+every server log line for that request, so a server-side record can be matched
+to the launch. Lines with no session id show `-`. MLflow traces of MCP tool
+calls get a `grimoire.session_id` tag when the id is visible to the tool call.
 
 ### MCP (Model Context Protocol)
 
