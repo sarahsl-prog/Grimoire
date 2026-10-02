@@ -9,7 +9,7 @@ pytest.importorskip("PySide6", reason="GUI extra not installed")
 from PySide6.QtCore import QThreadPool  # noqa: E402
 
 from grimoire.api.schemas import DocumentListResponse, DocumentResponse  # noqa: E402
-from grimoire.gui.errors import AuthFailed  # noqa: E402
+from grimoire.client.errors import AuthFailed  # noqa: E402
 from grimoire.gui.widgets.recent_tab import RecentTab  # noqa: E402
 
 

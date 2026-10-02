@@ -9,9 +9,9 @@ pytest.importorskip("PySide6", reason="GUI extra not installed")
 from PySide6.QtCore import QThreadPool  # noqa: E402
 from PySide6.QtGui import QCloseEvent  # noqa: E402
 
+from grimoire.client.config import GuiConfig  # noqa: E402
+from grimoire.client.errors import AuthFailed, ConnectionFailed  # noqa: E402
 from grimoire.gui.app import MainWindow  # noqa: E402
-from grimoire.gui.config import GuiConfig  # noqa: E402
-from grimoire.gui.errors import AuthFailed, ConnectionFailed  # noqa: E402
 from grimoire.gui.workers import (  # noqa: E402
     ApiWorker,
     _active_workers,
@@ -51,7 +51,7 @@ class TestApiWorker:
         assert isinstance(blocker.args[0], AuthFailed)
 
     def test_wraps_unexpected_exception_as_gui_error(self, qtbot) -> None:
-        from grimoire.gui.errors import GuiError
+        from grimoire.client.errors import GuiError
 
         def boom() -> str:
             raise RuntimeError("kaboom")
@@ -205,7 +205,7 @@ class TestMainWindow:
             raise ConnectionFailed(f"Invalid Grimoire API URL: {new_config.base_url}")
 
         monkeypatch.setattr(
-            "grimoire.gui.client.GrimoireClient", _raise_connection_failed
+            "grimoire.client.client.GrimoireClient", _raise_connection_failed
         )
 
         window._on_api_key_entered("new-key")
@@ -227,7 +227,7 @@ class TestMainWindow:
         window = MainWindow(original_client, config)
         qtbot.addWidget(window)
 
-        monkeypatch.setattr("grimoire.gui.client.GrimoireClient", _StubClient)
+        monkeypatch.setattr("grimoire.client.client.GrimoireClient", _StubClient)
 
         window._on_api_key_entered("new-key")
 
@@ -308,7 +308,7 @@ class TestMainEntryPoint:
             raise ConnectionFailed(f"Invalid Grimoire API URL: {config.base_url}")
 
         monkeypatch.setattr(
-            "grimoire.gui.client.GrimoireClient", _raise_connection_failed
+            "grimoire.client.client.GrimoireClient", _raise_connection_failed
         )
 
         exit_code = gui_main.main()

@@ -172,7 +172,7 @@ class TestLaunch:
 
     def test_client_is_closed_after_a_normal_run(self, tui_env, monkeypatch) -> None:
         closed: list[bool] = []
-        from grimoire.gui.client import GrimoireClient
+        from grimoire.client.client import GrimoireClient
 
         original = GrimoireClient.close
         monkeypatch.setattr(
@@ -187,7 +187,7 @@ class TestLaunch:
         self, tui_env, monkeypatch
     ) -> None:
         closed: list[bool] = []
-        from grimoire.gui.client import GrimoireClient
+        from grimoire.client.client import GrimoireClient
 
         original = GrimoireClient.close
         monkeypatch.setattr(

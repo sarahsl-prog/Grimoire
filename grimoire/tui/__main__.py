@@ -114,11 +114,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # and sent to the API so server-side records can be matched to it.
     log_path = configure_tui_logging(session_id, debug=args.debug)
 
-    from grimoire.gui.client import GrimoireClient
-    from grimoire.gui.config import GuiConfig
-    from grimoire.gui.errors import ConnectionFailed
+    from grimoire.client.client import GrimoireClient
+    from grimoire.client.config import ClientConfig
+    from grimoire.client.errors import ConnectionFailed
 
-    config = GuiConfig.from_env()
+    config = ClientConfig.from_env()
     if args.url is not None:
         config = dataclasses.replace(config, base_url=args.url.rstrip("/"))
     if not _is_valid_base_url(config.base_url):

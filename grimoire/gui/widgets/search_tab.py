@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from grimoire.api.schemas import QueryResponse, SearchResponse
-from grimoire.gui.errors import GuiError
+from grimoire.client.errors import GuiError
 from grimoire.gui.widgets.citation_card import CitationCard
 from grimoire.gui.workers import run_api_call
 

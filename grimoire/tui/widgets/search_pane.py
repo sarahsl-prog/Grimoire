@@ -16,7 +16,7 @@ Things this pane is careful about, because a thread-based UI gets them wrong:
   Markdown widget with link-opening disabled, list rows are ``Text`` objects,
   and every other widget that shows server text is created with
   ``markup=False``.
-* **Errors.**  Only ``GuiError`` messages (written for people) or a generic line
+* **Errors.**  Only ``ClientError`` messages (written for people) or a generic line
   reach the screen; the previous results stay put so a failed retry loses
   nothing.
 """
@@ -52,7 +52,7 @@ from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from grimoire.api.schemas import QueryResponse, SearchResponse
-from grimoire.gui.client import GrimoireClient
+from grimoire.client.client import GrimoireClient
 from grimoire.tui.errors import reachability, user_message
 from grimoire.tui.formatting import (
     SEVERITIES,

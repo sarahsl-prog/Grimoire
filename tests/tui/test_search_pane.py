@@ -22,7 +22,7 @@ from grimoire.api.schemas import (  # noqa: E402
     SearchResponse,
     SearchResultItem,
 )
-from grimoire.gui.errors import (  # noqa: E402
+from grimoire.client.errors import (  # noqa: E402
     AuthFailed,
     ConnectionFailed,
     MalformedResponse,
@@ -871,12 +871,12 @@ class TestWithTheRealClient:
         return server, server.server_address[1]
 
     async def test_ask_and_search_round_trip_with_filters_and_headers(self) -> None:
-        from grimoire.gui.client import GrimoireClient
-        from grimoire.gui.config import GuiConfig
+        from grimoire.client.client import GrimoireClient
+        from grimoire.client.config import ClientConfig
 
         recorded: list[dict[str, Any]] = []
         server, port = self._serve(recorded)
-        config = GuiConfig(
+        config = ClientConfig(
             base_url=f"http://127.0.0.1:{port}",
             api_key="grim_agt_real",
             session_id="sess-e2e",

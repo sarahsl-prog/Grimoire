@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 from loguru import logger
 
-from grimoire.gui.errors import (
+from grimoire.client.errors import (
     AuthFailed,
+    ClientError,
     ConnectionFailed,
-    GuiError,
     MalformedResponse,
     RateLimited,
     RequestRejected,
@@ -28,10 +28,10 @@ from grimoire.tui.errors import GENERIC_ERROR, reachability, user_message
         RequestRejected,
         ServerError,
         TimedOut,
-        GuiError,
+        ClientError,
     ],
 )
-def test_gui_errors_show_their_own_message(exc_type: type[GuiError]) -> None:
+def test_gui_errors_show_their_own_message(exc_type: type[ClientError]) -> None:
     assert user_message(exc_type("Something a person can act on.")) == (
         "Something a person can act on."
     )
@@ -98,7 +98,7 @@ class TestReachability:
         ],
     )
     def test_any_other_client_error_means_the_api_answered_so_it_is_up(
-        self, error: GuiError
+        self, error: ClientError
     ) -> None:
         assert reachability(error) is True
 

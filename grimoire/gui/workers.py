@@ -16,7 +16,7 @@ import shiboken6
 from loguru import logger
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, SignalInstance, Slot
 
-from grimoire.gui.errors import GuiError
+from grimoire.client.errors import GuiError
 
 
 class WorkerSignals(QObject):

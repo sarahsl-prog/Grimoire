@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from grimoire.api.schemas import DocumentListResponse, DocumentResponse
-from grimoire.gui.errors import GuiError
+from grimoire.client.errors import GuiError
 from grimoire.gui.workers import run_api_call
 
 _COLUMNS = ("Title", "Type", "Status", "Chunks", "Tags", "Size", "Created")

@@ -1,7 +1,7 @@
 """Turn exceptions into text that is safe to show on screen.
 
 The project rule is that raw exceptions never reach the user.  The API client
-already raises only ``GuiError`` subclasses, each carrying a complete sentence
+already raises only ``ClientError`` subclasses, each carrying a complete sentence
 written for a person.  Anything else is a bug: it is logged with its traceback
 and the user sees a generic line pointing at the log.
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from loguru import logger
 
-from grimoire.gui.errors import ConnectionFailed, GuiError, TimedOut
+from grimoire.client.errors import ClientError, ConnectionFailed, TimedOut
 
 GENERIC_ERROR = "Unexpected error. See the log file for details."
 
@@ -22,12 +22,12 @@ def user_message(exc: BaseException) -> str:
         exc: Whatever a worker caught.
 
     Returns:
-        The error's own message for a ``GuiError``; otherwise ``GENERIC_ERROR``,
+        The error's own message for a ``ClientError``; otherwise ``GENERIC_ERROR``,
         after logging the exception with its traceback.  The exception's text
         is deliberately never returned: it can contain file paths, SQL, or
         other internals.
     """
-    if isinstance(exc, GuiError):
+    if isinstance(exc, ClientError):
         return exc.message
     logger.opt(exception=exc).error("Unexpected error in a TUI worker")
     return GENERIC_ERROR
@@ -48,6 +48,6 @@ def reachability(error: BaseException) -> bool | None:
         return False
     if isinstance(error, TimedOut):
         return None
-    if isinstance(error, GuiError):
+    if isinstance(error, ClientError):
         return True
     return None

@@ -33,9 +33,10 @@ a result:
 
 ## Architecture
 
-The TUI is a thin synchronous HTTP client over the existing REST API. It reuses
-`GrimoireClient`, `GuiConfig` and `GuiError` from `grimoire/gui/` (all
-Qt-free), so the process never loads torch, Docling, ChromaDB or PySide6. A
+The TUI is a thin synchronous HTTP client over the existing REST API. It uses
+`GrimoireClient`, `ClientConfig` and `ClientError` from the shared
+`grimoire/client/` package (all Qt-free; `ClientConfig`/`ClientError` are the
+neutral names for the GUI's `GuiConfig`/`GuiError`), so the process never loads torch, Docling, ChromaDB or PySide6. A
 subprocess test asserts this.
 
 ```
@@ -111,7 +112,7 @@ request).
 
 ## Error handling
 
-The client raises only `GuiError` subclasses, each carrying a complete
+The client raises only `ClientError` subclasses, each carrying a complete
 sentence written for a person. A pane shows that sentence, or a generic line
 (with the traceback in the log) for anything unexpected. Raw exception text
 never reaches the screen. The status bar is kept honest between health checks:
