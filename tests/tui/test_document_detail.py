@@ -47,6 +47,8 @@ def _detail(**overrides: Any) -> DocumentDetailResponse:
         "created_at": "2026-10-01T10:30:00",
         "updated_at": "2026-10-02T08:15:00",
         "error_message": None,
+        "tags": [],
+        "chunk_count": 0,
     }
     fields.update(overrides)
     return DocumentDetailResponse(**fields)
@@ -138,6 +140,8 @@ class TestSuccess:
                 "size": "1.5 KB",
                 "created": "2026-10-01 10:30",
                 "updated": "2026-10-02 08:15",
+                "chunks": "0",
+                "tags": "-",
                 "error": "-",
             }
 
@@ -178,6 +182,64 @@ class TestSuccess:
             assert screen.values["created"] == "-"
             assert screen.values["updated"] == "-"
             assert screen.values["storage_backend"] == "-"
+
+
+class TestTagsAndChunks:
+    async def test_tags_are_listed_and_chunks_counted(self, stub_client, step) -> None:
+        stub_client.detail_script = [
+            step(_detail(tags=["Alpha", "Beta"], chunk_count=42))
+        ]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            screen = await _show(app, pilot, stub_client)
+            await _settled(app, pilot)
+
+            assert screen.values["tags"] == "Alpha, Beta"
+            assert screen.values["chunks"] == "42"
+            assert str(app.screen.query_one("#detail-tags", Static).content) == (
+                "Alpha, Beta"
+            )
+
+    async def test_blank_tag_names_are_dropped(self, stub_client, step) -> None:
+        stub_client.detail_script = [step(_detail(tags=["Alpha", "", "  ", "Beta"]))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            screen = await _show(app, pilot, stub_client)
+            await _settled(app, pilot)
+
+            assert screen.values["tags"] == "Alpha, Beta"
+
+    async def test_only_blank_tags_read_as_a_dash(self, stub_client, step) -> None:
+        stub_client.detail_script = [step(_detail(tags=["", " "]))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            screen = await _show(app, pilot, stub_client)
+            await _settled(app, pilot)
+
+            assert screen.values["tags"] == "-"
+
+    async def test_a_hostile_tag_is_shown_literally(self, stub_client, step) -> None:
+        stub_client.detail_script = [
+            step(_detail(tags=["[bold red]x[/] [link=http://evil]c[/link] [/nope]"]))
+        ]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _show(app, pilot, stub_client)
+            await _settled(app, pilot)
+
+            assert app.is_running
+            assert "[/nope]" in screen_text(app)
+
+    async def test_a_huge_tag_list_is_capped(self, stub_client, step) -> None:
+        stub_client.detail_script = [
+            step(_detail(tags=[f"tag-{i}" for i in range(5000)]))
+        ]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            screen = await _show(app, pilot, stub_client)
+            await _settled(app, pilot)
+
+            assert len(screen.values["tags"]) <= 5_000
 
 
 class TestWidgetsMatchState:
@@ -522,5 +584,5 @@ class TestUntrustedText:
             await _settled(app, pilot)
 
             cells = list(app.screen.query(".detail-value").results(Static))
-            assert len(cells) == 10
+            assert len(cells) == 12  # one per field, tags and chunks included
             assert all(cell._render_markup is False for cell in cells)

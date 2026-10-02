@@ -80,12 +80,12 @@ line with model, source count and time. Sources are a list beside a preview of
 the highlighted chunk. `Esc` abandons a running request.
 
 **Documents.** Nothing is fetched until the tab is first shown. A table
-(Title, Type, Status, Size, Added) of 50 rows per page, newest first, filterable
+(Title, Type, Status, Chunks, Tags, Size, Added) of 50 rows per page, newest first, filterable
 by status and file type. `]` and `[` page; a page past the end falls back to the
 last real page. A reload keeps the cursor on the same document.
 
-**Document detail.** A modal with every field, including the full source path
-and, for a failed document, the error message. A failed fetch is shown inside
+**Document detail.** A modal with every field, including the full source path,
+the chunk count, the tag names and, for a failed document, the error message. A failed fetch is shown inside
 the modal and does not close it.
 
 ### Keys
@@ -138,6 +138,10 @@ confirmed the terminal is restored after quitting.
 
 ## Known limitations
 
+- Tag and chunk counts (and the detail modal's tag names) come from the API as
+  of follow-up A1. Against an older server they read `0` / `-`, because the
+  fields default to empty there.
+- The server does not yet use `X-Session-Id`. Follow-up PR B.
 - The Documents table never shows tag or chunk counts: `GET /documents` does
   not populate them. Follow-up PR A.
 - The server logs `X-Session-Id` (follow-up A2). The MLflow tag on MCP traces is
