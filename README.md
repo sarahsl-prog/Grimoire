@@ -400,9 +400,9 @@ filtered by processing status and file type; both filters are applied by the
 server.
 
 The status bar shows the API address (never the key), whether a key is set, and
-whether the API answered. Its indicator uses `GET /health`, which needs Redis
-(the API's rate limiter): if it says *unreachable* while the API process is
-running, check Redis first.
+whether the API answered. Its indicator uses `GET /health`, which does not
+depend on Redis or the database, so *unreachable* means the API process itself
+did not answer (wrong `GRIMOIRE_API_URL`, not running, or blocked).
 
 Nothing is ever printed over the screen. Logs go to `./logs/grimoire-tui.log`
 (falling back to `~/.local/state/grimoire/logs/` when that is not writable).
