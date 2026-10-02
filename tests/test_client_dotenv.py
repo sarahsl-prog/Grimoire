@@ -220,3 +220,13 @@ class TestDefaultLookup:
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("GRIMOIRE_API_KEY", raising=False)
         assert ClientConfig.from_env().api_key is None
+
+
+class TestRepr:
+    def test_repr_does_not_show_the_api_key(self, tmp_path: Path) -> None:
+        """A logged or pasted config object must not carry the secret."""
+        f = _write(tmp_path / ".env", f"GRIMOIRE_API_KEY={KEY}\n")
+        cfg = ClientConfig.from_env({}, dotenv_path=f)
+        assert cfg.api_key == KEY
+        assert KEY not in repr(cfg)
+        assert KEY not in str(cfg)

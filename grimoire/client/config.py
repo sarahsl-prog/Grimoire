@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -82,7 +82,9 @@ class GuiConfig:
     """
 
     base_url: str = DEFAULT_BASE_URL
-    api_key: str | None = None
+    # repr=False: a config that is logged or shown in a traceback must not
+    # print the secret.
+    api_key: str | None = field(default=None, repr=False)
     connect_timeout: float = 5.0
     read_timeout: float = 30.0
     long_read_timeout: float = 300.0
