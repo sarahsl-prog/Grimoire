@@ -43,6 +43,12 @@ class StatusBar(Static):
     def _compose_text(self) -> str:
         return f"{self._target} · {self._key_label} · {_INDICATORS[self.state]}"
 
+    def set_key(self, has_key: bool) -> None:
+        """Update the key indicator (set / missing); never the key itself."""
+        self._key_label = "key: set" if has_key else "key: missing"
+        self.text = self._compose_text()
+        self.update(self.text)
+
     def set_state(self, state: ConnectionState) -> None:
         """Change the connection indicator and its colour class."""
         self.state = state

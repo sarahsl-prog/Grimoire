@@ -376,7 +376,13 @@ start the same app (both skip the CLI's settings validation and log setup, so
 a broken `grimoire.yaml` cannot stop them). `--url` overrides
 `GRIMOIRE_API_URL`, and `--debug` adds DEBUG records to the log file. There is
 deliberately **no `--api-key` option**: command-line arguments leak into
-process listings and shell history.
+process listings and shell history. To change the key without relaunching, press
+`Ctrl+K`: it is applied to a new client, used for this session only, and never
+written to disk or logged.
+
+Like the GUI, the TUI is a thin HTTP client and never imports the ingestion
+pipeline, so it starts instantly. **The API server must already be running**
+(for example `docker compose up -d`).
 
 #### Client settings (GUI and TUI)
 
@@ -389,16 +395,13 @@ keys are read from the file: nothing from it is exported into the environment,
 and no value is logged. Launch from the project directory to pick up the same
 `.env` the server uses.
 
-Like the GUI, the TUI is a thin HTTP client and never imports the ingestion
-pipeline, so it starts instantly. **The API server must already be running**
-(for example `docker compose up -d`). It reads its settings from the *process
-environment*, not from `.env`; to use a `.env` file, load it into your shell
-first: `set -a; source .env; set +a`.
+#### TUI keys
 
 | Key | Where | Action |
 |---|---|---|
 | `F1` / `F2` | anywhere | Switch to Search / Ask or Documents |
 | `Ctrl+R` | anywhere | Re-check the API; on Documents, reload the current page |
+| `Ctrl+K` | anywhere | Enter or replace the API key for this session (masked; kept in memory only, never saved) |
 | `?` | when not typing in a box | Key help panel (`Ctrl+P` opens the command palette) |
 | `Ctrl+Q` | anywhere | Quit |
 | `Enter` | Search / Ask | Run the query (Ask or Search, chosen with the toggle) |
