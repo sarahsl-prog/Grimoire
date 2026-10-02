@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import func, select
+from sqlalchemy import ScalarSelect, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.api.auth import get_api_key
@@ -13,9 +13,35 @@ from grimoire.api.schemas import (
     DocumentListResponse,
     DocumentResponse,
 )
-from grimoire.db.models import ApiKey, Document
+from grimoire.db.models import ApiKey, Category, Chunk, Document, DocumentTag
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+def _chunk_count_column() -> ScalarSelect[int]:
+    """Per-document chunk count, as a correlated scalar subquery.
+
+    Selected alongside ``Document`` so the counts ride the same query and the
+    same ORDER BY / LIMIT / OFFSET as the page: no N+1, and no way for a count
+    to belong to a different document than the row it sits on.
+    """
+    return (
+        select(func.count(Chunk.id))
+        .where(Chunk.document_id == Document.id)
+        .correlate(Document)
+        .scalar_subquery()
+    )
+
+
+def _tag_count_column() -> ScalarSelect[int]:
+    """Per-document tag count (see ``_chunk_count_column``)."""
+    return (
+        select(func.count())
+        .select_from(DocumentTag)
+        .where(DocumentTag.document_id == Document.id)
+        .correlate(Document)
+        .scalar_subquery()
+    )
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -56,7 +82,9 @@ async def list_documents(
     if mitre_technique_id:
         filters.append(Document.mitre_technique_id == mitre_technique_id)
 
-    query = select(Document).order_by(Document.created_at.desc())
+    query = select(Document, _chunk_count_column(), _tag_count_column()).order_by(
+        Document.created_at.desc()
+    )
     if filters:
         query = query.where(*filters)
 
@@ -68,7 +96,7 @@ async def list_documents(
     # Paginated results
     query = query.offset(offset).limit(limit)
     result = await db.execute(query)
-    docs = result.scalars().all()
+    rows = result.all()
 
     return DocumentListResponse(
         documents=[
@@ -94,8 +122,10 @@ async def list_documents(
                 size_bytes=doc.size_bytes,
                 created_at=doc.created_at.isoformat() if doc.created_at else None,
                 updated_at=doc.updated_at.isoformat() if doc.updated_at else None,
+                chunk_count=chunk_count,
+                tag_count=tag_count,
             )
-            for doc in docs
+            for doc, chunk_count, tag_count in rows
         ],
         total=total,
         offset=offset,
@@ -114,6 +144,27 @@ async def get_document(
     doc = await db.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+
+    # Names come from an explicit query: ``doc.tags`` holds DocumentTag rows
+    # whose ``category`` is lazy, and a lazy load inside an async request
+    # raises.  Sorted so the response is stable.
+    tag_names = list(
+        (
+            await db.execute(
+                select(Category.name)
+                .join(DocumentTag, DocumentTag.category_id == Category.id)
+                .where(DocumentTag.document_id == doc.id)
+                .order_by(Category.name, Category.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    chunk_count = (
+        await db.execute(
+            select(func.count(Chunk.id)).where(Chunk.document_id == doc.id)
+        )
+    ).scalar() or 0
 
     return DocumentDetailResponse(
         id=doc.id,
@@ -137,6 +188,9 @@ async def get_document(
         size_bytes=doc.size_bytes,
         created_at=doc.created_at.isoformat() if doc.created_at else None,
         updated_at=doc.updated_at.isoformat() if doc.updated_at else None,
+        chunk_count=chunk_count,
+        tag_count=len(tag_names),
+        tags=tag_names,
         error_message=doc.error_message,
     )
 

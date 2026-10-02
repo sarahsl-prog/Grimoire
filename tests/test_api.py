@@ -820,7 +820,8 @@ class TestDocumentsAPI:
 
         # data query result
         data_result = MagicMock()
-        data_result.scalars.return_value.all.return_value = [mock_doc]
+        # Rows of (document, chunk_count, tag_count), as the route selects them.
+        data_result.all.return_value = [(mock_doc, 4, 2)]
 
         # count query result
         count_result = MagicMock()
@@ -851,6 +852,8 @@ class TestDocumentsAPI:
         assert data["total"] == 1
         assert len(data["documents"]) == 1
         assert data["documents"][0]["id"] == "doc-1"
+        assert data["documents"][0]["chunk_count"] == 4
+        assert data["documents"][0]["tag_count"] == 2
 
     def test_get_document_not_found(self, app):
         mock_session = AsyncMock()
