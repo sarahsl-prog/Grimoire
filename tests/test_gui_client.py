@@ -13,9 +13,9 @@ from typing import Any
 import httpx
 import pytest
 
-from grimoire.gui.client import GrimoireClient
-from grimoire.gui.config import GuiConfig
-from grimoire.gui.errors import (
+from grimoire.client.client import GrimoireClient
+from grimoire.client.config import GuiConfig
+from grimoire.client.errors import (
     AuthFailed,
     ConnectionFailed,
     MalformedResponse,

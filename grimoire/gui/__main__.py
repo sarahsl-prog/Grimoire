@@ -27,10 +27,10 @@ def main() -> int:
         )
         return 1
 
+    from grimoire.client.client import GrimoireClient
+    from grimoire.client.config import GuiConfig
+    from grimoire.client.errors import ConnectionFailed
     from grimoire.gui.app import MainWindow
-    from grimoire.gui.client import GrimoireClient
-    from grimoire.gui.config import GuiConfig
-    from grimoire.gui.errors import ConnectionFailed
 
     session_id = uuid4().hex[:12]
     # Bound once so every record from this launch can be isolated in the log,

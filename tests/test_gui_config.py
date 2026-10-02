@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import pytest
 
-from grimoire.gui.config import DEFAULT_BASE_URL, SUPPORTED_EXTENSIONS, GuiConfig
+from grimoire.client.config import DEFAULT_BASE_URL, SUPPORTED_EXTENSIONS, GuiConfig
 
 
 class TestGuiConfigFromEnv:

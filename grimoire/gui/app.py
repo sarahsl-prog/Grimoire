@@ -13,8 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from grimoire.gui.config import GuiConfig
-from grimoire.gui.errors import ConnectionFailed
+from grimoire.client.config import GuiConfig
+from grimoire.client.errors import ConnectionFailed
 from grimoire.gui.widgets.connection_bar import ConnectionBar
 from grimoire.gui.workers import run_api_call
 
@@ -119,7 +119,7 @@ class MainWindow(QMainWindow):
 
     def _on_api_key_entered(self, key: str) -> None:
         """Rebuild the client around a session key pasted by the user."""
-        from grimoire.gui.client import GrimoireClient
+        from grimoire.client.client import GrimoireClient
 
         new_config = self.config.with_api_key(key)
         try:

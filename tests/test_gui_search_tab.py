@@ -17,7 +17,7 @@ from grimoire.api.schemas import (  # noqa: E402
     SearchResponse,
     SearchResultItem,
 )
-from grimoire.gui.errors import ConnectionFailed  # noqa: E402
+from grimoire.client.errors import ConnectionFailed  # noqa: E402
 from grimoire.gui.widgets.search_tab import SearchTab  # noqa: E402
 
 

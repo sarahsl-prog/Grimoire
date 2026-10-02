@@ -31,8 +31,8 @@ from PySide6.QtWidgets import (
 )
 
 from grimoire.api.schemas import IngestResultResponse
-from grimoire.gui.config import SUPPORTED_EXTENSIONS, GuiConfig
-from grimoire.gui.errors import GuiError
+from grimoire.client.config import SUPPORTED_EXTENSIONS, GuiConfig
+from grimoire.client.errors import GuiError
 from grimoire.gui.workers import run_api_call
 
 _COLUMNS = ("File", "Status", "Detail")
