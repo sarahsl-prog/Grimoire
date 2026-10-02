@@ -338,6 +338,9 @@ only; nothing writes it to disk. To avoid retyping it, export
 `GRIMOIRE_API_KEY` in your shell. The GUI reads the process environment, not
 `.env`; to use a `.env` file, load it first with `set -a; source .env; set +a`.
 
+Each launch also gets a session id, written on every GUI log line and sent to the
+API as `X-Session-Id` (the API logs it; see the Terminal UI section).
+
 **On WSL2 the GUI needs WSLg** (shipped with Windows 11). Check with
 `echo "$DISPLAY $WAYLAND_DISPLAY"` — if both are empty, no window can open.
 Qt picks the `wayland` platform plugin under WSLg; forcing

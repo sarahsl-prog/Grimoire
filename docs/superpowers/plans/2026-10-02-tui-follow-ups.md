@@ -70,7 +70,8 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
 
 ## B. TUI and client improvements
 
-- [ ] **B1. Desktop GUI sends `X-Session-Id` too.** `GuiConfig.session_id`
+- [x] **B1. Desktop GUI sends `X-Session-Id` too.** **Done** (`grimoire/gui/__main__.py`).
+  Takes effect once A2 (#79) is merged. `GuiConfig.session_id`
   and the client header already exist; the GUI simply never sets one. Generate
   one per launch in `grimoire/gui/__main__.py`. Do this after A2 so it has an
   effect.
