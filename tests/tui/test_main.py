@@ -151,6 +151,43 @@ class TestUrlHandling:
 
         assert tui_env.instances[0].config.api_key == "grim_agt_x"
 
+    def test_settings_are_read_from_dotenv_in_the_current_directory(
+        self, tui_env, tmp_path
+    ) -> None:
+        (tmp_path / ".env").write_text(
+            "GRIMOIRE_API_URL=http://from-dotenv:3\nGRIMOIRE_API_KEY=grim_agt_f\n"
+        )
+
+        main([])
+
+        config = tui_env.instances[0].config
+        assert (config.base_url, config.api_key) == (
+            "http://from-dotenv:3",
+            "grim_agt_f",
+        )
+
+    def test_environment_beats_dotenv_and_the_flag_beats_both(
+        self, tui_env, monkeypatch, tmp_path
+    ) -> None:
+        (tmp_path / ".env").write_text("GRIMOIRE_API_URL=http://from-dotenv:3\n")
+        monkeypatch.setenv("GRIMOIRE_API_URL", "http://from-env:1")
+
+        main([])
+        assert tui_env.instances[0].config.base_url == "http://from-env:1"
+
+        main(["--url", "http://from-flag:2"])
+        assert tui_env.instances[1].config.base_url == "http://from-flag:2"
+
+    def test_a_malformed_url_in_dotenv_is_rejected_without_echoing_it(
+        self, tui_env, tmp_path, capsys
+    ) -> None:
+        (tmp_path / ".env").write_text("GRIMOIRE_API_URL=not a url secret\n")
+
+        assert main([]) == 1
+
+        assert tui_env.instances == []
+        assert "secret" not in capsys.readouterr().err
+
     def test_there_is_no_api_key_option(self, tui_env, capsys) -> None:
         """Command-line secrets leak into ps output and shell history."""
         assert main(["--api-key", "grim_agt_x"]) != 0
@@ -172,7 +209,7 @@ class TestLaunch:
 
     def test_client_is_closed_after_a_normal_run(self, tui_env, monkeypatch) -> None:
         closed: list[bool] = []
-        from grimoire.gui.client import GrimoireClient
+        from grimoire.client.client import GrimoireClient
 
         original = GrimoireClient.close
         monkeypatch.setattr(
@@ -187,7 +224,7 @@ class TestLaunch:
         self, tui_env, monkeypatch
     ) -> None:
         closed: list[bool] = []
-        from grimoire.gui.client import GrimoireClient
+        from grimoire.client.client import GrimoireClient
 
         original = GrimoireClient.close
         monkeypatch.setattr(

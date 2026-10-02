@@ -5,10 +5,22 @@
 ([`../specs/2026-10-01-tui-design.md`](../specs/2026-10-01-tui-design.md)), and
 the manual run against a real API server.
 
-Every item below was raised during that work. Nothing here is started. Items
-marked **(decision)** need an owner's call before anyone writes code. Each
-numbered group is intended to be its own PR, one task per commit, per
-`CLAUDE.md`.
+Every item below was raised during that work. The open decisions have been
+made (see *Decisions*); nothing here is started. Items still marked
+**(decision)** need an owner's call before anyone writes code. Each numbered
+group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
+
+---
+
+## Decisions (2026-10-02)
+
+| Item | Decision |
+|---|---|
+| **A3** `/health` and Redis | **No**: `/health` must not depend on Redis. See A3 below for what that means in code. |
+| **B6** Shared client package | **Yes**: do it. |
+| **B7** Clients read `.env` | **Yes**: do it. |
+| **C1, C2** | Verified by the repo owner. |
+| **C3** | Verified on Linux only. Other terminals, macOS and Windows remain open. |
 
 ---
 
@@ -23,7 +35,10 @@ numbered group is intended to be its own PR, one task per commit, per
   - Tests with documents that have, and lack, each of tags and chunks.
   - Then, in the TUI: add Tags and Chunks columns to the Documents table, and a
     Tags row to the detail modal (it currently has no row for them).
-- [ ] **A2. Use `X-Session-Id` on the server** (own PR).
+- [x] **A2. Use `X-Session-Id` on the server** (own PR). **Done** in
+  `grimoire/api/session_id.py`; the MLflow tag is best effort (see the design
+  spec's known limitations). OTel: the server has no OTel code today, so there
+  was nothing to tag.
   The TUI already sends a per-launch id; a real server receives it and
   ignores it (confirmed in the manual run).
   - A pure-ASGI middleware in the style of `ContentLengthGuard` in
@@ -35,16 +50,28 @@ numbered group is intended to be its own PR, one task per commit, per
     `DEFAULT_LOG_FORMAT` includes `extra`).
   - Tag MLflow / OTel runs with it where the server already creates them
     (the `CLAUDE.md` traceability requirement).
-- [ ] **A3. Should `/health` depend on Redis?** **(decision)**
-  The handler is trivial, but `@limiter.limit` puts Redis behind it, so with
-  Redis down `/health` returns 500. The TUI's status bar then reads a running
-  API as *unreachable*. Either keep it (it reports a degraded stack) and say so
-  in the docs (the README already does), or make the limiter fail open for
-  `/health`.
+- [ ] **A3. Stop `/health` depending on Redis.** **Decided: no dependency.**
+  The handler is trivial, but `@limiter.limit("60/minute")` puts the
+  Redis-backed rate limiter in front of it, so with Redis down `/health` returns
+  500 and the TUI's status bar reads a running API as *unreachable*.
+  - Narrowest fix: exempt `/health` from the limiter (slowapi's
+    `@limiter.exempt`). A liveness probe polled by Docker and by the TUI is not
+    something to rate-limit anyway. Making the whole limiter fail open
+    (`swallow_errors=True`) is a broader behaviour change and is **not** what was
+    decided; raise it separately if wanted.
+  - Test: with the limiter's storage unreachable, `GET /health` still returns
+    200 and other limited routes behave as they do today.
+  - Then update the README's Terminal UI section, which currently tells people
+    to check Redis when the indicator says *unreachable*, and the matching line
+    under "Known limitations" in the design spec.
+  - Note for the reader: this was recorded as a yes/no on "should `/health`
+    depend on Redis?", read as *no*. If "no" was meant as "leave it alone", say
+    so and this item becomes a won't-do.
 
 ## B. TUI and client improvements
 
-- [ ] **B1. Desktop GUI sends `X-Session-Id` too.** `GuiConfig.session_id`
+- [x] **B1. Desktop GUI sends `X-Session-Id` too.** **Done** (`grimoire/gui/__main__.py`).
+  Takes effect once A2 (#79) is merged. `GuiConfig.session_id`
   and the client header already exist; the GUI simply never sets one. Generate
   one per launch in `grimoire/gui/__main__.py`. Do this after A2 so it has an
   effect.
@@ -61,27 +88,58 @@ numbered group is intended to be its own PR, one task per commit, per
 - [ ] **B5. Pin Textual honestly.** The floor is `>=8.2,<9` but only 8.2.8 was
   ever tested. Test the lowest 8.2.x, or raise the floor to what was tested,
   and consider a CI matrix.
-- [ ] **B6. Move the shared client to a neutral package (optional).** The TUI
-  imports `GrimoireClient`, `GuiConfig` and `GuiError` from `grimoire/gui/`.
-  They are Qt-free, so it works, but a `grimoire/client/` package with
-  re-export shims is cleaner. It touches roughly eight GUI modules and six GUI
-  tests. The import-hygiene test guards against Qt creeping in meanwhile.
-- [ ] **B7. Should the clients read `.env`?** **(decision)** Neither
-  `grimoire-gui` nor `grimoire-tui` does: they read the process environment
-  only (a README line claiming otherwise was corrected). Keep it that way and
-  keep documenting `set -a; source .env; set +a`, or add `.env` loading to
-  both.
+- [ ] **B6. Move the shared client to a neutral package.** **Decided: yes.**
+  The TUI imports `GrimoireClient`, `GuiConfig` and `GuiError` from
+  `grimoire/gui/`. They are Qt-free, so it works, but they belong in a
+  `grimoire/client/` package that neither front end owns.
+  - Do it as a pure move first (own commit), with re-export shims left in
+    `grimoire/gui/{client,config,errors}.py` so no GUI module or test needs to
+    change in the same commit. Then switch the TUI and, separately, the GUI over
+    to the new import path.
+  - Settle the names when starting: keep `GuiConfig` / `GuiError` and add
+    neutral aliases, or rename to `ClientConfig` / `ClientError` and alias the
+    old names. Renaming touches about eight GUI modules and six GUI tests, so
+    the alias-first route is lower risk.
+  - Keep the import-hygiene tests: `grimoire.client` must stay free of Qt and
+    the pipeline, and `tests/test_gui_config.py`'s check that the supported
+    extensions match the parser must keep working.
+  - **Do this before B7**: B7 changes `GuiConfig.from_env`, which B6 moves.
+- [ ] **B7. Clients read `.env`.** **Decided: yes.** Neither `grimoire-gui` nor
+  `grimoire-tui` does today; they read the process environment only (a README
+  line claiming otherwise was corrected). Make both read a `.env` file for
+  `GRIMOIRE_API_URL` and `GRIMOIRE_API_KEY`.
+  - Precedence: a real environment variable beats `.env`, which beats the
+    default. State it in the docs.
+  - Read only those two keys, and never export `.env` into `os.environ` or log
+    a value. `python-dotenv` (`dotenv_values`) is a hard requirement of
+    `pydantic-settings` (a core dependency, which the server uses for the same
+    file), so it is always installed; consider declaring it directly so the
+    client does not rely on a transitive dependency.
+  - Keep `GuiConfig.from_env` free of Qt and of any pipeline import, and keep
+    it testable with an explicit mapping; give it an explicit `dotenv_path`
+    argument so tests never depend on the current directory.
+  - Decide and document where it looks (the current directory, as the server
+    does, is the obvious answer).
+  - Update `README.md` (GUI and TUI sections, which both say to
+    `set -a; source .env; set +a`), `.env.example` (its comment says nothing
+    loads `.env` for the clients), and `docs/superpowers/specs/2026-10-01-tui-design.md`
+    (Configuration section).
+  - Tests: precedence both ways, a missing file, a malformed file, a blank
+    value counting as absent (as today), and that a key in `.env` is never
+    logged.
 
 ## C. Verification that still needs a person with the real stack
 
 The manual run used the real FastAPI app on SQLite with Redis, with only the
 query agent substituted. These were **not** exercised:
 
-- [ ] **C1.** Ask and Search against real retrieval (embeddings, vector store,
+- [x] **C1.** *(verified by the repo owner)* Ask and Search against real retrieval (embeddings, vector store,
   LLM). Check that answers, sources, scores and filters look right.
-- [ ] **C2.** The Docker Compose stack, and PostgreSQL (SQLite was used).
-- [ ] **C3.** Real terminal emulators (tmux, iTerm2, Windows Terminal, a Linux
-  console) and Windows itself. Only a pseudo-terminal was used.
+- [x] **C2.** *(verified by the repo owner)* The Docker Compose stack, and PostgreSQL (SQLite was used).
+- [ ] **C3.** Real terminal emulators and other platforms. **Linux is
+  verified** (by the repo owner); still open: macOS, Windows and Windows
+  Terminal, tmux/screen, iTerm2. Only Linux and a pseudo-terminal have been
+  exercised.
 
 ## D. Features deferred or out of scope for v1
 
@@ -156,10 +214,13 @@ and are recorded so they are not lost. Several overlap
 
 ## Suggested order
 
-1. **A2**, then **B1**: a small, contained server change that also finishes
-   the traceability story.
-2. **A1**: unblocks the richer Documents table and detail view.
-3. **C1 to C3**: before anyone relies on the TUI day to day.
-4. **E1**: cheap, and it has already cost someone time.
-5. **A3, B7**: decisions; settle them before writing code.
-6. Everything else as it becomes useful.
+Revised after the 2026-10-02 decisions.
+
+1. **A3**: small and contained, and it removes a misleading "unreachable".
+2. **A2**, then **B1**: the server-side session id, then the GUI sending one.
+3. **B6**, then **B7**: the shared package first, because B7 changes code that
+   B6 moves.
+4. **A1**: unblocks the richer Documents table and detail view.
+5. **E1**: cheap, and it has already cost someone time.
+6. **C3** (macOS, Windows, other terminals) as access allows.
+7. Everything else as it becomes useful.

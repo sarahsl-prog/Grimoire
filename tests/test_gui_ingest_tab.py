@@ -13,8 +13,8 @@ from PySide6.QtCore import QMimeData, QPoint, Qt, QThreadPool, QUrl  # noqa: E40
 from PySide6.QtGui import QDragEnterEvent  # noqa: E402
 
 from grimoire.api.schemas import IngestResultResponse  # noqa: E402
-from grimoire.gui.config import GuiConfig  # noqa: E402
-from grimoire.gui.errors import RequestRejected  # noqa: E402
+from grimoire.client.config import GuiConfig  # noqa: E402
+from grimoire.client.errors import RequestRejected  # noqa: E402
 from grimoire.gui.widgets.ingest_tab import DropZone, IngestTab  # noqa: E402
 
 

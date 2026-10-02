@@ -23,6 +23,9 @@ dependencies = [
     "uvicorn[standard]>=0.28",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
+    # Also a hard dependency of pydantic-settings; declared because the client
+    # config reads .env with it directly.
+    "python-dotenv>=1.0",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.29",
     "alembic>=1.13",
@@ -163,10 +166,10 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Ignore S101 (bandit assert) in tests - pytest uses assert
 "tests/**/*.py" = ["S101", "S105"]
-# N818: these exception names are a fixed cross-module interface (GUI widgets
-# import them verbatim); GuiError already makes the "this is an error" role
+# N818: these exception names are a fixed cross-module interface (the GUI and
+# TUI import them verbatim); GuiError already makes the "this is an error" role
 # clear, so an -Error suffix would be redundant on every subclass.
-"grimoire/gui/errors.py" = ["N818"]
+"grimoire/client/errors.py" = ["N818"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

@@ -18,7 +18,7 @@ pytest.importorskip("textual", reason="TUI extra not installed")
 from textual.widgets import Button, Static  # noqa: E402
 
 from grimoire.api.schemas import DocumentDetailResponse  # noqa: E402
-from grimoire.gui.errors import (  # noqa: E402
+from grimoire.client.errors import (  # noqa: E402
     AuthFailed,
     ConnectionFailed,
     MalformedResponse,

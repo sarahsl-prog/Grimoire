@@ -5,6 +5,7 @@ Run with ``grimoire-gui`` after ``uv sync --extra gui``.
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from uuid import uuid4
 
@@ -27,18 +28,19 @@ def main() -> int:
         )
         return 1
 
+    from grimoire.client.client import GrimoireClient
+    from grimoire.client.config import GuiConfig
+    from grimoire.client.errors import ConnectionFailed
     from grimoire.gui.app import MainWindow
-    from grimoire.gui.client import GrimoireClient
-    from grimoire.gui.config import GuiConfig
-    from grimoire.gui.errors import ConnectionFailed
 
     session_id = uuid4().hex[:12]
     # Bound once so every record from this launch can be isolated in the log,
-    # matching the project's context-in-log-records convention.
+    # matching the project's context-in-log-records convention, and sent to the
+    # API (X-Session-Id) so server-side records can be matched to it.
     logger.configure(extra={"session_id": session_id})
     logger.info(f"Starting Grimoire GUI (session {session_id})")
 
-    config = GuiConfig.from_env()
+    config = dataclasses.replace(GuiConfig.from_env(), session_id=session_id)
     try:
         client = GrimoireClient(config)
     except ConnectionFailed as exc:

@@ -9,6 +9,7 @@ from loguru import logger
 DEFAULT_LOG_FORMAT = (
     "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
     "{level:<8} | "
+    "{extra[session_id]} | "
     "{name}:{function}:{line} | "
     "{message}"
 )
@@ -19,6 +20,11 @@ CLI_LOG_FORMAT = (
     "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
     "<level>{message}</level>"
 )
+
+
+def _default_session_id(record: Any) -> None:
+    """Ensure ``extra[session_id]`` exists so the log format never raises."""
+    record["extra"].setdefault("session_id", "-")
 
 
 def setup_logger(
@@ -40,6 +46,11 @@ def setup_logger(
         console_format: Format string for the console sink.
     """
     logger.remove()
+
+    # DEFAULT_LOG_FORMAT references extra[session_id]; give every record a "-"
+    # when no request/launch bound one.  A patcher (not configure(extra=...))
+    # so a session id a front end already configured is never clobbered.
+    logger.configure(patcher=_default_session_id)
 
     if log_dir is None:
         try:

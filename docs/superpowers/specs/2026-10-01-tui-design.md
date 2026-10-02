@@ -33,9 +33,10 @@ a result:
 
 ## Architecture
 
-The TUI is a thin synchronous HTTP client over the existing REST API. It reuses
-`GrimoireClient`, `GuiConfig` and `GuiError` from `grimoire/gui/` (all
-Qt-free), so the process never loads torch, Docling, ChromaDB or PySide6. A
+The TUI is a thin synchronous HTTP client over the existing REST API. It uses
+`GrimoireClient`, `ClientConfig` and `ClientError` from the shared
+`grimoire/client/` package (all Qt-free; `ClientConfig`/`ClientError` are the
+neutral names for the GUI's `GuiConfig`/`GuiError`), so the process never loads torch, Docling, ChromaDB or PySide6. A
 subprocess test asserts this.
 
 ```
@@ -104,14 +105,16 @@ the modal and does not close it.
 ## Configuration
 
 `GRIMOIRE_API_URL` (default `http://localhost:8001`) and `GRIMOIRE_API_KEY`,
-read from the process environment, **not** from `.env`. `--url` overrides the
-URL; `--debug` adds DEBUG records to the log. A malformed URL is rejected at
+read per key from the process environment first, then a `.env` file in the
+current directory (only those two keys; nothing is exported, no interpolation,
+a missing or unreadable file is ignored), then the default. `--url` overrides
+all of them; `--debug` adds DEBUG records to the log. A malformed URL is rejected at
 startup (`httpx` accepts almost any string and would only fail on the first
 request).
 
 ## Error handling
 
-The client raises only `GuiError` subclasses, each carrying a complete
+The client raises only `ClientError` subclasses, each carrying a complete
 sentence written for a person. A pane shows that sentence, or a generic line
 (with the traceback in the log) for anything unexpected. Raw exception text
 never reaches the screen. The status bar is kept honest between health checks:
@@ -139,10 +142,16 @@ confirmed the terminal is restored after quitting.
   of follow-up A1. Against an older server they read `0` / `-`, because the
   fields default to empty there.
 - The server does not yet use `X-Session-Id`. Follow-up PR B.
+- The Documents table never shows tag or chunk counts: `GET /documents` does
+  not populate them. Follow-up PR A.
+- The server logs `X-Session-Id` (follow-up A2). The MLflow tag on MCP traces is
+  best effort: it relies on the id being in the tool call's context, which was
+  not verified over the SSE transport.
 - At 80 columns the Added column can be clipped by a long title; the table
   scrolls horizontally. At 100 columns every column fits.
-- The connected/unreachable indicator uses `GET /health`, which needs Redis
-  (the API's rate limiter). A running API with Redis down reads as unreachable.
+- The connected/unreachable indicator uses `GET /health`. Originally that
+  needed Redis (the API's rate limiter), so a running API with Redis down read
+  as unreachable; `/health` now has its own in-memory limit and no longer does.
 - Ask and Search against the real retrieval stack (embeddings, vector store,
   LLM) were not exercised; only the API contract and the client were.
 

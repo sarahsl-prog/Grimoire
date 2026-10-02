@@ -17,6 +17,26 @@ from grimoire.api.auth import DEFAULT_TIER_RATE_LIMITS
 DEFAULT_LIMIT = "30/minute"
 
 
+def _get_client_ip(request: Request) -> str:
+    """Key by client IP only; the liveness probe is unauthenticated."""
+    return get_remote_address(request) or "anonymous"
+
+
+def create_health_limiter() -> Limiter:
+    """Build the in-memory limiter that guards ``/health``.
+
+    In-memory on purpose: ``/health`` must keep answering when Redis is down, so
+    its own limit (code review W-7) cannot live in the Redis-backed limiter.
+    The counters are per process, which is fine for a probe limit.
+
+    One limiter per app, not a module global: ``Limiter.limit`` registers the
+    route on the instance each time it is applied, so a shared instance would
+    stack a duplicate limit (and double-count every hit) for each
+    ``create_app()`` call.
+    """
+    return Limiter(key_func=_get_client_ip, storage_uri="memory://")
+
+
 def _get_rate_limit_key(request: Request) -> str:
     """Derive the rate limit key from the authenticated API key or IP.
 

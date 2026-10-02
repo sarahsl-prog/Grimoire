@@ -165,6 +165,12 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     # through this position completely unwrapped.
     app.add_middleware(ContentLengthGuard)
 
+    # Outermost, so even a request ContentLengthGuard rejects is logged with its
+    # session id. Pure-ASGI, so /mcp SSE streaming is unaffected.
+    from grimoire.api.session_id import SessionIdMiddleware
+
+    app.add_middleware(SessionIdMiddleware)
+
     # API routes
     app.include_router(ingest.router, prefix="/api/v1")
     app.include_router(query.router, prefix="/api/v1")
@@ -183,10 +189,22 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     mount_mcp(app, path="/mcp")
 
+    # /health is a liveness probe (Docker, the TUI status bar), so it must not
+    # fail just because Redis is down.  It keeps its W-7 rate limit, but on a
+    # dedicated in-memory limiter, and is exempt from the Redis-backed one.
+    from grimoire.api.rate_limit import create_health_limiter
+
+    health_limiter = create_health_limiter()
+
     @app.get("/health")
-    @limiter.limit("60/minute")
+    @health_limiter.limit("60/minute")
     async def health_check(request: Request) -> dict[str, str]:
         return {"status": "ok"}
+
+    # Called, not used as a decorator: slowapi's `exempt` is untyped, and as a
+    # decorator it would make `health_check` untyped.  It only records the route
+    # name, so the Redis-backed limiter's default limit skips /health.
+    limiter.exempt(health_check)  # type: ignore[no-untyped-call]
 
     return app
 

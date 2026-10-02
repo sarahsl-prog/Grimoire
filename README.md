@@ -334,9 +334,12 @@ bare-metal API or the containerized stack. Drag-and-drop uses the same
 do **not** need to share a filesystem.
 
 An API key pasted into the connection bar is kept in memory for that session
-only; nothing writes it to disk. To avoid retyping it, export
-`GRIMOIRE_API_KEY` in your shell. The GUI reads the process environment, not
-`.env`; to use a `.env` file, load it first with `set -a; source .env; set +a`.
+only; nothing writes it to disk. To avoid retyping it, set `GRIMOIRE_API_KEY`
+in your shell or in a `.env` file in the directory you launch from (see
+*Client settings* below).
+
+Each launch also gets a session id, written on every GUI log line and sent to the
+API as `X-Session-Id` (the API logs it; see the Terminal UI section).
 
 **On WSL2 the GUI needs WSLg** (shipped with Windows 11). Check with
 `echo "$DISPLAY $WAYLAND_DISPLAY"` — if both are empty, no window can open.
@@ -375,6 +378,17 @@ a broken `grimoire.yaml` cannot stop them). `--url` overrides
 deliberately **no `--api-key` option**: command-line arguments leak into
 process listings and shell history.
 
+#### Client settings (GUI and TUI)
+
+Both clients read `GRIMOIRE_API_URL` and `GRIMOIRE_API_KEY` from, in order of
+precedence: the process environment, then a `.env` file in the **current
+directory**, then the default (`http://localhost:8001`, no key). The TUI's `--url`
+beats all three. A blank value counts as unset at every level. Only those two
+keys are read from the file: nothing from it is exported into the environment,
+`${VAR}` references are not expanded, a missing or unreadable file is ignored,
+and no value is logged. Launch from the project directory to pick up the same
+`.env` the server uses.
+
 Like the GUI, the TUI is a thin HTTP client and never imports the ingestion
 pipeline, so it starts instantly. **The API server must already be running**
 (for example `docker compose up -d`). It reads its settings from the *process
@@ -400,14 +414,18 @@ filtered by processing status and file type; both filters are applied by the
 server.
 
 The status bar shows the API address (never the key), whether a key is set, and
-whether the API answered. Its indicator uses `GET /health`, which needs Redis
-(the API's rate limiter): if it says *unreachable* while the API process is
-running, check Redis first.
+whether the API answered. Its indicator uses `GET /health`, which does not
+depend on Redis or the database, so *unreachable* means the API process itself
+did not answer (wrong `GRIMOIRE_API_URL`, not running, or blocked).
 
 Nothing is ever printed over the screen. Logs go to `./logs/grimoire-tui.log`
 (falling back to `~/.local/state/grimoire/logs/` when that is not writable).
 Each launch gets a session id, written on every log line and sent to the API as
-an `X-Session-Id` header so a server-side record can be matched to it.
+an `X-Session-Id` header. The API validates it (1-64 characters of
+`A-Z a-z 0-9 _ -`; anything else is ignored, never rejected) and writes it on
+every server log line for that request, so a server-side record can be matched
+to the launch. Lines with no session id show `-`. MLflow traces of MCP tool
+calls get a `grimoire.session_id` tag when the id is visible to the tool call.
 
 ### MCP (Model Context Protocol)
 
@@ -547,6 +565,7 @@ uv run pytest -m integration
 grimoire/
 ├── cli/              # Click CLI commands
 ├── api/              # FastAPI REST API
+├── client/           # HTTP client for the API, shared by the GUI and TUI
 ├── gui/              # PySide6 desktop client (HTTP client over the API)
 ├── tui/              # Textual terminal client (HTTP client over the API)
 ├── agents/           # LangChain Deep Agents

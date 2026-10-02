@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from grimoire.gui.config import GuiConfig
+from grimoire.client.config import ClientConfig
 
 
 @dataclass
@@ -29,8 +29,8 @@ class _Step:
 class StubClient:
     """Records calls and returns scripted outcomes, in order, then a default."""
 
-    config: GuiConfig = field(
-        default_factory=lambda: GuiConfig(
+    config: ClientConfig = field(
+        default_factory=lambda: ClientConfig(
             base_url="http://stub:8001", api_key="grim_agt_test"
         )
     )

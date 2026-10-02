@@ -17,7 +17,7 @@ pytest.importorskip("textual", reason="TUI extra not installed")
 from textual.widgets import DataTable, Footer, Select, TabbedContent  # noqa: E402
 
 from grimoire.api.schemas import DocumentListResponse, DocumentResponse  # noqa: E402
-from grimoire.gui.errors import (  # noqa: E402
+from grimoire.client.errors import (  # noqa: E402
     AuthFailed,
     ConnectionFailed,
     ServerError,
@@ -827,7 +827,7 @@ class TestErrors:
             assert _pane(app).status_text == ""
 
     async def test_error_notifications_disable_markup(self, stub_client, step) -> None:
-        from grimoire.gui.errors import RequestRejected
+        from grimoire.client.errors import RequestRejected
 
         stub_client.documents_script = [step(RequestRejected("bad [/nonexistent] x"))]
         app = GrimoireApp(stub_client, stub_client.config, None)
@@ -982,8 +982,8 @@ class TestWithTheRealClient:
         from http.server import BaseHTTPRequestHandler, HTTPServer
         from urllib.parse import parse_qs, urlsplit
 
-        from grimoire.gui.client import GrimoireClient
-        from grimoire.gui.config import GuiConfig
+        from grimoire.client.client import GrimoireClient
+        from grimoire.client.config import ClientConfig
 
         seen: list[dict[str, Any]] = []
 
@@ -1019,7 +1019,7 @@ class TestWithTheRealClient:
 
         server = HTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        config = GuiConfig(
+        config = ClientConfig(
             base_url=f"http://127.0.0.1:{server.server_address[1]}",
             api_key="grim_agt_real",
             session_id="sess-docs",
