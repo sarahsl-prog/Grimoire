@@ -27,6 +27,7 @@ FORBIDDEN = (
     "grimoire.core",
     "grimoire.db",
     "grimoire.cli",
+    "grimoire.gui",
     "grimoire.config.settings",
     "grimoire.utils.logger",
 )
@@ -70,7 +71,9 @@ def test_the_whole_tui_package_loads_none_of_the_pipeline() -> None:
 
 
 def test_the_api_client_the_tui_reuses_is_free_of_qt_and_the_pipeline() -> None:
-    statement = "import grimoire.gui.client, grimoire.gui.config, grimoire.gui.errors"
+    statement = (
+        "import grimoire.client.client, grimoire.client.config, grimoire.client.errors"
+    )
 
     assert _loaded_after(statement) == []
 

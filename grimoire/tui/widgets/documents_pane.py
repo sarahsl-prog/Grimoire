@@ -30,7 +30,7 @@ from textual.widgets import Button, DataTable, Select, Static
 from textual.worker import get_current_worker
 
 from grimoire.api.schemas import DocumentListResponse, DocumentResponse
-from grimoire.gui.client import GrimoireClient
+from grimoire.client.client import GrimoireClient
 from grimoire.tui.errors import reachability, user_message
 from grimoire.tui.formatting import (
     DOC_STATUSES,

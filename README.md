@@ -547,6 +547,7 @@ uv run pytest -m integration
 grimoire/
 ├── cli/              # Click CLI commands
 ├── api/              # FastAPI REST API
+├── client/           # HTTP client for the API, shared by the GUI and TUI
 ├── gui/              # PySide6 desktop client (HTTP client over the API)
 ├── tui/              # Textual terminal client (HTTP client over the API)
 ├── agents/           # LangChain Deep Agents

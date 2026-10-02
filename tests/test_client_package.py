@@ -44,9 +44,11 @@ def test_client_package_loads_no_ui_or_pipeline() -> None:
 
 def test_neutral_names_are_the_same_objects() -> None:
     import grimoire.client as client
+    import grimoire.client.config as config
+    import grimoire.client.errors as errors
 
-    assert client.ClientConfig is client.GuiConfig
-    assert client.ClientError is client.GuiError
+    assert client.ClientConfig is client.GuiConfig is config.ClientConfig
+    assert client.ClientError is client.GuiError is errors.ClientError
 
 
 @pytest.mark.parametrize(

@@ -48,3 +48,7 @@ class ServerError(GuiError):
 
 class MalformedResponse(GuiError):
     """The API answered with something this client cannot parse."""
+
+
+#: Neutral name for front ends that are not the desktop GUI.
+ClientError = GuiError

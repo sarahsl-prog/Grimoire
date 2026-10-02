@@ -12,10 +12,7 @@ renamed in the same change that moved the code.
 from __future__ import annotations
 
 from grimoire.client.client import GrimoireClient
-from grimoire.client.config import GuiConfig
-from grimoire.client.errors import GuiError
-
-ClientConfig = GuiConfig
-ClientError = GuiError
+from grimoire.client.config import ClientConfig, GuiConfig
+from grimoire.client.errors import ClientError, GuiError
 
 __all__ = ["ClientConfig", "ClientError", "GrimoireClient", "GuiConfig", "GuiError"]

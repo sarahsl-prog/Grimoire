@@ -26,8 +26,8 @@ from textual.widget import Widget
 from textual.widgets import Footer, Header, TabbedContent, TabPane
 from textual.worker import get_current_worker
 
-from grimoire.gui.client import GrimoireClient
-from grimoire.gui.config import GuiConfig
+from grimoire.client.client import GrimoireClient
+from grimoire.client.config import ClientConfig
 from grimoire.tui.messages import ConnectionReport
 from grimoire.tui.widgets.documents_pane import DocumentsPane
 from grimoire.tui.widgets.search_pane import SearchPane
@@ -62,7 +62,7 @@ class GrimoireApp(App[None]):
     ]
 
     def __init__(
-        self, client: GrimoireClient, config: GuiConfig, log_path: Path | None
+        self, client: GrimoireClient, config: ClientConfig, log_path: Path | None
     ) -> None:
         super().__init__()
         self._client = client

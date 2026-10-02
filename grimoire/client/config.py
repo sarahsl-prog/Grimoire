@@ -125,3 +125,7 @@ class GuiConfig:
     def is_configured(self) -> bool:
         """Whether the client has a key to authenticate with."""
         return bool(self.api_key)
+
+
+#: Neutral name for front ends that are not the desktop GUI.
+ClientConfig = GuiConfig

@@ -16,7 +16,7 @@ pytest.importorskip("textual", reason="TUI extra not installed")
 from textual.containers import Vertical  # noqa: E402
 from textual.widgets import Input, Static, TabbedContent  # noqa: E402
 
-from grimoire.gui.config import GuiConfig  # noqa: E402
+from grimoire.client.config import ClientConfig  # noqa: E402
 from grimoire.tui.app import GrimoireApp  # noqa: E402
 from grimoire.tui.messages import ConnectionReport  # noqa: E402
 from grimoire.tui.widgets.status_bar import StatusBar  # noqa: E402
@@ -217,7 +217,7 @@ class TestApiKeyWarning:
         return recorded
 
     async def test_missing_key_warns_exactly_once(self) -> None:
-        client = StubClient(config=GuiConfig(base_url="http://stub:8001"))
+        client = StubClient(config=ClientConfig(base_url="http://stub:8001"))
         app = _make(client)
         recorded = await self._notifications(app)
         async with app.run_test() as pilot:
@@ -252,7 +252,7 @@ class TestStatusBarContent:
             assert "connected" in text
 
     async def test_key_missing_is_shown(self) -> None:
-        client = StubClient(config=GuiConfig(base_url="http://stub:8001"))
+        client = StubClient(config=ClientConfig(base_url="http://stub:8001"))
         app = _make(client)
         async with app.run_test() as pilot:
             await _settled(app, pilot)
@@ -261,7 +261,7 @@ class TestStatusBarContent:
 
     async def test_credentials_in_the_url_are_never_displayed(self) -> None:
         client = StubClient(
-            config=GuiConfig(base_url="http://user:s3cret@stub:8001", api_key="k")
+            config=ClientConfig(base_url="http://user:s3cret@stub:8001", api_key="k")
         )
         app = _make(client)
         async with app.run_test() as pilot:
@@ -273,7 +273,9 @@ class TestStatusBarContent:
 
     async def test_the_key_value_is_never_displayed(self) -> None:
         client = StubClient(
-            config=GuiConfig(base_url="http://stub:8001", api_key="grim_agt_TOPSECRET")
+            config=ClientConfig(
+                base_url="http://stub:8001", api_key="grim_agt_TOPSECRET"
+            )
         )
         app = _make(client)
         async with app.run_test() as pilot:
@@ -283,7 +285,7 @@ class TestStatusBarContent:
 
     async def test_the_url_path_is_not_displayed(self) -> None:
         client = StubClient(
-            config=GuiConfig(base_url="http://stub:8001/some/path", api_key="k")
+            config=ClientConfig(base_url="http://stub:8001/some/path", api_key="k")
         )
         app = _make(client)
         async with app.run_test() as pilot:
@@ -292,7 +294,7 @@ class TestStatusBarContent:
             assert "/some/path" not in app.query_one(StatusBar).text
 
     async def test_an_unparseable_url_cannot_take_the_bar_down(self) -> None:
-        client = StubClient(config=GuiConfig(base_url="http://[red]:1", api_key="k"))
+        client = StubClient(config=ClientConfig(base_url="http://[red]:1", api_key="k"))
         app = _make(client)
         async with app.run_test() as pilot:
             await _settled(app, pilot)
@@ -301,7 +303,9 @@ class TestStatusBarContent:
             assert "(invalid URL)" in app.query_one(StatusBar).text
 
     async def test_ipv6_literal_is_shown_verbatim_not_eaten_as_markup(self) -> None:
-        client = StubClient(config=GuiConfig(base_url="http://[::1]:8001", api_key="k"))
+        client = StubClient(
+            config=ClientConfig(base_url="http://[::1]:8001", api_key="k")
+        )
         app = _make(client)
         async with app.run_test() as pilot:
             await _settled(app, pilot)
@@ -344,10 +348,10 @@ class TestWithTheRealClient:
         return server, server.server_address[1]
 
     async def test_a_listening_server_shows_connected(self) -> None:
-        from grimoire.gui.client import GrimoireClient
+        from grimoire.client.client import GrimoireClient
 
         server, port = self._serve(200)
-        config = GuiConfig(base_url=f"http://127.0.0.1:{port}", api_key="k")
+        config = ClientConfig(base_url=f"http://127.0.0.1:{port}", api_key="k")
         client = GrimoireClient(config)
         try:
             app = GrimoireApp(client, config, None)
@@ -360,10 +364,10 @@ class TestWithTheRealClient:
             server.shutdown()
 
     async def test_a_server_answering_500_shows_unreachable(self) -> None:
-        from grimoire.gui.client import GrimoireClient
+        from grimoire.client.client import GrimoireClient
 
         server, port = self._serve(500)
-        config = GuiConfig(base_url=f"http://127.0.0.1:{port}", api_key="k")
+        config = ClientConfig(base_url=f"http://127.0.0.1:{port}", api_key="k")
         client = GrimoireClient(config)
         try:
             app = GrimoireApp(client, config, None)
@@ -378,12 +382,12 @@ class TestWithTheRealClient:
     async def test_nothing_listening_shows_unreachable(self) -> None:
         import socket
 
-        from grimoire.gui.client import GrimoireClient
+        from grimoire.client.client import GrimoireClient
 
         with socket.socket() as sock:  # reserve a port, then free it
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
-        config = GuiConfig(base_url=f"http://127.0.0.1:{port}", api_key="k")
+        config = ClientConfig(base_url=f"http://127.0.0.1:{port}", api_key="k")
         client = GrimoireClient(config)
         try:
             app = GrimoireApp(client, config, None)
