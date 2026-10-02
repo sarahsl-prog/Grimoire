@@ -380,6 +380,10 @@ process listings and shell history. To change the key without relaunching, press
 `Ctrl+K`: it is applied to a new client, used for this session only, and never
 written to disk or logged.
 
+Like the GUI, the TUI is a thin HTTP client and never imports the ingestion
+pipeline, so it starts instantly. **The API server must already be running**
+(for example `docker compose up -d`).
+
 #### Client settings (GUI and TUI)
 
 Both clients read `GRIMOIRE_API_URL` and `GRIMOIRE_API_KEY` from, in order of
@@ -391,11 +395,7 @@ keys are read from the file: nothing from it is exported into the environment,
 and no value is logged. Launch from the project directory to pick up the same
 `.env` the server uses.
 
-Like the GUI, the TUI is a thin HTTP client and never imports the ingestion
-pipeline, so it starts instantly. **The API server must already be running**
-(for example `docker compose up -d`). It reads its settings from the *process
-environment*, not from `.env`; to use a `.env` file, load it into your shell
-first: `set -a; source .env; set +a`.
+#### TUI keys
 
 | Key | Where | Action |
 |---|---|---|
