@@ -214,6 +214,33 @@ with `-f`:
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
 
+**`db-migrate` (or `api`) exits right after `git pull`, with a validation error
+such as `api.upload_dir: Extra inputs are not permitted`.** The image is stale.
+The Dockerfile installs the project **non-editable**, so a container keeps
+running the settings model it was built with, while `docker-compose.yml` and
+`.env.example` already set a variable that newer code added. The old model
+forbids unknown settings, so it rejects the new one. Rebuild and recreate after
+pulling changes that touch settings, compose files or dependencies:
+
+```bash
+docker compose up -d --build --force-recreate
+```
+
+Which image a container actually runs is the usual surprise. The GPU overlay
+builds a **separate** image (`grimoire:gpu`), distinct from the base file's
+`grimoire:latest`, so rebuilding one does not refresh the other. Rebuild the
+file set you actually start with (for the GPU stack, both files; never the
+overlay alone, see above), and check before guessing:
+
+```bash
+docker inspect grimoire-db-migrate --format '{{.Config.Image}}'   # which tag it uses
+docker images grimoire                                            # when each was built
+```
+
+If the tag in use was built before your `git pull`, that is the cause. (The dev
+overlay bind-mounts `./grimoire` over the installed package, which hides this
+for source changes, but not for a stale `.env` or compose file.)
+
 **LLM generation fails with a 404.** Almost always a `/v1` suffix on the
 Ollama URL — check `GRIMOIRE_OLLAMA_URL` in `.env`. If the URL is correct,
 confirm the host's Ollama daemon is actually listening on the Docker bridge
