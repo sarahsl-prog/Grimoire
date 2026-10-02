@@ -105,8 +105,10 @@ the modal and does not close it.
 ## Configuration
 
 `GRIMOIRE_API_URL` (default `http://localhost:8001`) and `GRIMOIRE_API_KEY`,
-read from the process environment, **not** from `.env`. `--url` overrides the
-URL; `--debug` adds DEBUG records to the log. A malformed URL is rejected at
+read per key from the process environment first, then a `.env` file in the
+current directory (only those two keys; nothing is exported, no interpolation,
+a missing or unreadable file is ignored), then the default. `--url` overrides
+all of them; `--debug` adds DEBUG records to the log. A malformed URL is rejected at
 startup (`httpx` accepts almost any string and would only fail on the first
 request).
 
