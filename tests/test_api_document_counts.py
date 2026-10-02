@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
@@ -100,11 +100,22 @@ def db_url(tmp_path: Path) -> str:
 
 
 @pytest.fixture
-def client(db_url: str) -> Iterator[TestClient]:
+def sql_log() -> list[str]:
+    """Every SQL statement the app's engine executes, in order."""
+    return []
+
+
+@pytest.fixture
+def client(db_url: str, sql_log: list[str]) -> Iterator[TestClient]:
     app = create_app(use_lifespan=False)
     # Rate limiting is covered in test_security.py; here it would need Redis.
     app.state.limiter.enabled = False
     engine = create_async_engine(db_url)
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def _record(conn: Any, cursor: Any, statement: str, *_a: Any) -> None:
+        sql_log.append(statement)
+
     maker = async_sessionmaker(engine, expire_on_commit=False)
 
     async def override_db() -> AsyncIterator[Any]:
@@ -167,6 +178,26 @@ class TestList:
         """Names are detail-only; the list schema has no ``tags`` field."""
         doc = client.get("/api/v1/documents").json()["documents"][0]
         assert "tags" not in doc
+
+
+class TestListIsCheap:
+    """The counts replace loading the rows they count."""
+
+    def test_listing_does_not_load_chunk_text(
+        self, client: TestClient, sql_log: list[str]
+    ) -> None:
+        client.get("/api/v1/documents")
+        assert sql_log, "the probe saw no SQL"
+        # Chunk rows (and their text) are only ever needed for the count, which
+        # is computed in SQL; a statement selecting chunks.content means every
+        # listed document's chunks were pulled into memory.
+        assert not [q for q in sql_log if "chunks.content" in q]
+
+    def test_listing_uses_a_fixed_number_of_statements(
+        self, client: TestClient, sql_log: list[str]
+    ) -> None:
+        client.get("/api/v1/documents")
+        assert len(sql_log) == 2  # the total, and the page with its counts
 
 
 class TestDetail:

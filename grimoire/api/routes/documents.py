@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import ScalarSelect, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import lazyload
 
 from grimoire.api.auth import get_api_key
 from grimoire.api.dependencies import get_db_session
@@ -82,8 +83,15 @@ async def list_documents(
     if mitre_technique_id:
         filters.append(Document.mitre_technique_id == mitre_technique_id)
 
-    query = select(Document, _chunk_count_column(), _tag_count_column()).order_by(
-        Document.created_at.desc()
+    # Document's chunks / tags / generated_content relationships are
+    # lazy="selectin", which would pull every listed document's chunk text into
+    # memory.  The page only needs the counts selected above, so switch every
+    # relationship back to lazy for this query (and never touch them here: a lazy
+    # load inside an async request raises).
+    query = (
+        select(Document, _chunk_count_column(), _tag_count_column())
+        .options(lazyload("*"))
+        .order_by(Document.created_at.desc())
     )
     if filters:
         query = query.where(*filters)
