@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, TypeVar
+from urllib.parse import quote
 
 import httpx
 from loguru import logger
 from pydantic import BaseModel
 
 from grimoire.api.schemas import (
+    DocumentDetailResponse,
     DocumentListResponse,
     IngestResultResponse,
     QueryResponse,
@@ -72,6 +74,10 @@ class GrimoireClient:
         headers = {"Accept": "application/json"}
         if config.api_key:
             headers["X-API-Key"] = config.api_key
+        if config.session_id:
+            # Set once on the client's default headers, so every request,
+            # health checks included, carries it.
+            headers["X-Session-Id"] = config.session_id
         return headers
 
     def close(self) -> None:
@@ -90,10 +96,27 @@ class GrimoireClient:
         return response.status_code == 200
 
     def ask(
-        self, query: str, *, top_k: int = 5, use_cache: bool = True
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        use_cache: bool = True,
+        filter_dict: dict[str, Any] | None = None,
     ) -> QueryResponse:
-        """Run the full RAG pipeline: retrieval plus a generated answer."""
-        payload = {"query": query, "top_k": top_k, "use_cache": use_cache}
+        """Run the full RAG pipeline: retrieval plus a generated answer.
+
+        Args:
+            filter_dict: Metadata filters (``tags``, ``severity``, ...). Sent
+                only when non-empty, so callers that never filter produce
+                exactly the request body they always did.
+        """
+        payload: dict[str, Any] = {
+            "query": query,
+            "top_k": top_k,
+            "use_cache": use_cache,
+        }
+        if filter_dict:
+            payload["filter_dict"] = filter_dict
         response = self._request(
             "POST",
             f"{_API_PREFIX}/query/ask",
@@ -102,22 +125,62 @@ class GrimoireClient:
         )
         return self._parse(response, QueryResponse)
 
-    def search(self, query: str, *, top_k: int = 5) -> SearchResponse:
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        filter_dict: dict[str, Any] | None = None,
+    ) -> SearchResponse:
         """Retrieval only — no LLM in the path, so this is the fast check."""
-        payload = {"query": query, "top_k": top_k}
+        payload: dict[str, Any] = {"query": query, "top_k": top_k}
+        if filter_dict:
+            payload["filter_dict"] = filter_dict
         response = self._request("POST", f"{_API_PREFIX}/query/search", json=payload)
         return self._parse(response, SearchResponse)
 
-    def recent_documents(self, *, limit: int = 10) -> DocumentListResponse:
-        """Most recently created documents.
+    def list_documents(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+        file_type: str | None = None,
+    ) -> DocumentListResponse:
+        """One page of documents, newest first.
 
-        The endpoint already orders by created_at descending, so no
-        client-side sorting is needed.
+        The endpoint orders by ``created_at`` descending, so no client-side
+        sorting is needed. Only filters that are actually set go on the query
+        string; the server treats an absent filter as "match everything".
         """
-        response = self._request(
-            "GET", f"{_API_PREFIX}/documents", params={"offset": 0, "limit": limit}
-        )
+        params: dict[str, str | int] = {"offset": offset, "limit": limit}
+        if status:
+            params["status"] = status
+        if file_type:
+            params["file_type"] = file_type
+        response = self._request("GET", f"{_API_PREFIX}/documents", params=params)
         return self._parse(response, DocumentListResponse)
+
+    def recent_documents(self, *, limit: int = 10) -> DocumentListResponse:
+        """Most recently created documents."""
+        return self.list_documents(offset=0, limit=limit)
+
+    def get_document(self, document_id: str) -> DocumentDetailResponse:
+        """Full detail for one document.
+
+        Raises:
+            RequestRejected: The id is blank, or the server has no such
+                document (404).
+        """
+        cleaned = document_id.strip()
+        if not cleaned:
+            raise RequestRejected("A document id is required.")
+        # safe="" also encodes "/" so an id can never add path segments or a
+        # query string to the request.
+        response = self._request(
+            "GET", f"{_API_PREFIX}/documents/{quote(cleaned, safe='')}"
+        )
+        return self._parse(response, DocumentDetailResponse)
 
     def upload(self, path: Path, *, auto_tag: bool = True) -> IngestResultResponse:
         """Upload a local file and ingest it.

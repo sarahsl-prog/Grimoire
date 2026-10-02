@@ -8,6 +8,7 @@ tree.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
@@ -15,6 +16,11 @@ DEFAULT_BASE_URL = "http://localhost:8001"
 
 ENV_BASE_URL = "GRIMOIRE_API_URL"
 ENV_API_KEY = "GRIMOIRE_API_KEY"
+
+# The id travels as an HTTP header and ends up in server logs, so it is held to
+# a conservative alphabet.  fullmatch, not `^...$`: `$` also matches before a
+# trailing newline, which is exactly the byte a log-injection attempt needs.
+_SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 # Mirrors DocumentParser.SUPPORTED_EXTENSIONS.  Duplicated rather than
 # imported because grimoire.core.parser imports Docling at module scope, and
@@ -62,6 +68,10 @@ class GuiConfig:
             by the network.
         max_upload_bytes: Client-side cap, mirroring the server's default so
             an oversized file is rejected before it is sent.
+        session_id: Per-launch identifier sent as the X-Session-Id header so
+            server-side log records can be matched to this client's own log.
+            None (the default) sends no header.  Must be 1-64 characters of
+            ``A-Z a-z 0-9 _ -``; anything else raises ValueError.
     """
 
     base_url: str = DEFAULT_BASE_URL
@@ -70,6 +80,20 @@ class GuiConfig:
     read_timeout: float = 30.0
     long_read_timeout: float = 300.0
     max_upload_bytes: int = 100 * 1024 * 1024
+    session_id: str | None = None
+
+    def __post_init__(self) -> None:
+        # Runs for dataclasses.replace() too, so there is no way to build a
+        # config carrying an unvalidated id.
+        if self.session_id is not None and not _SESSION_ID_PATTERN.fullmatch(
+            self.session_id
+        ):
+            # Deliberately omits the value: it may be attacker-influenced and
+            # this message can reach a log.
+            raise ValueError(
+                "session_id must be 1-64 characters of letters, digits, "
+                "underscore or hyphen"
+            )
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> GuiConfig:

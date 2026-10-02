@@ -6,6 +6,7 @@ display server.
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -389,3 +390,197 @@ class TestClientConstruction:
         with pytest.raises(ConnectionFailed) as exc:
             GrimoireClient(cfg)
         assert "[::1" in exc.value.message
+
+
+DOC_ROW = {
+    "id": "doc-1",
+    "title": "Sigma primer",
+    "source_path": "/data/sigma.pdf",
+    "file_type": "pdf",
+    "storage_backend": "local",
+    "processing_status": "completed",
+    "size_bytes": 2048,
+    "created_at": "2026-10-01T10:00:00",
+    "updated_at": "2026-10-01T10:05:00",
+}
+
+
+class TestListDocuments:
+    def test_sends_only_supplied_params(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(
+            json={"documents": [DOC_ROW], "total": 1, "offset": 50, "limit": 50}
+        )
+
+        client.list_documents(offset=50, limit=50, status="failed")
+
+        request = httpx_mock.get_request()
+        assert request.url.path == "/api/v1/documents"
+        assert dict(request.url.params) == {
+            "offset": "50",
+            "limit": "50",
+            "status": "failed",
+        }
+
+    def test_sends_both_filters_when_given(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(json={"documents": [], "total": 0})
+
+        client.list_documents(status="completed", file_type="pdf")
+
+        params = dict(httpx_mock.get_request().url.params)
+        assert params["status"] == "completed"
+        assert params["file_type"] == "pdf"
+
+    def test_parses_page_metadata(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(
+            json={"documents": [DOC_ROW], "total": 312, "offset": 0, "limit": 50}
+        )
+
+        result = client.list_documents()
+
+        assert result.total == 312
+        assert result.limit == 50
+        assert result.documents[0].title == "Sigma primer"
+
+    def test_recent_documents_still_sends_offset_zero_and_limit(
+        self, client, httpx_mock
+    ) -> None:
+        httpx_mock.add_response(json={"documents": [], "total": 0})
+
+        client.recent_documents(limit=7)
+
+        assert dict(httpx_mock.get_request().url.params) == {
+            "offset": "0",
+            "limit": "7",
+        }
+
+
+class TestGetDocument:
+    def test_parses_detail(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(
+            url=f"{BASE}/api/v1/documents/doc-1",
+            json={**DOC_ROW, "error_message": "parse failed"},
+        )
+
+        result = client.get_document("doc-1")
+
+        assert result.id == "doc-1"
+        assert result.error_message == "parse failed"
+
+    def test_404_is_a_request_rejected(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(
+            status_code=404, json={"detail": "Document nope not found"}
+        )
+
+        with pytest.raises(RequestRejected, match="Not found"):
+            client.get_document("nope")
+
+    def test_malformed_body_raises_malformed_response(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(json={"unrelated": True})
+
+        with pytest.raises(MalformedResponse):
+            client.get_document("doc-1")
+
+    def test_id_is_url_quoted_so_it_cannot_alter_the_path(
+        self, client, httpx_mock
+    ) -> None:
+        httpx_mock.add_response(json=DOC_ROW)
+
+        client.get_document("a/b?x=1")
+
+        raw_path = httpx_mock.get_request().url.raw_path.decode()
+        assert raw_path == "/api/v1/documents/a%2Fb%3Fx%3D1"
+
+    @pytest.mark.parametrize("bad_id", ["", "   "])
+    def test_blank_id_is_rejected_without_a_request(
+        self, client, httpx_mock, bad_id
+    ) -> None:
+        with pytest.raises(RequestRejected):
+            client.get_document(bad_id)
+
+        assert httpx_mock.get_requests() == []
+
+
+class TestQueryFilters:
+    def test_ask_sends_filter_dict_when_given(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(json={"query": "q", "answer": "a", "citations": []})
+
+        client.ask("q", filter_dict={"severity": "high", "tags": ["x"]})
+
+        body = json.loads(httpx_mock.get_request().content)
+        assert body["filter_dict"] == {"severity": "high", "tags": ["x"]}
+
+    def test_search_sends_filter_dict_when_given(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(json={"query": "q", "results": []})
+
+        client.search("q", filter_dict={"source_type": "playbook"})
+
+        body = json.loads(httpx_mock.get_request().content)
+        assert body["filter_dict"] == {"source_type": "playbook"}
+
+    @pytest.mark.parametrize("empty", [None, {}])
+    def test_empty_filters_leave_the_body_untouched(
+        self, client, httpx_mock, empty
+    ) -> None:
+        """The desktop GUI never passes filters; its requests must not change."""
+        httpx_mock.add_response(json={"query": "q", "answer": "a", "citations": []})
+        httpx_mock.add_response(json={"query": "q", "results": []})
+
+        client.ask("q", top_k=7, use_cache=False, filter_dict=empty)
+        client.search("q", top_k=3, filter_dict=empty)
+
+        ask_req, search_req = httpx_mock.get_requests()
+        assert json.loads(ask_req.content) == {
+            "query": "q",
+            "top_k": 7,
+            "use_cache": False,
+        }
+        assert json.loads(search_req.content) == {"query": "q", "top_k": 3}
+
+
+class TestSessionIdHeader:
+    def test_sent_when_configured(self, httpx_mock) -> None:
+        httpx_mock.add_response(json={"query": "q", "results": []})
+        c = GrimoireClient(GuiConfig(base_url=BASE, session_id="a1b2c3d4e5f6"))
+        try:
+            c.search("q")
+        finally:
+            c.close()
+
+        assert httpx_mock.get_request().headers["X-Session-Id"] == "a1b2c3d4e5f6"
+
+    def test_absent_when_not_configured(self, client, httpx_mock) -> None:
+        """The desktop GUI does not opt in yet; its requests must not change."""
+        httpx_mock.add_response(json={"query": "q", "results": []})
+
+        client.search("q")
+
+        assert "X-Session-Id" not in httpx_mock.get_request().headers
+
+    def test_sent_on_every_endpoint_including_health(self, httpx_mock) -> None:
+        httpx_mock.add_response(url=f"{BASE}/health", json={})
+        httpx_mock.add_response(json={"documents": [], "total": 0})
+        c = GrimoireClient(GuiConfig(base_url=BASE, session_id="sess-1"))
+        try:
+            c.health()
+            c.list_documents()
+        finally:
+            c.close()
+
+        assert [r.headers.get("X-Session-Id") for r in httpx_mock.get_requests()] == [
+            "sess-1",
+            "sess-1",
+        ]
+
+    def test_coexists_with_the_api_key_header(self, httpx_mock) -> None:
+        httpx_mock.add_response(json={"query": "q", "results": []})
+        c = GrimoireClient(
+            GuiConfig(base_url=BASE, api_key="grim_agt_test", session_id="sess-1")
+        )
+        try:
+            c.search("q")
+        finally:
+            c.close()
+
+        headers = httpx_mock.get_request().headers
+        assert headers["X-API-Key"] == "grim_agt_test"
+        assert headers["X-Session-Id"] == "sess-1"
