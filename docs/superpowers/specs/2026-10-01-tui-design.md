@@ -29,7 +29,7 @@ a result:
 - Running without the API server. There is no in-process (serverless) mode.
 - Multi-user support, remote access, or authentication beyond the existing API
   key.
-- In-app API key entry (deferred to v2; see *Configuration*).
+- Saving an API key. In-app entry (`Ctrl+K`) exists, but the key is session-only.
 
 ## Architecture
 
@@ -68,7 +68,7 @@ guards against its late result with two independent checks (the worker's
 | Framework | Textual, as an optional extra (`tui`) | Async-native, tabs/tables/markdown built in, a headless test pilot |
 | Logging | File only (`./logs/grimoire-tui.log`) | Any line on stderr paints over the screen. stdlib `logging` (httpx) is routed into the same file |
 | Correlation | Per-launch session id, sent as `X-Session-Id` and written on every log line | Lets a server-side record be matched to the TUI log. Server-side handling is a follow-up PR |
-| API key | `GRIMOIRE_API_KEY` from the environment only | A command-line key leaks into `ps` and shell history. An in-app entry modal is deferred to v2 |
+| API key | `GRIMOIRE_API_KEY` from the environment only | A command-line key leaks into `ps` and shell history. `Ctrl+K` opens an in-memory-only entry modal |
 | Untrusted text | Never parsed as markup | Titles and chunks come from ingested files, which in the security corpus may be hostile |
 
 ## Screens
@@ -94,6 +94,7 @@ the modal and does not close it.
 |---|---|
 | `F1` / `F2` | Search / Ask, Documents |
 | `Ctrl+R` | Re-check the API; reload the current Documents page |
+| `Ctrl+K` | Enter or replace the API key (masked, in memory only) |
 | `?`, `Ctrl+P` | Key help panel, command palette |
 | `Ctrl+Q` | Quit |
 | `Esc` | Abandon a running query; close the detail view |
@@ -157,5 +158,20 @@ confirmed the terminal is restored after quitting.
 
 ## Deferred to v2
 
-In-app API key entry (an in-memory-only modal), ingest, categories and tags,
+Ingest, categories and tags,
 free-text document search.
+
+## API key entry (added after v1)
+
+`Ctrl+K` opens a modal with a masked input. The key is validated (printable ASCII,
+no spaces, at most 256 characters; a bad value is explained without echoing it),
+then applied by building a **new** `GrimoireClient` from the current config plus
+the key, because the key is a default header fixed when a client is built. This
+mirrors the desktop GUI. The old client is retired, not closed, until exit (a
+worker may still hold it); the app closes the clients it built and never the one
+it was given. The panes switch clients, the status bar reads `key: set`, the API
+is re-checked and the visible pane reloads, since the request that prompted the
+new key probably failed. If the new client cannot be built, the old client and
+config are kept. The key is never written, logged, shown or put in a message.
+The binding has priority because a focused `Input` otherwise binds `Ctrl+K` to
+delete-to-end-of-line.

@@ -376,7 +376,9 @@ start the same app (both skip the CLI's settings validation and log setup, so
 a broken `grimoire.yaml` cannot stop them). `--url` overrides
 `GRIMOIRE_API_URL`, and `--debug` adds DEBUG records to the log file. There is
 deliberately **no `--api-key` option**: command-line arguments leak into
-process listings and shell history.
+process listings and shell history. To change the key without relaunching, press
+`Ctrl+K`: it is applied to a new client, used for this session only, and never
+written to disk or logged.
 
 #### Client settings (GUI and TUI)
 
@@ -399,6 +401,7 @@ first: `set -a; source .env; set +a`.
 |---|---|---|
 | `F1` / `F2` | anywhere | Switch to Search / Ask or Documents |
 | `Ctrl+R` | anywhere | Re-check the API; on Documents, reload the current page |
+| `Ctrl+K` | anywhere | Enter or replace the API key for this session (masked; kept in memory only, never saved) |
 | `?` | when not typing in a box | Key help panel (`Ctrl+P` opens the command palette) |
 | `Ctrl+Q` | anywhere | Quit |
 | `Enter` | Search / Ask | Run the query (Ask or Search, chosen with the toggle) |

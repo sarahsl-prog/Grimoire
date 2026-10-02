@@ -15,6 +15,7 @@ The app only uses it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from loguru import logger
@@ -28,12 +29,17 @@ from textual.worker import get_current_worker
 
 from grimoire.client.client import GrimoireClient
 from grimoire.client.config import ClientConfig
+from grimoire.client.errors import ConnectionFailed
 from grimoire.tui.messages import ConnectionReport
+from grimoire.tui.screens.api_key import ApiKeyScreen
 from grimoire.tui.widgets.documents_pane import DocumentsPane
 from grimoire.tui.widgets.search_pane import SearchPane
 from grimoire.tui.widgets.status_bar import StatusBar
 
-_NO_KEY_WARNING = "No API key set. Export GRIMOIRE_API_KEY and relaunch."
+_NO_KEY_WARNING = (
+    "No API key set. Press Ctrl+K to enter one, or export GRIMOIRE_API_KEY "
+    "and relaunch."
+)
 
 
 class GrimoireApp(App[None]):
@@ -43,6 +49,10 @@ class GrimoireApp(App[None]):
         client: API client.  Owned by the caller, who closes it.
         config: The configuration the client was built from.
         log_path: Where this session's log file is, or None if logging is off.
+        client_factory: Builds a client from a config.  Used when a key is
+            entered in the app, which needs a new client (the key is a default
+            header, fixed when a client is built).  The app closes the clients
+            it builds, never the one it was given.
     """
 
     # Absolute: Textual resolves a relative CSS_PATH against the file that
@@ -58,17 +68,30 @@ class GrimoireApp(App[None]):
         Binding("f1", "show_tab('search')", "Search"),
         Binding("f2", "show_tab('documents')", "Documents"),
         Binding("ctrl+r", "refresh_all", "Refresh"),
+        # priority: a focused Input binds Ctrl+K to "delete to end of line", and
+        # the query box has the keyboard most of the time.
+        Binding("ctrl+k", "enter_api_key", "API key", priority=True),
         Binding("question_mark", "show_help_panel", "Help"),
     ]
 
     def __init__(
-        self, client: GrimoireClient, config: ClientConfig, log_path: Path | None
+        self,
+        client: GrimoireClient,
+        config: ClientConfig,
+        log_path: Path | None,
+        client_factory: Callable[[ClientConfig], GrimoireClient] = GrimoireClient,
     ) -> None:
         super().__init__()
         self._client = client
         self._config = config
         self._log_path = log_path
+        self._client_factory = client_factory
         self._last_shown_pane: TabPane | None = None
+        # Clients this app built (never the caller's).  An earlier one is kept,
+        # not closed, when a key is replaced: a worker already running holds it,
+        # and closing it would fail that call in an unrelated pane.  All are
+        # closed on exit.
+        self._owned_clients: list[GrimoireClient] = []
 
     # -- pane factories ---------------------------------------------------
 
@@ -95,6 +118,53 @@ class GrimoireApp(App[None]):
             # Once, at launch.  `refresh_all` never repeats it.
             self.notify(_NO_KEY_WARNING, severity="warning", timeout=10)
         self._check_health()
+
+    def on_unmount(self) -> None:
+        for client in self._owned_clients:
+            try:
+                client.close()
+            except Exception:
+                logger.exception("Closing a client raised")
+        self._owned_clients.clear()
+
+    # -- API key entry ----------------------------------------------------
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # No second key modal on top of the first (the binding is a priority
+        # one, so it would otherwise fire inside the modal itself).
+        return not (action == "enter_api_key" and isinstance(self.screen, ApiKeyScreen))
+
+    def action_enter_api_key(self) -> None:
+        self.push_screen(ApiKeyScreen(), self._apply_api_key)
+
+    def _apply_api_key(self, key: str | None) -> None:
+        """Rebuild the client around a key entered in the app.
+
+        Mirrors the desktop GUI: the old client and config are kept if the new
+        client cannot be built, so a failure never leaves the app without one.
+        The key is never logged and never shown, including here.
+        """
+        if not key:
+            return
+        new_config = self._config.with_api_key(key)
+        try:
+            new_client = self._client_factory(new_config)
+        except ConnectionFailed as exc:
+            self.notify(exc.message, severity="error", markup=False)
+            return
+        self._owned_clients.append(new_client)
+        self._client = new_client
+        self._config = new_config
+        for pane in self.query(TabPane):
+            for child in pane.children:
+                setter = getattr(child, "set_client", None)
+                if callable(setter):
+                    setter(new_client)
+        bar = self.query_one(StatusBar)
+        bar.set_key(new_config.is_configured)
+        self.notify("API key updated for this session.", markup=False)
+        logger.info("API key replaced for this session")
+        self.action_refresh_all()
 
     # -- health check ------------------------------------------------------
 

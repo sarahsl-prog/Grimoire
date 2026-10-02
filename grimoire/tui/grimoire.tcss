@@ -200,3 +200,42 @@ DocumentDetailScreen {
 #detail-close {
     margin-top: 1;
 }
+
+/* -- API key modal --------------------------------------------------------- */
+
+ApiKeyScreen {
+    align: center middle;
+}
+
+#apikey-box {
+    width: 70%;
+    max-width: 80;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#apikey-heading {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#apikey-help {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#apikey-error {
+    color: $error;
+    height: auto;
+}
+
+#apikey-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#apikey-buttons Button {
+    margin-right: 2;
+}

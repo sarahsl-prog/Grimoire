@@ -154,6 +154,13 @@ class SearchPane(Vertical):
         self.answer_text = ""
         self.preview_text = ""
 
+    def set_client(self, client: GrimoireClient) -> None:
+        """Use a different client from now on (the API key was replaced).
+
+        A request already running keeps the client it started with.
+        """
+        self._client = client
+
     # -- layout -------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
