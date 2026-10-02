@@ -79,10 +79,11 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
   and the client header already exist; the GUI simply never sets one. Generate
   one per launch in `grimoire/gui/__main__.py`. Do this after A2 so it has an
   effect.
-- [ ] **B2. In-app API key entry (v2).** A `Ctrl+K` modal, key held in memory
+- [x] **B2. In-app API key entry (v2).** **Done** (#86). A `Ctrl+K` modal, key held in memory
   only and never written to disk, as in the GUI's connection bar. Deliberately
   deferred from v1; for now the key comes from `GRIMOIRE_API_KEY`.
-- [ ] **B3. Narrow terminals.** At exactly 80 columns a long title can clip the
+- [x] **B3. Narrow terminals.** **Done** (#87): the table plans its columns from
+  the terminal width and never scrolls sideways at 60 to 160 columns. At exactly 80 columns a long title can clip the
   Added column and the table scrolls horizontally. Consider adaptive column
   widths, or dropping Size below a width threshold.
 - [ ] **B4. Make the TUI test suite faster.** The 352 tests in `tests/tui` take
