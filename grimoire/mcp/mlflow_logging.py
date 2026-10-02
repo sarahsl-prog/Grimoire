@@ -105,6 +105,25 @@ def _serialize_tool_input(value: Any) -> Any:
     return repr(value)
 
 
+def _attach_session_tag() -> None:
+    """Tag the active trace with the client's ``X-Session-Id``, if one is bound.
+
+    Best effort: the id is a ContextVar set by the API's middleware for the
+    request being handled, so it is only visible to tool calls that run in that
+    request's context.
+    """
+    if not _MLFLOW_AVAILABLE or not _mlflow_configured:
+        return
+    try:
+        from grimoire.api.session_id import current_session_id
+
+        session_id = current_session_id.get()
+        if session_id is not None:
+            mlflow.update_current_trace(tags={"grimoire.session_id": session_id})
+    except Exception:
+        return
+
+
 def _attach_api_key_tags() -> None:
     """Add API key metadata to the active trace when available."""
     if not _MLFLOW_AVAILABLE or not _mlflow_configured:
@@ -165,6 +184,7 @@ def trace_mcp_tool(func: F, *, name: str) -> F:
     @functools.wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         _attach_api_key_tags()
+        _attach_session_tag()
         if args:
             mlflow.update_current_trace(
                 metadata={"grimoire.tool_input": _serialize_tool_input(args[0])}

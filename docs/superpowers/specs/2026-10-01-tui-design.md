@@ -137,7 +137,9 @@ confirmed the terminal is restored after quitting.
 
 - The Documents table never shows tag or chunk counts: `GET /documents` does
   not populate them. Follow-up PR A.
-- The server does not yet use `X-Session-Id`. Follow-up PR B.
+- The server logs `X-Session-Id` (follow-up A2). The MLflow tag on MCP traces is
+  best effort: it relies on the id being in the tool call's context, which was
+  not verified over the SSE transport.
 - At 80 columns the Added column can be clipped by a long title; the table
   scrolls horizontally. At 100 columns every column fits.
 - The connected/unreachable indicator uses `GET /health`, which needs Redis

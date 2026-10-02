@@ -165,6 +165,12 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     # through this position completely unwrapped.
     app.add_middleware(ContentLengthGuard)
 
+    # Outermost, so even a request ContentLengthGuard rejects is logged with its
+    # session id. Pure-ASGI, so /mcp SSE streaming is unaffected.
+    from grimoire.api.session_id import SessionIdMiddleware
+
+    app.add_middleware(SessionIdMiddleware)
+
     # API routes
     app.include_router(ingest.router, prefix="/api/v1")
     app.include_router(query.router, prefix="/api/v1")

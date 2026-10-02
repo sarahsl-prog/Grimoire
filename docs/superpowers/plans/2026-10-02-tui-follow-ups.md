@@ -23,7 +23,10 @@ numbered group is intended to be its own PR, one task per commit, per
   - Tests with documents that have, and lack, each of tags and chunks.
   - Then, in the TUI: add Tags and Chunks columns to the Documents table, and a
     Tags row to the detail modal (it currently has no row for them).
-- [ ] **A2. Use `X-Session-Id` on the server** (own PR).
+- [x] **A2. Use `X-Session-Id` on the server** (own PR). **Done** in
+  `grimoire/api/session_id.py`; the MLflow tag is best effort (see the design
+  spec's known limitations). OTel: the server has no OTel code today, so there
+  was nothing to tag.
   The TUI already sends a per-launch id; a real server receives it and
   ignores it (confirmed in the manual run).
   - A pure-ASGI middleware in the style of `ContentLengthGuard` in
