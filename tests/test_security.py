@@ -330,6 +330,35 @@ class TestRateLimiting:
                     break
             assert triggered, "Expected at least one 429 after exhausting the limit"
 
+    def test_health_survives_unreachable_redis(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """/health is a liveness probe: a dead Redis must not turn it into a 500."""
+        from grimoire.config.settings import get_settings
+
+        # Nothing listens on port 1, so the Redis-backed limiter cannot connect.
+        monkeypatch.setattr(get_settings().redis, "port", 1)
+        app = create_app(use_lifespan=False)
+        assert app.state.limiter._storage_uri.endswith(":1/3")  # the premise
+        with TestClient(app, raise_server_exceptions=False) as c:
+            resp = c.get("/health")
+            assert resp.status_code == 200
+            assert resp.json() == {"status": "ok"}
+
+    def test_health_limit_still_enforced_without_redis(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """W-7 still holds: exactly 60 requests per minute, then 429."""
+        from grimoire.config.settings import get_settings
+
+        monkeypatch.setattr(get_settings().redis, "port", 1)
+        create_app(use_lifespan=False)  # a prior app must not skew the count
+        app = create_app(use_lifespan=False)
+        with TestClient(app, raise_server_exceptions=False) as c:
+            codes = [c.get("/health").status_code for _ in range(61)]
+        assert codes[:60] == [200] * 60
+        assert codes[60] == 429
+
     def test_generate_api_key_produces_correct_prefix(self) -> None:
         raw, prefix, key_hash = generate_api_key(ApiKeyTier.AGENT)
         assert raw.startswith("grim_agt_")

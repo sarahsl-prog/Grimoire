@@ -140,8 +140,9 @@ confirmed the terminal is restored after quitting.
 - The server does not yet use `X-Session-Id`. Follow-up PR B.
 - At 80 columns the Added column can be clipped by a long title; the table
   scrolls horizontally. At 100 columns every column fits.
-- The connected/unreachable indicator uses `GET /health`, which needs Redis
-  (the API's rate limiter). A running API with Redis down reads as unreachable.
+- The connected/unreachable indicator uses `GET /health`. Originally that
+  needed Redis (the API's rate limiter), so a running API with Redis down read
+  as unreachable; `/health` now has its own in-memory limit and no longer does.
 - Ask and Search against the real retrieval stack (embeddings, vector store,
   LLM) were not exercised; only the API contract and the client were.
 

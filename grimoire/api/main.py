@@ -183,10 +183,22 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     mount_mcp(app, path="/mcp")
 
+    # /health is a liveness probe (Docker, the TUI status bar), so it must not
+    # fail just because Redis is down.  It keeps its W-7 rate limit, but on a
+    # dedicated in-memory limiter, and is exempt from the Redis-backed one.
+    from grimoire.api.rate_limit import create_health_limiter
+
+    health_limiter = create_health_limiter()
+
     @app.get("/health")
-    @limiter.limit("60/minute")
+    @health_limiter.limit("60/minute")
     async def health_check(request: Request) -> dict[str, str]:
         return {"status": "ok"}
+
+    # Called, not used as a decorator: slowapi's `exempt` is untyped, and as a
+    # decorator it would make `health_check` untyped.  It only records the route
+    # name, so the Redis-backed limiter's default limit skips /health.
+    limiter.exempt(health_check)  # type: ignore[no-untyped-call]
 
     return app
 
