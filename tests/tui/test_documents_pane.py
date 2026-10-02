@@ -155,9 +155,51 @@ class TestFirstLoad:
                 "Document 0",
                 "pdf",
                 "completed",
+                "0",
+                "0",
                 "2.0 KB",
                 "2026-10-01 10:30",
             ]
+
+    async def test_chunk_and_tag_counts_are_shown(self, stub_client, step) -> None:
+        resp = DocumentListResponse(
+            documents=[
+                _doc(0, chunk_count=128, tag_count=3),
+                _doc(1, chunk_count=0, tag_count=0),
+            ],
+            total=2,
+        )
+        stub_client.documents_script = [step(resp)]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+
+            assert [_cells(app, i)[3:5] for i in range(2)] == [
+                ["128", "3"],
+                ["0", "0"],
+            ]
+
+    async def test_the_count_columns_are_headed_and_right_aligned(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page(1))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+
+            table = _table(app)
+            assert [str(c.label) for c in table.columns.values()] == [
+                "Title",
+                "Type",
+                "Status",
+                "Chunks",
+                "Tags",
+                "Size",
+                "Added",
+            ]
+            row = table.get_row(list(table.rows)[0])
+            assert row[3].justify == "right"
+            assert row[4].justify == "right"
 
     async def test_the_first_request_is_page_zero_with_no_filters(
         self, stub_client, step
@@ -1029,7 +1071,10 @@ class TestLayout:
         the Title column to its cap and pushed Size and Added off a 100-column
         terminal, so every row lost its date."""
         resp = DocumentListResponse(
-            documents=[_doc(0, title="a very long document title " * 6), _doc(1)],
+            documents=[
+                _doc(0, title="a very long document title " * 6, chunk_count=1234),
+                _doc(1, chunk_count=5, tag_count=7),
+            ],
             total=2,
         )
         stub_client.documents_script = [step(resp)]
@@ -1040,6 +1085,7 @@ class TestLayout:
             visible = screen_text(app)
             assert visible.count("2026-10-01 10:30") == 2
             assert "2.0 KB" in visible
+            assert "1234" in visible  # the new Chunks column fits as well
 
     async def test_the_table_fills_the_space_down_to_the_range_line(
         self, stub_client, step

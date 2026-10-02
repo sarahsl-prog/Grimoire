@@ -48,6 +48,8 @@ _FIELDS: tuple[tuple[str, str], ...] = (
     ("size", "Size"),
     ("created", "Created"),
     ("updated", "Updated"),
+    ("chunks", "Chunks"),
+    ("tags", "Tags"),
     ("error", "Error"),
 )
 
@@ -63,6 +65,11 @@ def _shown(text: str | None, *, blank: str = _BLANK) -> str:
     """A value ready to display: stripped, capped, or ``blank`` when empty."""
     cleaned = (text or "").strip()
     return _cap(cleaned) if cleaned else blank
+
+
+def _tags_text(tags: list[str]) -> str:
+    """Tag names joined for one line, skipping blanks; ``-`` when there are none."""
+    return _shown(", ".join(t.strip() for t in tags if t and t.strip()))
 
 
 class DocumentDetailScreen(ModalScreen[None]):
@@ -162,6 +169,8 @@ class DocumentDetailScreen(ModalScreen[None]):
                 "size": format_size(result.size_bytes),
                 "created": format_timestamp(result.created_at),
                 "updated": format_timestamp(result.updated_at),
+                "chunks": str(result.chunk_count),
+                "tags": _tags_text(result.tags),
                 "error": _shown(result.error_message),
             }
         )

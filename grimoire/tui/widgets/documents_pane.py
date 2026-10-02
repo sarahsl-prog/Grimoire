@@ -158,7 +158,7 @@ class DocumentsPane(Vertical):
 
     def on_mount(self) -> None:
         table = self.query_one("#documents-table", DataTable)
-        table.add_columns("Title", "Type", "Status", "Size", "Added")
+        table.add_columns("Title", "Type", "Status", "Chunks", "Tags", "Size", "Added")
         self.query_one("#documents-empty").display = False
 
     # -- hooks called by the app -------------------------------------------
@@ -345,6 +345,8 @@ class DocumentsPane(Vertical):
                         doc.processing_status, _DEFAULT_STATUS_STYLE
                     ),
                 ),
+                Text(str(doc.chunk_count), justify="right"),
+                Text(str(doc.tag_count), justify="right"),
                 Text(format_size(doc.size_bytes), justify="right"),
                 Text(format_timestamp(doc.created_at)),
                 key=doc.id if usable else None,
