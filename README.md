@@ -359,7 +359,9 @@ A [Textual](https://textual.textualize.io/) client for the same REST API, for
 when you are already in a terminal (including over SSH, where the desktop GUI
 cannot open a window). Two screens: **Search / Ask**, with the retrieved source
 chunks next to the answer, and **Documents**, a paged, filterable table of
-what the corpus holds with a detail view for each document.
+what the corpus holds with a detail view for each document. On a narrow
+terminal the table drops its least useful columns (Tags, Chunks, Type, Size) and
+says so under the table; widening the terminal brings them back.
 
 ```bash
 # Install the optional TUI dependencies

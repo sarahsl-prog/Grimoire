@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from rich.text import Text
-from textual import on, work
+from textual import events, on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -39,6 +39,7 @@ from grimoire.tui.formatting import (
     format_timestamp,
     truncate,
 )
+from grimoire.tui.layout import LABELS, ColumnPlan, plan_columns
 from grimoire.tui.messages import ConnectionReport
 from grimoire.tui.screens.document_detail import DocumentDetailScreen
 
@@ -46,9 +47,8 @@ from grimoire.tui.screens.document_detail import DocumentDetailScreen
 # index times this, never taken from a response.
 PAGE_SIZE = 50
 
-# One long title sets the whole column's width.  At 60 it pushed Size and Added
-# off a 100-column terminal; 40 leaves room for every column there.
-_TITLE_WIDTH = 40
+# The title width is no longer fixed: `plan_columns` shrinks it (and drops the
+# least useful columns) to fit the terminal, so Added is never pushed off screen.
 _CELL_WIDTH = 24  # type and status come from enums, so anything longer is noise
 _UNTITLED = "(untitled)"
 _LOADING = "Loading…"
@@ -132,6 +132,8 @@ class DocumentsPane(Vertical):
         self._target_page = 0  # the page most recently asked for
         self._total = 0
         self._ids: list[str | None] = []  # parallel to table rows
+        self._documents: list[DocumentResponse] = []  # the page the table shows
+        self._plan: ColumnPlan | None = None  # the layout the table was built with
         self._focus_parked = False  # keyboard lent to Refresh while the table is hidden
         self.status_text = ""
         self.footer_text = ""
@@ -157,9 +159,14 @@ class DocumentsPane(Vertical):
         yield Static("", id="doc-footer", markup=False)
 
     def on_mount(self) -> None:
-        table = self.query_one("#documents-table", DataTable)
-        table.add_columns("Title", "Type", "Status", "Chunks", "Tags", "Size", "Added")
         self.query_one("#documents-empty").display = False
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Re-plan the columns when the terminal changes size.
+
+        Deferred a refresh: the table's own width settles after the pane's.
+        """
+        self.call_after_refresh(self._relayout)
 
     # -- hooks called by the app -------------------------------------------
 
@@ -328,30 +335,8 @@ class DocumentsPane(Vertical):
         previous_id = self.selected_document_id if keep_cursor else None
         previous_row = table.cursor_row if keep_cursor else 0
 
-        table.clear()
-        self._ids = []
-        seen: set[str] = set()
-        for doc in documents:
-            # A duplicate or empty id would make add_row raise; let Textual
-            # generate a key for it instead of taking the whole UI down.
-            usable = bool(doc.id) and doc.id not in seen
-            seen.add(doc.id)
-            table.add_row(
-                Text(truncate(_title_for(doc), _TITLE_WIDTH)),
-                Text(truncate(doc.file_type, _CELL_WIDTH)),
-                Text(
-                    truncate(doc.processing_status, _CELL_WIDTH),
-                    style=_STATUS_STYLES.get(
-                        doc.processing_status, _DEFAULT_STATUS_STYLE
-                    ),
-                ),
-                Text(str(doc.chunk_count), justify="right"),
-                Text(str(doc.tag_count), justify="right"),
-                Text(format_size(doc.size_bytes), justify="right"),
-                Text(format_timestamp(doc.created_at)),
-                key=doc.id if usable else None,
-            )
-            self._ids.append(doc.id or None)
+        self._documents = list(documents)
+        self._fill_table(table)
 
         has_rows = bool(documents)
         had_focus = table.has_focus
@@ -370,14 +355,105 @@ class DocumentsPane(Vertical):
                 table.focus()
         if has_rows:
             self._restore_cursor(table, previous_id, previous_row)
+        self._update_footer()
+
+    def _update_footer(self) -> None:
+        if self._documents:
             start = self._shown_page * PAGE_SIZE
-            self.footer_text = (
-                f"Rows {start + 1}-{start + len(documents)} of {self._total}"
+            text = (
+                f"Rows {start + 1}-{start + len(self._documents)} of {self._total}"
                 f" · page {self._shown_page + 1}/{_pages_for(self._total)}"
             )
+            if self._plan is not None and self._plan.hidden:
+                # Say why a column is missing, and that a wider terminal brings
+                # it back, rather than leaving the user to wonder.
+                names = ", ".join(LABELS[key] for key in self._plan.hidden)
+                text += f" · hidden: {names} (widen the terminal)"
+            self.footer_text = text
         else:
             self.footer_text = _NO_ROWS
         self.query_one("#doc-footer", Static).update(self.footer_text)
+
+    # -- table layout -------------------------------------------------------
+
+    def _available_width(self, table: DataTable[Any]) -> int:
+        """Characters the table can use, or 0 before it has been laid out.
+
+        The vertical scrollbar is reserved whether or not it is showing yet:
+        rows are added after this is measured, and a scrollbar that appears
+        afterwards would take two columns back and push Added off the edge.
+        """
+        width = table.size.width
+        if width <= 0:
+            return 0
+        return max(1, width - table.styles.scrollbar_size_vertical)
+
+    @staticmethod
+    def _cell_texts(doc: DocumentResponse) -> dict[str, str]:
+        """The untruncated text of each cell, by column key."""
+        return {
+            "title": " ".join(_title_for(doc).split()),
+            "type": truncate(doc.file_type, _CELL_WIDTH),
+            "status": truncate(doc.processing_status, _CELL_WIDTH),
+            "chunks": str(doc.chunk_count),
+            "tags": str(doc.tag_count),
+            "size": format_size(doc.size_bytes),
+            "added": format_timestamp(doc.created_at),
+        }
+
+    def _plan_for(self, table: DataTable[Any]) -> ColumnPlan:
+        natural: dict[str, int] = {}
+        for doc in self._documents:
+            for key, text in self._cell_texts(doc).items():
+                natural[key] = max(natural.get(key, 0), len(text))
+        return plan_columns(self._available_width(table), natural)
+
+    def _fill_table(self, table: DataTable[Any]) -> None:
+        """Rebuild the columns and rows for the current page and width."""
+        plan = self._plan_for(table)
+        self._plan = plan
+        table.clear(columns=True)
+        table.add_columns(*(LABELS[key] for key in plan.visible))
+        self._ids = []
+        seen: set[str] = set()
+        for doc in self._documents:
+            # A duplicate or empty id would make add_row raise; let Textual
+            # generate a key for it instead of taking the whole UI down.
+            usable = bool(doc.id) and doc.id not in seen
+            seen.add(doc.id)
+            texts = self._cell_texts(doc)
+            cells = {
+                "title": Text(truncate(texts["title"], plan.title_width)),
+                "type": Text(texts["type"]),
+                "status": Text(
+                    texts["status"],
+                    style=_STATUS_STYLES.get(
+                        doc.processing_status, _DEFAULT_STATUS_STYLE
+                    ),
+                ),
+                "chunks": Text(texts["chunks"], justify="right"),
+                "tags": Text(texts["tags"], justify="right"),
+                "size": Text(texts["size"], justify="right"),
+                "added": Text(texts["added"]),
+            }
+            table.add_row(
+                *(cells[key] for key in plan.visible),
+                key=doc.id if usable else None,
+            )
+            self._ids.append(doc.id or None)
+
+    def _relayout(self) -> None:
+        """Rebuild the table if the terminal's width calls for a different plan."""
+        if not self._documents:
+            return
+        table = self.query_one("#documents-table", DataTable)
+        if self._plan_for(table) == self._plan:
+            return
+        previous_id = self.selected_document_id
+        previous_row = table.cursor_row
+        self._fill_table(table)
+        self._restore_cursor(table, previous_id, previous_row)
+        self._update_footer()
 
     def _restore_cursor(
         self, table: DataTable[Any], previous_id: str | None, previous_row: int

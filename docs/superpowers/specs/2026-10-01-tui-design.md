@@ -147,8 +147,14 @@ confirmed the terminal is restored after quitting.
 - The server logs `X-Session-Id` (follow-up A2). The MLflow tag on MCP traces is
   best effort: it relies on the id being in the tool call's context, which was
   not verified over the SSE transport.
-- At 80 columns the Added column can be clipped by a long title; the table
-  scrolls horizontally. At 100 columns every column fits.
+- Narrow terminals: the Documents table plans its columns from the terminal's
+  width (`grimoire/tui/layout.py`) and re-plans when it is resized. The title
+  shrinks first, to a floor of 24 characters; then Tags, Chunks, Type and Size
+  are dropped in that order. Title, Status and Added are never dropped, so Added
+  is never scrolled off screen. The range line under the table says which
+  columns are hidden. Below roughly 55 columns even the essentials cannot fit and
+  the table scrolls sideways. Widths were verified at 60 to 200 columns; the
+  planner is pure and unit-tested, and the pane is tested through a resize.
 - The connected/unreachable indicator uses `GET /health`. Originally that
   needed Redis (the API's rate limiter), so a running API with Redis down read
   as unreachable; `/health` now has its own in-memory limit and no longer does.

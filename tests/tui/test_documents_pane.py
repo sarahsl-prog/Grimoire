@@ -1099,6 +1099,257 @@ class TestLayout:
             assert table.region.bottom == app.query_one("#doc-footer").region.y
 
 
+def _labels(app: GrimoireApp) -> list[str]:
+    return [str(c.label) for c in _table(app).columns.values()]
+
+
+def _overflows(app: GrimoireApp) -> bool:
+    """Whether the table scrolls sideways (so some column is off screen)."""
+    table = _table(app)
+    return table.virtual_size.width > table.scrollable_content_region.width
+
+
+LONG_TITLE = "a very long document title " * 6
+
+
+def _wide_page() -> DocumentListResponse:
+    return DocumentListResponse(
+        documents=[
+            _doc(0, title=LONG_TITLE, chunk_count=12345, tag_count=12),
+            _doc(1, title="Short", chunk_count=3, tag_count=0),
+            _doc(2, title="Another fairly long title for the narrow case"),
+        ],
+        total=3,
+    )
+
+
+class TestNarrowTerminals:
+    """At 80 columns a long title pushed the Added column off screen and the
+    table scrolled sideways (found in the first real-server run)."""
+
+    @pytest.mark.parametrize("width", [60, 70, 80, 90, 100, 120, 200])
+    async def test_the_table_never_scrolls_sideways_and_added_is_always_visible(
+        self, stub_client, step, width: int
+    ) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(width, 30)) as pilot:
+            await _open(app, pilot)
+
+            assert not _overflows(app), _labels(app)
+            assert "Added" in _labels(app)
+            # Polled: the first frame after a load can still be half painted.
+            await _until(pilot, lambda: screen_text(app).count("2026-10-01 10:30") == 3)
+
+    @pytest.mark.parametrize("width", [60, 80, 100])
+    async def test_a_full_page_with_a_scrollbar_still_fits(
+        self, stub_client, step, width: int
+    ) -> None:
+        """Fifty rows overflow the height, so a vertical scrollbar takes two
+        columns; the plan must already have left them."""
+        resp = DocumentListResponse(
+            documents=[_doc(i, title=LONG_TITLE, chunk_count=99999) for i in range(50)],
+            total=50,
+        )
+        stub_client.documents_script = [step(resp)]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(width, 20)) as pilot:
+            await _open(app, pilot)
+
+            assert not _overflows(app), _labels(app)
+            assert "Added" in _labels(app)
+
+    async def test_a_roomy_terminal_shows_every_column(self, stub_client, step) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(200, 30)) as pilot:
+            await _open(app, pilot)
+
+            assert _labels(app) == [
+                "Title",
+                "Type",
+                "Status",
+                "Chunks",
+                "Tags",
+                "Size",
+                "Added",
+            ]
+
+    async def test_a_narrow_terminal_drops_the_least_useful_columns_first(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(70, 30)) as pilot:
+            await _open(app, pilot)
+
+            labels = _labels(app)
+            assert {"Title", "Status", "Added"} <= set(labels)
+            assert "Tags" not in labels  # first to go
+
+    async def test_the_title_is_cut_with_an_ellipsis_not_dropped(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(80, 30)) as pilot:
+            await _open(app, pilot)
+
+            title = _cells(app, 0)[0]
+            assert title.endswith("…")
+            assert title.startswith("a very long document title")
+            assert len(title) < len(LONG_TITLE)
+
+    async def test_a_wide_terminal_shows_more_of_the_title_than_a_narrow_one(
+        self, stub_client, step
+    ) -> None:
+        shown: dict[int, int] = {}
+        for width in (80, 160):
+            stub_client.documents_script = [step(_wide_page())]
+            app = GrimoireApp(stub_client, stub_client.config, None)
+            async with app.run_test(size=(width, 30)) as pilot:
+                await _open(app, pilot)
+                shown[width] = len(_cells(app, 0)[0])
+
+        assert shown[160] > shown[80]
+
+    async def test_short_titles_hide_nothing_at_80_columns(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page(3))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _open(app, pilot)
+
+            assert len(_labels(app)) == 7
+
+    async def test_the_footer_says_which_columns_are_hidden(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(70, 30)) as pilot:
+            await _open(app, pilot)
+
+            assert "hidden:" in _pane(app).footer_text
+            assert "Tags" in _pane(app).footer_text
+            assert "Rows 1-3 of 3" in _pane(app).footer_text
+
+    async def test_the_footer_is_silent_when_nothing_is_hidden(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page(3))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await _open(app, pilot)
+
+            assert "hidden" not in _pane(app).footer_text
+
+
+class TestResizing:
+    async def test_narrowing_the_terminal_relays_out_the_table(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(200, 30)) as pilot:
+            await _open(app, pilot)
+            assert len(_labels(app)) == 7
+
+            await pilot.resize_terminal(70, 30)
+            await _until(pilot, lambda: len(_labels(app)) < 7)
+            await _settled(app, pilot)
+
+            assert not _overflows(app)
+            assert _table(app).row_count == 3
+
+    async def test_widening_it_again_brings_the_columns_back(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(70, 30)) as pilot:
+            await _open(app, pilot)
+            assert len(_labels(app)) < 7
+
+            await pilot.resize_terminal(200, 30)
+            await _until(pilot, lambda: len(_labels(app)) == 7)
+
+            assert "hidden" not in _pane(app).footer_text
+
+    async def test_the_cursor_stays_on_the_same_document_through_a_resize(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(200, 30)) as pilot:
+            await _open(app, pilot)
+            await pilot.press("down")
+            await pilot.pause()
+            assert _pane(app).selected_document_id == "doc-1"
+
+            await pilot.resize_terminal(70, 30)
+            await _until(pilot, lambda: len(_labels(app)) < 7)
+            await _settled(app, pilot)
+
+            assert _pane(app).selected_document_id == "doc-1"
+
+    async def test_a_resize_that_changes_nothing_does_not_rebuild_the_table(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page(3))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await _open(app, pilot)
+            before = _pane(app)._plan
+
+            await pilot.resize_terminal(130, 30)
+            await _settled(app, pilot)
+
+            assert _pane(app)._plan is before  # same plan object: no rebuild
+
+    async def test_a_resize_before_any_data_is_harmless(
+        self, stub_client, step
+    ) -> None:
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _launched(app, pilot)
+            await pilot.resize_terminal(60, 30)
+            await _settled(app, pilot)
+
+            assert app.is_running
+
+    async def test_the_detail_modal_still_opens_after_a_relayout(
+        self, stub_client, step
+    ) -> None:
+        from grimoire.api.schemas import DocumentDetailResponse
+        from grimoire.tui.screens.document_detail import DocumentDetailScreen
+
+        stub_client.documents_script = [step(_wide_page())]
+        stub_client.detail_script = [
+            step(
+                DocumentDetailResponse(
+                    id="doc-1",
+                    source_path="/p/x.pdf",
+                    file_type="pdf",
+                    storage_backend="local",
+                    processing_status="completed",
+                )
+            )
+        ]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(200, 30)) as pilot:
+            await _open(app, pilot)
+            await pilot.press("down")
+            await pilot.resize_terminal(70, 30)
+            await _until(pilot, lambda: len(_labels(app)) < 7)
+            await _settled(app, pilot)
+            await pilot.press("enter")
+            await _until(pilot, lambda: isinstance(app.screen, DocumentDetailScreen))
+
+        assert stub_client.calls_to("get_document") == [(("doc-1",), {})]
+
+
 class TestOpenDetail:
     @staticmethod
     def _client_with_detail(stub_client: Any, step: Any, pages: list[Any]) -> None:
