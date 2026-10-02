@@ -26,7 +26,9 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
 
 ## A. Server changes the TUI is waiting on
 
-- [ ] **A1. Populate document counts and tags** (own PR, as agreed).
+- [x] **A1. Populate document counts and tags** (own PR, as agreed). **Done**
+  in #83, which also stopped the list loading every chunk's text, and added the
+  TUI columns and detail rows.
   `GET /documents` never fills `tag_count` or `chunk_count`, and
   `GET /documents/{id}` never fills `tags`; the schema fields exist and are
   always `0` / empty today.
@@ -35,7 +37,7 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
   - Tests with documents that have, and lack, each of tags and chunks.
   - Then, in the TUI: add Tags and Chunks columns to the Documents table, and a
     Tags row to the detail modal (it currently has no row for them).
-- [x] **A2. Use `X-Session-Id` on the server** (own PR). **Done** in
+- [x] **A2. Use `X-Session-Id` on the server** (own PR). **Done** (#79) in
   `grimoire/api/session_id.py`; the MLflow tag is best effort (see the design
   spec's known limitations). OTel: the server has no OTel code today, so there
   was nothing to tag.
@@ -50,7 +52,9 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
     `DEFAULT_LOG_FORMAT` includes `extra`).
   - Tag MLflow / OTel runs with it where the server already creates them
     (the `CLAUDE.md` traceability requirement).
-- [ ] **A3. Stop `/health` depending on Redis.** **Decided: no dependency.**
+- [x] **A3. Stop `/health` depending on Redis.** **Decided: no dependency. Done**
+  (#78): a dedicated in-memory limiter keeps the W-7 rate limit, rather than a
+  plain exemption.
   The handler is trivial, but `@limiter.limit("60/minute")` puts the
   Redis-backed rate limiter in front of it, so with Redis down `/health` returns
   500 and the TUI's status bar reads a running API as *unreachable*.
@@ -70,7 +74,7 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
 
 ## B. TUI and client improvements
 
-- [x] **B1. Desktop GUI sends `X-Session-Id` too.** **Done** (`grimoire/gui/__main__.py`).
+- [x] **B1. Desktop GUI sends `X-Session-Id` too.** **Done** (#80, `grimoire/gui/__main__.py`).
   Takes effect once A2 (#79) is merged. `GuiConfig.session_id`
   and the client header already exist; the GUI simply never sets one. Generate
   one per launch in `grimoire/gui/__main__.py`. Do this after A2 so it has an
@@ -88,7 +92,9 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
 - [ ] **B5. Pin Textual honestly.** The floor is `>=8.2,<9` but only 8.2.8 was
   ever tested. Test the lowest 8.2.x, or raise the floor to what was tested,
   and consider a CI matrix.
-- [ ] **B6. Move the shared client to a neutral package.** **Decided: yes.**
+- [x] **B6. Move the shared client to a neutral package.** **Decided: yes. Done**
+  (#81): `grimoire/client/`, with `ClientConfig`/`ClientError` aliases and
+  unused compatibility shims left in `grimoire/gui/`.
   The TUI imports `GrimoireClient`, `GuiConfig` and `GuiError` from
   `grimoire/gui/`. They are Qt-free, so it works, but they belong in a
   `grimoire/client/` package that neither front end owns.
@@ -104,7 +110,7 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
     the pipeline, and `tests/test_gui_config.py`'s check that the supported
     extensions match the parser must keep working.
   - **Do this before B7**: B7 changes `GuiConfig.from_env`, which B6 moves.
-- [ ] **B7. Clients read `.env`.** **Decided: yes.** Neither `grimoire-gui` nor
+- [x] **B7. Clients read `.env`.** **Decided: yes. Done** (#82). Neither `grimoire-gui` nor
   `grimoire-tui` does today; they read the process environment only (a README
   line claiming otherwise was corrected). Make both read a `.env` file for
   `GRIMOIRE_API_URL` and `GRIMOIRE_API_KEY`.
@@ -159,7 +165,8 @@ Not committed to; listed so the decision is visible.
 
 ## E. Documentation
 
-- [ ] **E1. Stale-image troubleshooting in `docs/deploy/docker.md`.** A
+- [x] **E1. Stale-image troubleshooting in `docs/deploy/docker.md`.** **Done**
+  (#84). A
   contributor hit `api.upload_dir: Extra inputs are not permitted` from
   `grimoire-db-migrate` after pulling this branch. Cause: the image is built
   with a non-editable install, so a container keeps running the settings model
