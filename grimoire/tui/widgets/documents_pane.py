@@ -420,7 +420,11 @@ class DocumentsPane(Vertical):
         plan = self._plan_for(table)
         self._plan = plan
         table.clear(columns=True)
-        table.add_columns(*(LABELS[key] for key in plan.visible))
+        for key, width in zip(plan.visible, plan.widths, strict=True):
+            # Explicit width, so the table does not measure its own cells (see
+            # ColumnPlan.widths): a frame drawn before DataTable's lazy
+            # measurement can otherwise stay on screen with clipped cells.
+            table.add_column(LABELS[key], width=width)
         self._ids = []
         seen: set[str] = set()
         for doc in self._documents:

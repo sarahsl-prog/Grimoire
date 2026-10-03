@@ -58,10 +58,16 @@ class ColumnPlan:
     Attributes:
         visible: Column keys to show, in display order.
         title_width: Characters of title to keep (the cell is cut to this).
+        widths: Content width of each visible column, in the same order, without
+            padding.  The table is given these explicitly rather than left to
+            measure its own cells: DataTable measures lazily, after the first
+            paint, and under load a frame drawn before that can stay on screen
+            with every cell clipped to its header's width.
     """
 
     visible: tuple[str, ...]
     title_width: int
+    widths: tuple[int, ...]
 
     @property
     def hidden(self) -> tuple[str, ...]:
@@ -87,7 +93,7 @@ def plan_columns(available: int, natural: dict[str, int]) -> ColumnPlan:
     }
     title_natural = min(widths["title"], MAX_TITLE_WIDTH)
     if available <= 0:
-        return ColumnPlan(COLUMN_ORDER, title_natural)
+        return _plan(COLUMN_ORDER, title_natural, widths)
 
     floor = min(title_natural, MIN_TITLE_WIDTH)
     visible = list(COLUMN_ORDER)
@@ -96,9 +102,17 @@ def plan_columns(available: int, natural: dict[str, int]) -> ColumnPlan:
         others = sum(widths[key] + PAD for key in visible if key != "title")
         title_width = min(title_natural, available - others - PAD)
         if title_width >= floor:
-            return ColumnPlan(tuple(visible), title_width)
+            return _plan(tuple(visible), title_width, widths)
         column = next(give_up, None)
         if column is None:
             # Nothing left to give up: keep the essentials and accept a scroll.
-            return ColumnPlan(tuple(visible), floor)
+            return _plan(tuple(visible), floor, widths)
         visible.remove(column)
+
+
+def _plan(
+    visible: tuple[str, ...], title_width: int, widths: dict[str, int]
+) -> ColumnPlan:
+    """Build a plan, giving the title column its chosen width."""
+    sized = {**widths, "title": title_width}
+    return ColumnPlan(visible, title_width, tuple(sized[key] for key in visible))

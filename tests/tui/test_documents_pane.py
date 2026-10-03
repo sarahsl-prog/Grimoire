@@ -1246,6 +1246,48 @@ class TestNarrowTerminals:
             assert "hidden" not in _pane(app).footer_text
 
 
+class TestExplicitColumnWidths:
+    """DataTable measures cells lazily, after the first paint.  Under load a
+    frame drawn before that stayed on screen with every cell clipped to its
+    header's width (about 1 run in 10 with the CPU saturated), and refresh() did
+    not repair it.  The pane therefore hands the table its widths up front."""
+
+    async def test_every_column_has_an_explicit_planned_width(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open(app, pilot)
+
+            plan = _pane(app)._plan
+            columns = list(_table(app).columns.values())
+            assert plan is not None
+            assert [c.auto_width for c in columns] == [False] * len(columns)
+            assert [c.width for c in columns] == list(plan.widths)
+
+    async def test_the_table_is_the_planned_width_before_any_idle_measuring(
+        self, stub_client, step
+    ) -> None:
+        """Fill the table directly and look at once, as a too-early frame would."""
+        from grimoire.tui.layout import PAD
+
+        stub_client.documents_script = [step(_wide_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open(app, pilot)
+            pane = _pane(app)
+
+            pane._fill_table(_table(app))
+            plan = pane._plan
+
+            assert plan is not None
+            table = _table(app)
+            rendered = [c.get_render_width(table) for c in table.columns.values()]
+            assert rendered == [w + PAD for w in plan.widths]
+            assert sum(rendered) <= 88
+
+
 class TestResizing:
     async def test_narrowing_the_terminal_relays_out_the_table(
         self, stub_client, step
