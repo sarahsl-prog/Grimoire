@@ -86,7 +86,10 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
   the terminal width and never scrolls sideways at 60 to 160 columns. At exactly 80 columns a long title can clip the
   Added column and the table scrolls horizontally. Consider adaptive column
   widths, or dropping Size below a width threshold.
-- [ ] **B4. Make the TUI test suite faster.** The 352 tests in `tests/tui` take
+- [x] **B4. Make the TUI test suite faster.** **Done** (#89): profiling showed no
+  waste to trim (each test starts its own app, about 1.3 s), so the answer is
+  `pytest tests/tui -n auto` (about 4 minutes down to 1 on 4 cores). It also
+  exposed and fixed a clipped-table render under load. The 352 tests in `tests/tui` take
   several minutes (the Documents pane tests alone about 90 s; with the GUI and CLI
   tests, about four) because each starts an app. Look at fewer settle pauses, shared app fixtures, or marking
   the slow tail.
