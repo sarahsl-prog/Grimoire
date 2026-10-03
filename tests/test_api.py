@@ -12,6 +12,7 @@ Tests cover:
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -86,10 +87,8 @@ def client(app):
 
     # Wipe rate limit state between tests so /health does not stay throttled
     if hasattr(app.state, "limiter") and app.state.limiter:
-        try:
+        with contextlib.suppress(Exception):
             app.state.limiter.reset()
-        except Exception:
-            pass
         try:
             storage = app.state.limiter._storage
             storage.reset()

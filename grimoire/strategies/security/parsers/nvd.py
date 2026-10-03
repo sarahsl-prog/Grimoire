@@ -570,7 +570,8 @@ def parse_cve(record: dict[str, Any]) -> tuple[str, SecurityMetadata]:
     return text, meta
 
 
-def parse_nvd_json(
+# Complexity accepted: flat dispatch across NVD feed shapes (1.1, 2.0, legacy).
+def parse_nvd_json(  # noqa: C901
     text_or_obj: str | dict[str, Any],
 ) -> list[tuple[str, SecurityMetadata]]:
     """Parse NVD JSON 2.0 input (single record, bulk feed, or legacy shape).

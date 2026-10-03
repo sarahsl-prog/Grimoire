@@ -354,7 +354,7 @@ class TestEdgeCases:
     ) -> None:
         """read_file() handles empty files."""
         empty_file = os.path.join(temp_dir, "empty.txt")
-        with open(empty_file, "w") as f:
+        with open(empty_file, "w"):
             pass  # Creates empty file
 
         result = await adapter.read_file(empty_file)
@@ -671,7 +671,7 @@ class TestDataModels:
             ("test.png", "image/png"),
         ]
 
-        for name, expected_mime in files_to_create:
+        for name, _ in files_to_create:
             with open(os.path.join(temp_dir, name), "w") as f:
                 f.write("content")
 

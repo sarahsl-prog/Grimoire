@@ -91,7 +91,8 @@ class GoogleDriveAdapter(StorageAdapter):
     # Google Drive API v3 endpoints
     API_BASE_URL = "https://www.googleapis.com/drive/v3"
     AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-    TOKEN_URL = "https://oauth2.googleapis.com/token"
+    # Public OAuth endpoint URL, not a secret.
+    TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105  # nosec B105
 
     # OAuth scopes needed for read-only access
     SCOPES = [
@@ -360,12 +361,11 @@ class GoogleDriveAdapter(StorageAdapter):
                     continue
 
                 # Handle token expiration during request
-                if response.status_code == 401:
-                    if attempt < retries - 1:
-                        logger.debug("Access token expired, refreshing...")
-                        access_token = await self._refresh_access_token()
-                        headers["Authorization"] = f"Bearer {access_token}"
-                        continue
+                if response.status_code == 401 and attempt < retries - 1:
+                    logger.debug("Access token expired, refreshing...")
+                    access_token = await self._refresh_access_token()
+                    headers["Authorization"] = f"Bearer {access_token}"
+                    continue
 
                 response.raise_for_status()
                 result: dict[str, Any] = response.json()

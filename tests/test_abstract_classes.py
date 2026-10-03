@@ -692,7 +692,7 @@ class TestStateManagement:
                 documents: list[str],
             ) -> None:
                 for doc_id, emb, meta, doc in zip(
-                    ids, embeddings, metadatas, documents
+                    ids, embeddings, metadatas, documents, strict=True
                 ):
                     self._docs[doc_id] = {
                         "embedding": emb,
@@ -792,7 +792,7 @@ class TestTypeHints:
 
     def test_vector_store_type_hints(self) -> None:
         """VectorStore methods have type hints."""
-        for name, method in inspect.getmembers(
+        for _name, method in inspect.getmembers(
             VectorStore, predicate=inspect.isfunction
         ):
             if hasattr(method, "__annotations__"):
@@ -802,7 +802,7 @@ class TestTypeHints:
 
     def test_storage_adapter_type_hints(self) -> None:
         """StorageAdapter methods have type hints."""
-        for name, method in inspect.getmembers(
+        for _name, method in inspect.getmembers(
             StorageAdapter, predicate=inspect.isfunction
         ):
             if hasattr(method, "__annotations__"):
@@ -811,14 +811,14 @@ class TestTypeHints:
 
     def test_cache_type_hints(self) -> None:
         """Cache methods have type hints."""
-        for name, method in inspect.getmembers(Cache, predicate=inspect.isfunction):
+        for _name, method in inspect.getmembers(Cache, predicate=inspect.isfunction):
             if hasattr(method, "__annotations__"):
                 sig = inspect.signature(method)
                 assert sig.return_annotation != inspect.Signature.empty
 
     def test_reranker_type_hints(self) -> None:
         """Reranker methods have type hints."""
-        for name, method in inspect.getmembers(Reranker, predicate=inspect.isfunction):
+        for _name, method in inspect.getmembers(Reranker, predicate=inspect.isfunction):
             if hasattr(method, "__annotations__"):
                 sig = inspect.signature(method)
                 assert sig.return_annotation != inspect.Signature.empty

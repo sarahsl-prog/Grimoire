@@ -43,7 +43,7 @@
 ## Code Quality
 
 ```bash
-pre-commit run --all-files    # Run all checks (ruff, black, mypy, bandit)
+uv run pre-commit run --all-files    # Run all checks (ruff, black, mypy, bandit); expected to be clean
 ruff check --fix .            # Lint and auto-fix
 black .                       # Format
 mypy grimoire/                 # Type check

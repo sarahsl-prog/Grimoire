@@ -231,7 +231,7 @@ class TestHybridSearch:
         ) as mock_fts:
             mock_fts.return_value = []
 
-            results = await hybrid_search.search(
+            await hybrid_search.search(
                 mock_db,
                 "test query",
                 rerank=True,
@@ -252,7 +252,7 @@ class TestHybridSearch:
         ) as mock_fts:
             mock_fts.return_value = []
 
-            results = await hybrid_search.search(
+            await hybrid_search.search(
                 mock_db,
                 "test query",
                 rerank=False,

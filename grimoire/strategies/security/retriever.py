@@ -29,7 +29,7 @@ import math
 import re
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -68,7 +68,7 @@ class QueryIntent(str, Enum):
 # from the classifier, or a raw string (e.g. an experimental intent injected
 # by a settings override). ``_security_rerank`` falls back to
 # ``general_security`` when the value is unknown.
-IntentLike = Union[QueryIntent, str]
+IntentLike = QueryIntent | str
 
 
 # ---------------------------------------------------------------------------

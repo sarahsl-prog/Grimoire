@@ -362,7 +362,7 @@ class ChromaDBStore(VectorStore):
         Raises:
             ValueError: If filter_dict contains unsupported operators.
         """
-        VALID_OPERATORS = {
+        valid_operators = {
             "$eq",
             "$ne",
             "$gt",
@@ -374,23 +374,23 @@ class ChromaDBStore(VectorStore):
             "$and",
             "$or",
         }
-        GRIFFIN_OPERATORS = {"$contains"}
+        griffin_operators = {"$contains"}
 
         def parse_value(key: str, value: Any) -> Any:
             """Parse a filter value, handling operators and nested structures."""
             if isinstance(value, dict):
                 parsed = {}
                 for op, val in value.items():
-                    if op in GRIFFIN_OPERATORS:
+                    if op in griffin_operators:
                         if op == "$contains":
                             # Convert $contains to $in for comma-separated values
                             # This is an approximation; actual list matching
                             # requires special handling
                             parsed["$in"] = [val]
-                    elif op not in VALID_OPERATORS:
+                    elif op not in valid_operators:
                         raise ValueError(
                             f"Unsupported operator '{op}' in filter for key '{key}'. "
-                            f"Valid operators: {', '.join(sorted(VALID_OPERATORS | GRIFFIN_OPERATORS))}"
+                            f"Valid operators: {', '.join(sorted(valid_operators | griffin_operators))}"
                         )
                     else:
                         parsed[op] = val

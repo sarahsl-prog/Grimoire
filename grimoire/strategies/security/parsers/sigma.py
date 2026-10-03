@@ -160,7 +160,8 @@ def _pluck_detection_categories(rule: dict[str, Any]) -> list[str]:
     return out
 
 
-def _build_rule_text(rule: dict[str, Any]) -> str:
+# Complexity accepted: one branch per optional Sigma field; linear, not nested.
+def _build_rule_text(rule: dict[str, Any]) -> str:  # noqa: C901
     """Render a human-readable summary of a Sigma rule.
 
     The summary is what gets embedded and stored as the chunk content.

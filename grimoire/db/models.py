@@ -24,7 +24,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import (
-    JSON as BaseJSON,
+    JSON as BaseJSON,  # noqa: N811 - distinguishes SQLAlchemy's JSON from the dialect variants
 )
 from sqlalchemy import (
     Boolean,
@@ -49,7 +49,8 @@ from grimoire.db.base import Base
 from grimoire.strategies.security.metadata import Severity, TLPLevel
 
 
-def SQLEnum(enum_class: type[Enum], **kwargs: Any) -> _SQLEnum:
+# Named like the sqlalchemy.Enum class it wraps so column declarations read the same.
+def SQLEnum(enum_class: type[Enum], **kwargs: Any) -> _SQLEnum:  # noqa: N802
     """Wrapper around SQLAlchemy Enum that uses enum values (lowercase) instead of names."""
     return _SQLEnum(
         enum_class, values_callable=lambda x: [e.value for e in x], **kwargs

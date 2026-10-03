@@ -124,7 +124,10 @@ class MarkdownHeaderTextSplitter(Chunker):
             return ""
         return " > ".join(title for _, title in header_stack)
 
-    def _split_text_by_headers(self, text: str) -> list[tuple[str | None, str]]:
+    # Complexity accepted: single-pass header/code-fence state machine; splitting it would scatter shared state.
+    def _split_text_by_headers(  # noqa: C901
+        self, text: str
+    ) -> list[tuple[str | None, str]]:
         """Split text into (header, content) sections.
 
         Args:
