@@ -727,7 +727,10 @@ class APIConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    host: str = Field(default="0.0.0.0", description="Bind host")  # noqa: S104
+    host: str = Field(
+        default="0.0.0.0",  # noqa: S104  # nosec B104
+        description="Bind host",
+    )
     port: int = Field(default=8001, ge=1, le=65535, description="Bind port")
     reload: bool = Field(default=False, description="Enable auto-reload (dev only)")
     workers: int = Field(default=4, ge=1, le=64, description="Worker processes")

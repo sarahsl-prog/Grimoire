@@ -91,7 +91,8 @@ class GoogleDriveAdapter(StorageAdapter):
     # Google Drive API v3 endpoints
     API_BASE_URL = "https://www.googleapis.com/drive/v3"
     AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-    TOKEN_URL = "https://oauth2.googleapis.com/token"
+    # Public OAuth endpoint URL, not a secret.
+    TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105  # nosec B105
 
     # OAuth scopes needed for read-only access
     SCOPES = [

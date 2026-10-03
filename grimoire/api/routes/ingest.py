@@ -33,7 +33,11 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 # Resolve allowed roots once at module load — harmless because they are
 # absolute system paths.  Symlinks inside them are still followed at runtime.
-_ALLOWED_ROOTS = [Path("/tmp").resolve(), Path("/home/sunds").resolve()]
+# Allowlist of path prefixes, not a temp-file write. The hardcoded /home/sunds root is an open owner decision, see docs/superpowers/plans/2026-10-03-precommit-triage.md.
+_ALLOWED_ROOTS = [
+    Path("/tmp").resolve(),  # noqa: S108  # nosec B108
+    Path("/home/sunds").resolve(),
+]
 _MAX_PATH_LEN = 2048
 
 # Read the body a megabyte at a time.  Streaming rather than awaiting the

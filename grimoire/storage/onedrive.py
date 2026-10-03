@@ -37,7 +37,8 @@ class OneDriveTokenData:
     refresh_token: str
     expires_at: datetime
     scope: str = "openid offline_access Files.Read"
-    token_type: str = "Bearer"
+    # OAuth token-type label, not a secret.
+    token_type: str = "Bearer"  # noqa: S105
 
     def is_expired(self, buffer_seconds: int = 300) -> bool:
         """Check if the token is expired or will expire soon."""
@@ -99,7 +100,8 @@ class OneDriveAdapter(StorageAdapter):
 
     GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
     AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
-    TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+    # Public OAuth endpoint URL, not a secret.
+    TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"  # noqa: S105  # nosec B105
     DEFAULT_SCOPES = ["openid", "offline_access", "Files.Read", "User.Read"]
 
     def __init__(self, config: CloudOnedriveConfig) -> None:

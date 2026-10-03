@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404
 from pathlib import Path
 
 import click
@@ -140,7 +140,8 @@ def config_edit(ctx: click.Context, file: Path) -> None:
 
     editor = os.environ.get("EDITOR", "vi")
     try:
-        subprocess.run([editor, str(file)], check=True)
+        # argv list, no shell; $EDITOR is the invoking user's own choice.
+        subprocess.run([editor, str(file)], check=True)  # noqa: S603  # nosec B603
     except FileNotFoundError:
         echo_error(f"Editor '{editor}' not found. Set $EDITOR.")
     except subprocess.CalledProcessError:

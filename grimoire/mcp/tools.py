@@ -412,7 +412,8 @@ def _jsonb_array_contains(column: Any, key: str, value: str) -> Any:
 
     try:
         return column[key].astext.cast(String).in_([value])
-    except Exception:  # noqa: S110
+    # Deliberate fall-through to the portable ilike() below.
+    except Exception:  # noqa: S110  # nosec B110
         pass
     return cast(column, String).ilike(f'%"{value}"%')
 
