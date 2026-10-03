@@ -200,7 +200,8 @@ def _check_extension_hints(path: str | None, text: str) -> SourceType | None:
     return None
 
 
-def _check_json_shape(text: str) -> SourceType | None:
+# Complexity accepted: flat table of JSON-shape sniffs, one per corpus type.
+def _check_json_shape(text: str) -> SourceType | None:  # noqa: C901
     """Parse ``text`` as JSON and infer source type from object shape.
 
     Returns ``None`` if the text does not look like JSON or doesn't match a
@@ -357,7 +358,8 @@ def _looks_like_prose(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def detect_source_type(
+# Complexity accepted: ordered detection cascade; the order is the contract.
+def detect_source_type(  # noqa: C901
     text: str,
     source_metadata: Mapping[str, Any] | None = None,
 ) -> SourceType:

@@ -286,7 +286,8 @@ class DocumentParser:
         # Simple word count by splitting on whitespace
         return len(text.split())
 
-    def _process_docling_result(
+    # Complexity accepted: flat fallback chain over Docling result shapes, one branch per shape.
+    def _process_docling_result(  # noqa: C901
         self, result: Any, file_path: Path, file_hash: str
     ) -> ParsedDocument:
         """Process Docling conversion result into ParsedDocument.

@@ -323,7 +323,10 @@ class Tagger:
             threshold=threshold,
         )
 
-    def _parse_llm_response(self, response_text: str) -> list[TagSuggestion]:
+    # Complexity accepted: tolerant parser: each branch absorbs one malformed-LLM-output shape.
+    def _parse_llm_response(  # noqa: C901
+        self, response_text: str
+    ) -> list[TagSuggestion]:
         """Parse LLM response into tag suggestions.
 
         Handles various response formats and validates structure.
