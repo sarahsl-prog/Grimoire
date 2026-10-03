@@ -163,11 +163,28 @@ select = [
 ignore = [
     "E501",  # line length (handled by black)
     "B008",  # do not perform function calls in argument defaults
+    # UP042 (use StrEnum) is deliberately not applied. `class X(str, Enum)` and
+    # `StrEnum` differ in what str()/format() return (the member name vs. the
+    # value), and these enums feed SQLAlchemy columns and settings. Converting
+    # them is a behaviour change that needs an audit of every str() use, not a
+    # lint fix. See docs/superpowers/plans/2026-10-03-precommit-triage.md.
+    "UP042",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Ignore S101 (bandit assert) in tests - pytest uses assert
-"tests/**/*.py" = ["S101", "S105"]
+# Tests legitimately do what these security rules exist to catch in production
+# code: assert (S101), fixed fake credentials (S105, S106), fixed temp paths
+# (S108), permissive modes on fixtures (S103), `try/except: pass` around
+# cleanup (S110), and shelling out to docker/git to check the repo (S603,
+# S607). Real findings in tests are fixed by hand, not suppressed here.
+"tests/**/*.py" = ["S101", "S103", "S105", "S106", "S108", "S110", "S603", "S607"]
+# E402: the CLI registers its subcommands after defining the click group they
+# attach to, and `grimoire --tui` must not import them at all (FUTURE_TODO.md
+# item 2). Moving the imports to the top would defeat both.
+"grimoire/cli/main.py" = ["E402"]
+# E402: the watchdog import is deliberately placed after the classes that must
+# exist first (see the comment above it in the file).
+"grimoire/storage/local.py" = ["E402"]
 # N818: these exception names are a fixed cross-module interface (the GUI and
 # TUI import them verbatim); GuiError already makes the "this is an error" role
 # clear, so an -Error suffix would be redundant on every subclass.
