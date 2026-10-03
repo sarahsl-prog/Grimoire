@@ -507,11 +507,11 @@ class TestFtsSearch:
 
         with (
             patch.object(type(hybrid), "_fts_search", hybrid._fts_search),
-            patch("grimoire.search.hybrid.FulltextSearch") as MockFTS,
+            patch("grimoire.search.hybrid.FulltextSearch") as mock_fts_cls,
         ):
             mock_fts_instance = MagicMock()
             mock_fts_instance.search = AsyncMock(return_value=[fts_result])
-            MockFTS.return_value = mock_fts_instance
+            mock_fts_cls.return_value = mock_fts_instance
 
             out = await hybrid._fts_search(mock_db, "test query", top_k=10)
             assert len(out) == 1
@@ -523,10 +523,10 @@ class TestFtsSearch:
         self, hybrid: HybridSearch, mock_db: AsyncMock
     ) -> None:
         """FTS search with no matches should return empty list."""
-        with patch("grimoire.search.hybrid.FulltextSearch") as MockFTS:
+        with patch("grimoire.search.hybrid.FulltextSearch") as mock_fts_cls:
             mock_fts_instance = MagicMock()
             mock_fts_instance.search = AsyncMock(return_value=[])
-            MockFTS.return_value = mock_fts_instance
+            mock_fts_cls.return_value = mock_fts_instance
 
             out = await hybrid._fts_search(mock_db, "nonexistent", top_k=10)
             assert len(out) == 0
@@ -675,16 +675,6 @@ class TestHybridSearch:
             make_vector_result("c1", distance=0.3, content="python code"),
         ]
         hybrid._vector_store = MockVectorStore(vector_results)
-
-        from grimoire.search.fulltext import FTSResult
-
-        fts_result = FTSResult(
-            chunk_id="c1",
-            document_id="doc1",
-            content="python code",
-            rank=0.9,
-            document_title="Python Guide",
-        )
 
         with patch.object(hybrid, "_fts_search", new_callable=AsyncMock) as mock_fts:
             mock_fts.return_value = [

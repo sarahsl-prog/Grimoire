@@ -13,6 +13,7 @@ This module tests the WatchManager including:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
@@ -775,7 +776,5 @@ class TestEdgeCases:
         await asyncio.sleep(0.1)
         watch.is_running = False
         task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass

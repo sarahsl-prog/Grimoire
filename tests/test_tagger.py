@@ -150,7 +150,7 @@ def sample_document_text() -> str:
     systems to learn and improve from experience without being explicitly
     programmed. It focuses on developing computer programs that can access
     data and use it to learn for themselves.
-    
+
     Deep learning is a specialized form of machine learning inspired by the
     structure and function of the human brain. Neural networks are the
     foundation of deep learning algorithms.
