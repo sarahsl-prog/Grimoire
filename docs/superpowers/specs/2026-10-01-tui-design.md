@@ -182,7 +182,6 @@ config are kept. The key is never written, logged, shown or put in a message.
 The binding has priority because a focused `Input` otherwise binds `Ctrl+K` to
 delete-to-end-of-line.
 
-
 ## Textual support
 
 `pyproject.toml` allows `textual>=8.2,<9`. The floor was originally a guess: only
