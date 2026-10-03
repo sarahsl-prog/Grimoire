@@ -205,11 +205,19 @@ and are recorded so they are not lost. Several overlap
 
   Some may be environment-related (Docling and the full dependency set were not
   installed where this was run); triage which are real.
-- [ ] **F2. `pre-commit run --all-files` fails on the repository as it stands.**
+- [x] **F2. `pre-commit run --all-files` fails on the repository as it stands.**
   ruff reports 174 findings, black wants to reformat five files
   (`grimoire/cli/status.py` and four under `tests/deploy/`), bandit reports 8
   issues, and the mypy hook (in its isolated environment) reports errors.
   Decide whether pre-commit is meant to be a gate; if so, clear the backlog.
+  Done: kept as a gate. Hooks fixed (local mypy hook, per-file ignores, `UP042`
+  ignored), backlog cleared by hand, the 7 complex functions marked with a
+  reason. Two security items are annotated but **not changed** and still need
+  an owner decision (see the triage doc): the ingest allowlist hardcodes
+  `/tmp` and `/home/sunds`, and `grimoire mcp --sse` defaults to `0.0.0.0`.
+  Run `uv run pre-commit run --all-files` on a machine with Docling installed
+  to confirm mypy is clean; in the sandbox it reports six unused
+  `type: ignore` comments around the optional Docling import.
 - [ ] **F3. E402 in `grimoire/cli/main.py`.** Already item 2 of
   `FUTURE_TODO.md`: add a `per-file-ignores` entry for the file instead of the
   per-line `# noqa: E402` the TUI's `tui` import carries. Once that lands the
