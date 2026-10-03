@@ -390,6 +390,12 @@ Like the GUI, the TUI is a thin HTTP client and never imports the ingestion
 pipeline, so it starts instantly. **The API server must already be running**
 (for example `docker compose up -d`).
 
+**Textual versions.** The `tui` extra allows `textual>=8.2,<9`. The TUI test
+suite has been run against, and passes on, every release from 8.2.0 through
+8.2.8; anything newer has not been tested. To re-check one release or the whole
+range (in the dev environment, with `uv` installed):
+`scripts/test-textual-versions.sh [VERSION...]`.
+
 #### Client settings (GUI and TUI)
 
 Both clients read `GRIMOIRE_API_URL` and `GRIMOIRE_API_KEY` from, in order of
