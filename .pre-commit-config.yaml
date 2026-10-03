@@ -31,27 +31,31 @@ repos:
       - id: black
         exclude: ^(alembic|migrations)/
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.20.0
+  # mypy runs in the project's own environment, not in a throwaway one.
+  #
+  # The mirrored hook (pre-commit/mirrors-mypy) builds an isolated environment
+  # containing only a hand-copied dependency list. That list can never match the
+  # project: with slowapi, textual, docling and the rest missing, it reported 60
+  # errors that do not exist in the real environment, and it contradicted the
+  # `# type: ignore` comments that are only needed when an optional package is
+  # installed (warn_unused_ignores flags them as unused there). See
+  # docs/superpowers/plans/2026-10-03-precommit-triage.md.
+  #
+  # So this hook runs whatever `mypy` is on PATH. Run pre-commit inside the dev
+  # environment: `uv run pre-commit run --all-files`.
+  - repo: local
     hooks:
       - id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        types: [python]
         files: ^grimoire/
-        # mypy needs the project's runtime and stub packages on its path to
-        # resolve imports the same way `uv run mypy grimoire/` does; without
-        # them every third-party import would surface as unresolved instead
-        # of the real type errors pyproject.toml's [tool.mypy] cares about.
-        additional_dependencies:
-          - click>=8.1
-          - fastapi>=0.110
-          - pydantic>=2.6
-          - pydantic-settings>=2.2
-          - sqlalchemy[asyncio]>=2.0
-          - loguru>=0.7
-          - types-redis>=4.6
-          - types-pyyaml>=6.0
-          - types-requests>=2.31
-          - types-aiofiles>=23.2
-          - types-colorama>=0.4
+        # mypy checks the whole package, not just the changed files: a change in
+        # one module can break a caller in another, and mypy's own cache keeps a
+        # full run fast.
+        pass_filenames: false
+        args: [grimoire/]
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.9.4
