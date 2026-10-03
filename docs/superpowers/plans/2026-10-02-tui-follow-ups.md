@@ -93,7 +93,10 @@ group is intended to be its own PR, one task per commit, per `CLAUDE.md`.
   several minutes (the Documents pane tests alone about 90 s; with the GUI and CLI
   tests, about four) because each starts an app. Look at fewer settle pauses, shared app fixtures, or marking
   the slow tail.
-- [ ] **B5. Pin Textual honestly.** The floor is `>=8.2,<9` but only 8.2.8 was
+- [x] **B5. Pin Textual honestly.** **Done** (#91): the suite passes on every 8.2.x
+  release from 8.2.0 to 8.2.8, so the floor is tested; the `<9` upper bound is
+  not (nothing newer existed), and narrowing it to `<8.3` is left as your call.
+  `scripts/test-textual-versions.sh` re-runs the check. Originally: the floor is `>=8.2,<9` but only 8.2.8 was
   ever tested. Test the lowest 8.2.x, or raise the floor to what was tested,
   and consider a CI matrix.
 - [x] **B6. Move the shared client to a neutral package.** **Decided: yes. Done**
