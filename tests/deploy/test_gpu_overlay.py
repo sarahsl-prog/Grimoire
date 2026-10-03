@@ -63,7 +63,10 @@ def test_reserves_an_nvidia_device(overlay: dict, name: str) -> None:
 
 @pytest.mark.parametrize("name", GPU_SERVICES)
 def test_selects_the_cuda_embedding_device(overlay: dict, name: str) -> None:
-    assert overlay["services"][name]["environment"]["GRIMOIRE_EMBEDDINGS__DEVICE"] == "cuda"
+    assert (
+        overlay["services"][name]["environment"]["GRIMOIRE_EMBEDDINGS__DEVICE"]
+        == "cuda"
+    )
 
 
 @pytest.mark.parametrize("name", GPU_SERVICES)
