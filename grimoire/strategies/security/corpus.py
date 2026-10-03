@@ -226,7 +226,7 @@ def _check_json_shape(text: str) -> SourceType | None:
             return SourceType.NVD_CVE
 
     # Legacy NVD shape: {"CVE-YYYY-NNNN": {...}}
-    for key in obj.keys():
+    for key in obj:
         if isinstance(key, str) and _RE_CVE_ID.match(key):
             return SourceType.NVD_CVE
 
@@ -325,9 +325,7 @@ def _is_ioc_line(line: str) -> bool:
         return True
     if _RE_SHA256.match(candidate):
         return True
-    if _RE_DOMAIN.match(candidate):
-        return True
-    return False
+    return bool(_RE_DOMAIN.match(candidate))
 
 
 def _sniff_iocs(text: str) -> bool:
@@ -351,9 +349,7 @@ def _looks_like_prose(text: str) -> bool:
         if len(stripped) > 60:
             return True
     # Single long unbroken line (no newlines) also counts as prose.
-    if "\n" not in text and len(text.strip()) > 60:
-        return True
-    return False
+    return "\n" not in text and len(text.strip()) > 60
 
 
 # ---------------------------------------------------------------------------

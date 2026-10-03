@@ -36,9 +36,8 @@ def config_init(ctx: click.Context, output: Path) -> None:
 
         grimoire config init -o /etc/grimoire/config.yaml
     """
-    if output.exists():
-        if not click.confirm(f"{output} already exists. Overwrite?"):
-            return
+    if output.exists() and not click.confirm(f"{output} already exists. Overwrite?"):
+        return
 
     default_config = {
         "llm": {

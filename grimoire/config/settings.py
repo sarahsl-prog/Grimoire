@@ -239,12 +239,11 @@ class DatabaseConfig(BaseModel):
     @classmethod
     def validate_postgres_url(cls, v: str) -> str:
         """Validate PostgreSQL URL has required components."""
-        if v.startswith(("postgresql://", "postgresql+asyncpg://")):
-            # Basic validation - should have user:pass@host:port/dbname
-            if "@" not in v:
-                raise ValueError(
-                    f"PostgreSQL URL should contain credentials (user:pass@host): {v}"
-                )
+        # Basic validation - should have user:pass@host:port/dbname
+        if v.startswith(("postgresql://", "postgresql+asyncpg://")) and "@" not in v:
+            raise ValueError(
+                f"PostgreSQL URL should contain credentials (user:pass@host): {v}"
+            )
         return v
 
 

@@ -244,14 +244,17 @@ class OneDriveAdapter(StorageAdapter):
                     "Rate limit exceeded", retry_after=retry_after
                 )
 
-            if response.status_code == 401:
-                if self.token_data and not self.token_data.is_expired(buffer_seconds=0):
-                    await self._refresh_token()
-                    access_token = self.token_data.access_token
-                    headers["Authorization"] = f"Bearer {access_token}"
-                    response = await self.http_client.request(
-                        method, url, headers=headers, **kwargs
-                    )
+            if (
+                response.status_code == 401
+                and self.token_data
+                and not self.token_data.is_expired(buffer_seconds=0)
+            ):
+                await self._refresh_token()
+                access_token = self.token_data.access_token
+                headers["Authorization"] = f"Bearer {access_token}"
+                response = await self.http_client.request(
+                    method, url, headers=headers, **kwargs
+                )
 
             response.raise_for_status()
             return cast(dict[str, Any], response.json())
@@ -547,10 +550,7 @@ class OneDriveAdapter(StorageAdapter):
                 changes.append(change)
 
             next_link: str | None = last_data.get("@odata.nextLink")
-            if next_link:
-                endpoint = next_link.replace(self.GRAPH_BASE_URL, "")
-            else:
-                endpoint = ""
+            endpoint = next_link.replace(self.GRAPH_BASE_URL, "") if next_link else ""
 
         delta_url: str | None = last_data.get("@odata.deltaLink")
         if delta_url:

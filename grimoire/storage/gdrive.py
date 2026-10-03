@@ -360,12 +360,11 @@ class GoogleDriveAdapter(StorageAdapter):
                     continue
 
                 # Handle token expiration during request
-                if response.status_code == 401:
-                    if attempt < retries - 1:
-                        logger.debug("Access token expired, refreshing...")
-                        access_token = await self._refresh_access_token()
-                        headers["Authorization"] = f"Bearer {access_token}"
-                        continue
+                if response.status_code == 401 and attempt < retries - 1:
+                    logger.debug("Access token expired, refreshing...")
+                    access_token = await self._refresh_access_token()
+                    headers["Authorization"] = f"Bearer {access_token}"
+                    continue
 
                 response.raise_for_status()
                 result: dict[str, Any] = response.json()

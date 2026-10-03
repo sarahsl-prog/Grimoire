@@ -80,7 +80,7 @@ def _extract_platforms(stix_obj: dict[str, Any]) -> list[str]:
         return [
             str(p).lower()
             for p in raw
-            if isinstance(p, (str,)) or isinstance(p, (int, float))
+            if isinstance(p, (str, int, float))
         ]
     return []
 
