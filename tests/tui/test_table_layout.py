@@ -150,6 +150,48 @@ class TestHopelesslyNarrow:
             assert plan.title_width == 40
 
 
+class TestWidths:
+    """The plan carries each column's width so the table is never left to
+    measure its own cells (a lazily measured table can show a clipped frame)."""
+
+    def test_widths_run_parallel_to_the_visible_columns(self) -> None:
+        plan = plan_columns(200, NATURAL)
+
+        assert len(plan.widths) == len(plan.visible)
+        assert dict(zip(plan.visible, plan.widths, strict=True)) == NATURAL
+
+    def test_the_title_gets_its_planned_width_not_its_natural_one(self) -> None:
+        natural = {**NATURAL, "title": 80}
+        plan = plan_columns(100, natural)
+
+        widths = dict(zip(plan.visible, plan.widths, strict=True))
+        assert widths["title"] == plan.title_width < 80
+
+    def test_a_narrow_column_is_at_least_as_wide_as_its_label(self) -> None:
+        plan = plan_columns(200, {**NATURAL, "chunks": 1, "tags": 1, "type": 1})
+
+        widths = dict(zip(plan.visible, plan.widths, strict=True))
+        assert widths["chunks"] == len("Chunks")
+        assert widths["tags"] == len("Tags")
+        assert widths["type"] == len("Type")
+
+    @pytest.mark.parametrize("width", range(55, 200, 9))
+    def test_the_widths_plus_padding_fit_the_available_width(self, width: int) -> None:
+        plan = plan_columns(width, {**NATURAL, "title": 120})
+
+        assert sum(w + PAD for w in plan.widths) <= width
+
+    def test_only_visible_columns_have_a_width(self) -> None:
+        plan = plan_columns(70, NATURAL)
+
+        assert len(plan.widths) == len(plan.visible) < len(COLUMN_ORDER)
+
+    def test_not_laid_out_yet_still_carries_widths(self) -> None:
+        plan = plan_columns(0, NATURAL)
+
+        assert len(plan.widths) == len(COLUMN_ORDER)
+
+
 class TestInputs:
     def test_a_missing_natural_width_falls_back_to_the_label_width(self) -> None:
         plan = plan_columns(200, {"title": 10})
