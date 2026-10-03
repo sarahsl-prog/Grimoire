@@ -16,10 +16,9 @@ failures are not one pile of 174 problems. They are three different things:
    errors there that do not exist in the real environment, and *contradicts* it
    in places (see below). No amount of code cleanup makes it pass reliably.
 2. **A config that does not match the repo (ruff/bandit on tests and a few
-   intentional patterns).** About 80 of the 174 ruff findings are rules that are
-   noise for test code or for deliberate patterns, and are one config change
-   each.
-3. **A real but modest backlog** (about 60 findings), plus **two security-relevant
+   intentional patterns).** About 87 of the 174 ruff findings (74 in tests, 13
+   intentional `E402`) are noise and are one config change each.
+3. **A real but modest backlog** (about 58 findings, once `UP042` is decided), plus **two security-relevant
    things hiding behind the noise** that deserve a decision of their own.
 
 Cleaning it up is a few small PRs, not a big-bang rewrite, and nothing needs a
@@ -45,9 +44,9 @@ because the fix changes behaviour.
 | `UP042` use `StrEnum` | 29 | `grimoire/` (14 in `db/models.py`, 6 in `config/settings.py`) | **Do not auto-fix.** `class X(str, Enum)` and `StrEnum` print differently (`str(X.A)` is `X.A` for the first, the value for the second), and these enums feed SQLAlchemy and settings. Either ignore the rule with that reason, or audit every `str()`/f-string use first. |
 | `E402` import not at top | 13 | `grimoire/cli/main.py` (12), `storage/local.py` (1) | **Intentional.** The CLI registers subcommands after defining the group; this is `FUTURE_TODO.md` item 2. A `per-file-ignores` entry, not 12 inline `noqa`s. |
 | `C901` too complex (> 12) | 7 | parsers, tagger, chunker, corpus | **Real but not a lint fix.** These are the repo's genuinely complex functions (complexity 13 to 20). Options: raise the threshold, mark them with a reason, or refactor each. I would not refactor to satisfy a linter. |
-| `SIM102`/`SIM103`/`SIM108`/`SIM101`/`SIM118`/`SIM105`/`SIM117` | about 25 | both | Real, trivial, safe to fix by hand (I would not use the "unsafe" auto-fix). |
-| `B007` unused loop variable, `F841` unused local, `B011`, `B905`, `C401`, `W293` | about 18 | tests | Real, trivial. `F841` may hide a test that discards a result it meant to assert on; worth a look as each is fixed. |
-| `N806`/`N811`/`N802` naming | 8 | `db/models.py` (aliases `SQLEnum`, `BaseJSON`), `vectorstore/chromadb.py`, tests | Mostly deliberate aliases; fix or `noqa` with a reason. |
+| `SIM102`/`SIM103`/`SIM108`/`SIM101`/`SIM118`/`SIM105`/`SIM117` | 21 | both | Real, trivial, safe to fix by hand (I would not use the "unsafe" auto-fix). |
+| `B007` unused loop variable, `F841` unused local, `B011`, `B905`, `C401`, `W293` | 15 | tests | Real, trivial. `F841` may hide a test that discards a result it meant to assert on; worth a look as each is fixed. |
+| `N806`/`N811`/`N802` naming | 6 | `db/models.py` (aliases `SQLEnum`, `BaseJSON`), `vectorstore/chromadb.py`, tests | Mostly deliberate aliases; fix or `noqa` with a reason. |
 | `S105` "hardcoded password" | 3 | `storage/gdrive.py`, `storage/onedrive.py` | **False positives**: they are OAuth token *URLs* and a token *type* string. `noqa` with a reason. |
 | `UP047`, `UP007` | 3 | `cli/query.py`, `mcp/mlflow_logging.py`, `retriever.py` | Small modernisations. |
 
@@ -102,9 +101,9 @@ positives on OAuth token URLs.
 
 1. **Make the hooks agree with the project.** Replace the mirrored mypy hook with
    a local one; add `per-file-ignores` for the test-only noise and for the
-   intentional `E402`; run black over the 5 files. After this, ruff should drop
-   from 174 to about 60.
-2. **Fix the real backlog by hand:** the ~25 `SIM*` simplifications, the ~18 test
+   intentional `E402`; run black over the 5 files. After this, ruff drops from 174
+   to about 87, or about 58 if `UP042` is also ignored.
+2. **Fix the real backlog by hand:** the 21 `SIM*` simplifications, the 15 test
    findings (checking each unused-variable one), the naming ones, and `noqa` with
    a reason on the confirmed false positives (`S105`, `S603`, `B110`).
 3. **Decide the three policy items below**, then apply them.
