@@ -181,3 +181,25 @@ new key probably failed. If the new client cannot be built, the old client and
 config are kept. The key is never written, logged, shown or put in a message.
 The binding has priority because a focused `Input` otherwise binds `Ctrl+K` to
 delete-to-end-of-line.
+
+
+## Textual support
+
+`pyproject.toml` allows `textual>=8.2,<9`. The floor was originally a guess: only
+8.2.8 had ever been run. The full suite (517 tests) has since been run against
+every release from 8.2.0 to 8.2.8 (nine versions) and passes on each, so the
+floor is now a tested one. The upper bound is not: `<9` trusts Textual to keep
+its API within a major version, and no release past 8.2.8 existed to test. If a
+newer 8.x breaks the TUI, narrowing the bound to `<8.3` is the conservative fix.
+
+The product code uses no private Textual attribute. The tests do use a few
+(`app._notifications`), so a new Textual can break a test without breaking the
+product.
+
+`scripts/test-textual-versions.sh` reproduces the check: it installs each version
+into a throwaway directory ahead of the active environment on `PYTHONPATH` (so
+the environment itself is not touched), confirms the right version was imported,
+and runs `tests/tui`. `tests/tui/test_textual_support.py` keeps the declared range,
+the two copies of it in `pyproject.toml` (the `tui` and `dev` extras), and the
+script's list of tested versions from drifting apart. There is no CI
+configuration in the repository, so the matrix is run by hand.
