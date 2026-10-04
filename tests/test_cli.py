@@ -2359,3 +2359,82 @@ class TestTuiShortcuts:
 
         assert result.exit_code == 1
         assert "Invalid Grimoire API URL" in result.output
+
+
+class TestDiskCacheIsClosedByCommands:
+    """One-shot commands must close the DiskCache they open (F5).
+
+    Left open, diskcache's sqlite connection is only released at garbage
+    collection and shows up as ``ResourceWarning: unclosed database``.
+    """
+
+    @pytest.fixture
+    def disk_cache(self, tmp_path: Path) -> Any:
+        from grimoire.core.cache import DiskCache
+
+        cache = DiskCache(path=tmp_path / "cache")
+        with patch.object(cache, "close", wraps=cache.close) as spy:
+            cache.spy = spy  # type: ignore[attr-defined]
+            yield cache
+
+    @patch("grimoire.cli.status.CacheFactory")
+    @patch("grimoire.cli.status.get_settings")
+    def test_cache_stats_closes(
+        self,
+        mock_settings: MagicMock,
+        mock_factory: MagicMock,
+        disk_cache: Any,
+        runner: CliRunner,
+    ) -> None:
+        mock_factory.create.return_value = disk_cache
+        mock_settings.return_value.cache.storage = "disk"
+
+        result = runner.invoke(cli, ["cache", "stats"])
+
+        assert result.exit_code == 0, result.output
+        disk_cache.spy.assert_called_once()
+
+    @patch("grimoire.cli.status.CacheFactory")
+    @patch("grimoire.cli.status.get_settings")
+    def test_cache_clear_closes(
+        self,
+        mock_settings: MagicMock,
+        mock_factory: MagicMock,
+        disk_cache: Any,
+        runner: CliRunner,
+    ) -> None:
+        mock_factory.create.return_value = disk_cache
+        mock_settings.return_value.cache.storage = "disk"
+
+        result = runner.invoke(cli, ["cache", "clear", "--no-confirm"])
+
+        assert result.exit_code == 0, result.output
+        disk_cache.spy.assert_called_once()
+
+    @patch(f"{_STATUS}.CacheFactory")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_status_detailed_closes(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_factory: MagicMock,
+        disk_cache: Any,
+        runner: CliRunner,
+    ) -> None:
+        mock_session = AsyncMock()
+        mock_exec_result = MagicMock()
+        mock_exec_result.scalar.return_value = 1
+        mock_session.execute = AsyncMock(return_value=mock_exec_result)
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+        mock_factory.create.return_value = disk_cache
+
+        result = runner.invoke(cli, ["status", "--detailed"])
+
+        assert result.exit_code == 0, result.output
+        disk_cache.spy.assert_called_once()

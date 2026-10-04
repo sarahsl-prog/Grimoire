@@ -154,6 +154,7 @@ async def status(ctx: click.Context, detailed: bool) -> None:
                 )
                 if isinstance(cache, DiskCache):
                     stats = cache.get_stats()
+                    cache.close()
                     click.echo("\n  Cache:")
                     click.echo(f"    Size:     {stats.get('size', 0)} items")
                     click.echo(f"    Disk:     {stats.get('volume', 0)} bytes")
@@ -359,6 +360,8 @@ async def cache_clear(ctx: click.Context, confirm: bool) -> None:
         backend=settings.cache.storage, path=settings.cache.path
     )
     await cache.clear()
+    if isinstance(cache, DiskCache):
+        cache.close()
     echo_success("Cache cleared.")
 
 
@@ -382,6 +385,7 @@ async def cache_stats(ctx: click.Context) -> None:
 
     if isinstance(cache, DiskCache):
         stats = cache.get_stats()
+        cache.close()
         click.echo(f"  Size:    {stats.get('size', 0)} items")
         click.echo(f"  Volume:  {stats.get('volume', 0)} bytes")
         click.echo(f"  Hits:    {stats.get('hits', 0)}")

@@ -17,12 +17,13 @@ import asyncio
 import json
 import sys
 from collections.abc import Generator
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 
-from grimoire.core.cache import Cache, CacheKeyPrefix, RedisCache
+from grimoire.core.cache import Cache, CacheKeyPrefix, DiskCache, RedisCache
 
 # =============================================================================
 # Fixtures
@@ -912,3 +913,30 @@ class TestCacheKeyPrefix:
         """Enum can be used when creating cache."""
         cache = RedisCache(namespace=CacheKeyPrefix.EMBEDDING)
         assert cache._namespace == "grimoire:embedding:"
+
+
+class TestDiskCacheClose:
+    """DiskCache.close() releases the sqlite handle diskcache keeps open."""
+
+    def test_close_releases_the_underlying_cache(self, tmp_path: Path) -> None:
+        cache = DiskCache(path=tmp_path / "c")
+        cache.get_stats()  # forces lazy init, which opens the sqlite connection
+        underlying = cache._cache
+        assert underlying is not None
+
+        with patch.object(underlying, "close", wraps=underlying.close) as spy:
+            cache.close()
+
+        spy.assert_called_once()
+        assert cache._cache is None
+
+    def test_close_without_use_is_a_noop(self, tmp_path: Path) -> None:
+        DiskCache(path=tmp_path / "c").close()
+
+    def test_close_is_idempotent_and_cache_reopens_lazily(self, tmp_path: Path) -> None:
+        cache = DiskCache(path=tmp_path / "c")
+        cache.get_stats()
+        cache.close()
+        cache.close()
+        assert "size" in cache.get_stats()  # reopened on demand
+        cache.close()

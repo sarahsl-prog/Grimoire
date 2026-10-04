@@ -686,6 +686,23 @@ class DiskCache(Cache):
             logger.error(f"DiskCache clear failed: {e}")
             raise RuntimeError(f"Failed to clear cache: {e}") from e
 
+    def close(self) -> None:
+        """Release the sqlite connection diskcache holds open.
+
+        One-shot callers (CLI commands) should call this when done; otherwise
+        the connection lives until garbage collection and surfaces as a
+        ``ResourceWarning: unclosed database``. Safe to call repeatedly or
+        before first use; the cache reopens lazily if used again.
+        """
+        cache, self._cache = self._cache, None
+        if cache is None:
+            return
+        try:
+            cache.close()
+        except Exception as e:
+            # Closing is cleanup; never turn it into a user-facing failure.
+            logger.warning(f"DiskCache close failed: {e}")
+
     def get_stats(self) -> dict[str, Any]:
         """Get cache statistics.
 
