@@ -24,11 +24,10 @@ from grimoire.mcp.server import create_mcp_server
 @click.option(
     "--sse", is_flag=True, default=False, help="Run standalone SSE transport."
 )
-# 0.0.0.0 default for SSE mode is an open owner decision, see docs/superpowers/plans/2026-10-03-precommit-triage.md.
 @click.option(
     "--host",
-    default="0.0.0.0",  # noqa: S104  # nosec B104
-    help="Bind host for SSE mode.",
+    default="127.0.0.1",
+    help="Bind host for SSE mode (loopback by default; pass 0.0.0.0 to expose it).",
 )
 @click.option("--port", default=8100, type=int, help="Port for SSE mode.")
 @async_command

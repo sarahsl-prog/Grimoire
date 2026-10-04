@@ -33,10 +33,9 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 # Resolve allowed roots once at module load — harmless because they are
 # absolute system paths.  Symlinks inside them are still followed at runtime.
-# Allowlist of path prefixes, not a temp-file write. The hardcoded /home/sunds root is an open owner decision, see docs/superpowers/plans/2026-10-03-precommit-triage.md.
+# Allowlist of path prefixes, not a temp-file write, hence the S108/B108 waivers.
 _ALLOWED_ROOTS = [
     Path("/tmp").resolve(),  # noqa: S108  # nosec B108
-    Path("/home/sunds").resolve(),
 ]
 _MAX_PATH_LEN = 2048
 
@@ -168,7 +167,7 @@ def _is_path_allowed(raw_path: str) -> Path:
     if not any(real.is_relative_to(root) for root in _ALLOWED_ROOTS):
         raise HTTPException(
             status_code=403,
-            detail="Path not in allowed directories. Use paths under /home/sunds or /tmp.",
+            detail="Path not in allowed directories. Use paths under /tmp.",
         )
 
     return real
