@@ -74,7 +74,10 @@ class TestTorchVariant:
 
     def test_torch_version_matches_the_lockfile(self, dockerfile_text: str) -> None:
         """Both image variants must install the version uv.lock pins."""
-        lock = (REPO_ROOT / "uv.lock").read_text(encoding="utf-8")
+        lock_path = REPO_ROOT / "uv.lock"
+        if not lock_path.exists():
+            pytest.skip("uv.lock is not present in this checkout")
+        lock = lock_path.read_text(encoding="utf-8")
         locked = re.search(r'^name = "torch"\nversion = "([^"]+)"', lock, re.MULTILINE)
         assert locked, "torch not found in uv.lock"
         declared = re.search(

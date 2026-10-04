@@ -112,7 +112,8 @@ pyrightconfig.json
 # uv (Python Package Manager)
 # =============================================================================
 .venv/
-uv.lock
+# uv.lock is NOT ignored: the Dockerfile COPYs it and runs `uv sync --frozen`,
+# so the lockfile must be committed for the image (and its tests) to build.
 
 # =============================================================================
 # IDEs and Editors

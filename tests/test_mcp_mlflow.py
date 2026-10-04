@@ -76,7 +76,6 @@ async def test_trace_mcp_tool_passthrough_when_inactive() -> None:
 @pytest.mark.asyncio
 async def test_trace_mcp_tool_wraps_when_active() -> None:
     """Active MLflow config wraps tools with trace metadata updates."""
-    mlflow_logging._mlflow_configured = True
     mock_mlflow = MagicMock()
 
     async def sample_tool(params: object) -> str:
@@ -90,9 +89,13 @@ async def test_trace_mcp_tool_wraps_when_active() -> None:
 
     mock_mlflow.trace.side_effect = identity_trace
 
+    # mlflow is an optional extra: SpanType is None when it is not installed, so
+    # patch every mlflow-derived module attribute to keep this test hermetic.
     with (
+        patch.object(mlflow_logging, "_mlflow_configured", True),
         patch.object(mlflow_logging, "_MLFLOW_AVAILABLE", True),
         patch.object(mlflow_logging, "mlflow", mock_mlflow),
+        patch.object(mlflow_logging, "SpanType", MagicMock()),
         patch.object(mlflow_logging, "_attach_api_key_tags"),
         patch.object(
             mlflow_logging, "_summarize_tool_output", return_value={"status": "ok"}
