@@ -60,9 +60,7 @@ class TestRuntimeSecurity:
         a line-anchored pattern would silently skip everything after the first
         variable.
         """
-        declarations = set(
-            re.findall(r"\b([A-Z][A-Z0-9_]*)=", dockerfile_text)
-        )
+        declarations = set(re.findall(r"\b([A-Z][A-Z0-9_]*)=", dockerfile_text))
         forbidden = ("API_KEY", "PASSWORD", "SECRET", "TOKEN", "CREDENTIAL")
         leaked = sorted(
             name for name in declarations if any(f in name for f in forbidden)
@@ -77,9 +75,7 @@ class TestTorchVariant:
     def test_torch_version_matches_the_lockfile(self, dockerfile_text: str) -> None:
         """Both image variants must install the version uv.lock pins."""
         lock = (REPO_ROOT / "uv.lock").read_text(encoding="utf-8")
-        locked = re.search(
-            r'^name = "torch"\nversion = "([^"]+)"', lock, re.MULTILINE
-        )
+        locked = re.search(r'^name = "torch"\nversion = "([^"]+)"', lock, re.MULTILINE)
         assert locked, "torch not found in uv.lock"
         declared = re.search(
             r"^ARG\s+TORCH_VERSION=(\S+)", dockerfile_text, re.MULTILINE
@@ -90,7 +86,9 @@ class TestTorchVariant:
     def test_cpu_variant_uses_the_pytorch_cpu_index(self, dockerfile_text: str) -> None:
         assert "download.pytorch.org/whl/cpu" in dockerfile_text
 
-    def test_cpu_variant_also_reinstalls_torchvision(self, dockerfile_text: str) -> None:
+    def test_cpu_variant_also_reinstalls_torchvision(
+        self, dockerfile_text: str
+    ) -> None:
         """torchvision must be swapped to the CPU build alongside torch.
 
         torchvision is compiled against torch's C++ ABI. Reinstalling torch

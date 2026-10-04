@@ -63,9 +63,7 @@ def test_compose_configuration_resolves(files: list[str]) -> None:
     for name in files:
         args += ["-f", name]
     args += ["config", "--quiet"]
-    result = subprocess.run(
-        args, cwd=REPO_ROOT, capture_output=True, text=True
-    )
+    result = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -94,9 +92,7 @@ def test_resolved_ollama_url_reaches_the_host() -> None:
         "--format",
         "json",
     ]
-    result = subprocess.run(
-        args, cwd=REPO_ROOT, capture_output=True, text=True
-    )
+    result = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     config = json.loads(result.stdout)
     resolved_url = config["services"]["api"]["environment"]["GRIMOIRE_LLM__URL"]

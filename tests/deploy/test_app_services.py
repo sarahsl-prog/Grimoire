@@ -106,8 +106,7 @@ class TestEnvironmentWiring:
             key: value
             for key, value in env.items()
             # host.docker.internal is the deliberate route to the host's Ollama.
-            if isinstance(value, str)
-            and ("localhost" in value or "127.0.0.1" in value)
+            if isinstance(value, str) and ("localhost" in value or "127.0.0.1" in value)
         }
         assert not offenders, f"{name} still points at localhost: {offenders}"
 

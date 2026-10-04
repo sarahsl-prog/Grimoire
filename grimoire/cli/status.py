@@ -160,13 +160,9 @@ async def status(ctx: click.Context, detailed: bool) -> None:
                 else:
                     # Redis cache -- same fields `grimoire cache stats` reports
                     # for this backend, so --detailed doesn't go quiet on it.
-                    info = (
-                        await cache.client.info() if hasattr(cache, "client") else {}
-                    )
+                    info = await cache.client.info() if hasattr(cache, "client") else {}
                     click.echo("\n  Cache (redis):")
-                    click.echo(
-                        f"    Version:  {info.get('redis_version', 'Unknown')}"
-                    )
+                    click.echo(f"    Version:  {info.get('redis_version', 'Unknown')}")
                     click.echo(
                         f"    Clients:  {info.get('connected_clients', 'Unknown')}"
                     )
