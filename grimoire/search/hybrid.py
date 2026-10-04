@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 from sqlalchemy import select
@@ -396,7 +396,11 @@ class HybridSearch:
             rows = await db.execute(
                 select(Document.id, Document.title).where(Document.id.in_(document_ids))
             )
-            titles: dict[str, str | None] = dict(rows.all())
+            # Row is tuple-like at runtime; newer SQLAlchemy stubs no longer let
+            # dict() accept Sequence[Row[...]] without help.
+            titles: dict[str, str | None] = dict(
+                cast("list[tuple[str, str | None]]", rows.all())
+            )
         except Exception as e:
             # A missing title degrades display only; never fail the search.
             logger.warning(f"Document title backfill failed: {e}")
