@@ -167,7 +167,9 @@ HTTP client of the API.
 - [ ] Content generation (summaries, flashcards, cliff-notes, outlines).
 - [ ] Watcher control (start, stop and status of the file watcher).
 - [ ] Wiki compilation.
-- [ ] Delete a document.
+- [x] Delete a document. **Dropped (2026-10-04):** not building it into the TUI;
+  the CLI and MCP already delete. Prompted a real fix instead: the REST API
+  enforced no key tiers, so a read key could delete (see CHANGELOG).
 - [x] Free-text document search. **Done:** `GET /documents?q=` (title or source
   path) plus a search box in the TUI's Documents pane. A category/tag filter is
   still not in the API; that belongs with the tags item below.
