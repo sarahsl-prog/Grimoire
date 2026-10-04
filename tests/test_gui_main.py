@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from grimoire.gui.config import GuiConfig
-from grimoire.gui.errors import ConnectionFailed
+from grimoire.client.config import GuiConfig
+from grimoire.client.errors import ConnectionFailed
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def fake_qt(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         seen["client_config"] = config
         return object()
 
-    monkeypatch.setattr("grimoire.gui.client.GrimoireClient", make_client)
+    monkeypatch.setattr("grimoire.client.client.GrimoireClient", make_client)
     monkeypatch.delenv("GRIMOIRE_API_URL", raising=False)
     monkeypatch.delenv("GRIMOIRE_API_KEY", raising=False)
     return seen
@@ -124,5 +124,5 @@ def test_bad_url_still_exits_1(
     def boom(config: GuiConfig) -> None:
         raise ConnectionFailed("Invalid Grimoire API URL")
 
-    monkeypatch.setattr("grimoire.gui.client.GrimoireClient", boom)
+    monkeypatch.setattr("grimoire.client.client.GrimoireClient", boom)
     assert main() == 1
