@@ -204,6 +204,11 @@ DocumentDetailScreen {
     color: $error;
 }
 
+#detail-hint {
+    color: $text-muted;
+    margin-top: 1;
+}
+
 #detail-close {
     margin-top: 1;
 }
@@ -317,4 +322,39 @@ NewCategoryScreen {
 
 #newcat-buttons Button {
     margin-right: 2;
+}
+
+/* -- Tag picker modal ------------------------------------------------------ */
+
+TagPickerScreen {
+    align: center middle;
+}
+
+#picker-box {
+    width: 60%;
+    max-width: 70;
+    height: auto;
+    max-height: 80%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#picker-heading {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#picker-status {
+    height: auto;
+    color: $text-muted;
+}
+
+#picker-status.-error {
+    color: $error;
+}
+
+#picker-list {
+    height: auto;
+    max-height: 14;
 }
