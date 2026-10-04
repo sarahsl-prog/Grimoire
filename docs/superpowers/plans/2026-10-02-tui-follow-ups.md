@@ -212,22 +212,27 @@ and are recorded so they are not lost. Several overlap
   Decide whether pre-commit is meant to be a gate; if so, clear the backlog.
   Done: kept as a gate. Hooks fixed (local mypy hook, per-file ignores, `UP042`
   ignored), backlog cleared by hand, the 7 complex functions marked with a
-  reason. Two security items are annotated but **not changed** and still need
-  an owner decision (see the triage doc): the ingest allowlist hardcodes
-  `/tmp` and `/home/sunds`, and `grimoire mcp --sse` defaults to `0.0.0.0`.
-  Run `uv run pre-commit run --all-files` on a machine with Docling installed
-  to confirm mypy is clean; in the sandbox it reports six unused
-  `type: ignore` comments around the optional Docling import.
-- [ ] **F3. E402 in `grimoire/cli/main.py`.** Already item 2 of
+  reason. The two security items were then decided and fixed: the ingest
+  allowlist is `/tmp` only, and `grimoire mcp --sse` binds `127.0.0.1` by
+  default.
+  Confirmed clean with `uv sync --extra dev && uv run pre-commit run
+  --all-files` on a real dev machine.
+- [x] **F3. E402 in `grimoire/cli/main.py`.** Already item 2 of
   `FUTURE_TODO.md`: add a `per-file-ignores` entry for the file instead of the
   per-line `# noqa: E402` the TUI's `tui` import carries. Once that lands the
   `noqa` can go.
-- [ ] **F4. Three `S108` findings in `tests/test_cli.py`** (hardcoded `/tmp`
+  Done: the per-file ignore landed with F2; the `noqa` is removed.
+- [x] **F4. Three `S108` findings in `tests/test_cli.py`** (hardcoded `/tmp`
   paths). Use `tmp_path`.
-- [ ] **F5. `ResourceWarning: unclosed database` from
+  Done: all three use `tmp_path`.
+- [x] **F5. `ResourceWarning: unclosed database` from
   `TestStatusCommand`** (sqlite connections left open by the cache layer in
   those tests).
-- [ ] **F6. Housekeeping note.** Running black over `tests/test_cli.py` while
+  Done: root cause was production code, not the tests. `status --detailed`,
+  `cache stats` and `cache clear` opened a `DiskCache` and never closed it.
+  Added `DiskCache.close()` and call it from all three; the warning count in
+  `TestStatusCommand` went from 6 to 0.
+- [x] **F6. Housekeeping note.** Running black over `tests/test_cli.py` while
   adding the TUI tests also reformatted 11 lines of existing code there
   (formatting only, in the direction the formatter wants). Harmless; mentioned
   so a reviewer is not surprised by the diff.
