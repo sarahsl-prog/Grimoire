@@ -47,7 +47,11 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: mypy
+        # `python -m mypy`, not bare `mypy`: a mypy earlier on PATH (pipx, uv tool)
+        # lives outside the project env, cannot see click/pydantic, and reports
+        # hundreds of bogus untyped-decorator errors. This uses the interpreter
+        # that launched pre-commit, so install the dev extra: `uv sync --extra dev`.
+        entry: python -m mypy
         language: system
         types: [python]
         files: ^grimoire/
