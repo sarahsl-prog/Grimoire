@@ -6,6 +6,9 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- The `/ingest` path allowlist is now `/tmp` only. It previously also allowed
+  a hardcoded `/home/sunds`. Ingest files from `/tmp` or use the upload endpoint.
+
 - The standalone MCP SSE transport (`grimoire mcp --sse`) now requires an
   `X-API-Key` header, matching the API-server-mounted transport. Previously
   it served every MCP tool — including `grimoire_ingest_file`,
