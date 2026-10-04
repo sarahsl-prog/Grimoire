@@ -246,3 +246,75 @@ ApiKeyScreen {
 #apikey-buttons Button {
     margin-right: 2;
 }
+
+/* -- Categories pane ------------------------------------------------------- */
+
+CategoriesPane {
+    padding: 0 1;
+}
+
+#cat-toolbar {
+    height: 3;
+}
+
+#cat-toolbar Button {
+    margin-right: 2;
+}
+
+#cat-status {
+    height: auto;
+    color: $text-muted;
+}
+
+#cat-status.-error {
+    color: $error;
+}
+
+#categories-table {
+    height: 1fr;
+}
+
+#categories-empty {
+    height: 1fr;
+    content-align: center middle;
+    color: $text-muted;
+}
+
+#cat-footer {
+    height: auto;
+    color: $text-muted;
+}
+
+/* -- New category modal ---------------------------------------------------- */
+
+NewCategoryScreen {
+    align: center middle;
+}
+
+#newcat-box {
+    width: 70%;
+    max-width: 80;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#newcat-heading {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#newcat-error {
+    color: $error;
+    height: auto;
+}
+
+#newcat-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#newcat-buttons Button {
+    margin-right: 2;
+}

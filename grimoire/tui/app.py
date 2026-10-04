@@ -32,6 +32,7 @@ from grimoire.client.config import ClientConfig
 from grimoire.client.errors import ConnectionFailed
 from grimoire.tui.messages import ConnectionReport
 from grimoire.tui.screens.api_key import ApiKeyScreen
+from grimoire.tui.widgets.categories_pane import CategoriesPane
 from grimoire.tui.widgets.documents_pane import DocumentsPane
 from grimoire.tui.widgets.search_pane import SearchPane
 from grimoire.tui.widgets.status_bar import StatusBar
@@ -67,6 +68,7 @@ class GrimoireApp(App[None]):
         Binding("ctrl+q", "quit", "Quit"),
         Binding("f1", "show_tab('search')", "Search"),
         Binding("f2", "show_tab('documents')", "Documents"),
+        Binding("f3", "show_tab('categories')", "Categories"),
         Binding("ctrl+r", "refresh_all", "Refresh"),
         # priority: a focused Input binds Ctrl+K to "delete to end of line", and
         # the query box has the keyboard most of the time.
@@ -103,6 +105,10 @@ class GrimoireApp(App[None]):
         """Build the Documents pane."""
         return DocumentsPane(self._client, id="documents-pane")
 
+    def make_categories_pane(self) -> Widget:
+        """Build the Categories pane."""
+        return CategoriesPane(self._client, id="categories-pane")
+
     # -- composition and lifecycle ----------------------------------------
 
     def compose(self) -> ComposeResult:
@@ -111,6 +117,7 @@ class GrimoireApp(App[None]):
         with TabbedContent(initial="search"):
             yield TabPane("Search / Ask", self.make_search_pane(), id="search")
             yield TabPane("Documents", self.make_documents_pane(), id="documents")
+            yield TabPane("Categories", self.make_categories_pane(), id="categories")
         yield Footer()
 
     def on_mount(self) -> None:

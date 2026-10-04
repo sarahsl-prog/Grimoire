@@ -56,7 +56,7 @@ async def _settled(app: GrimoireApp, pilot: Any) -> None:
 
 
 class TestLayout:
-    async def test_has_search_and_documents_tabs_with_search_first(
+    async def test_has_the_three_tabs_with_search_first(
         self, stub_client: StubClient
     ) -> None:
         app = _make(stub_client)
@@ -64,7 +64,11 @@ class TestLayout:
             tabs = app.query_one(TabbedContent)
 
             assert tabs.active == "search"
-            assert {p.id for p in app.query("TabPane")} == {"search", "documents"}
+            assert {p.id for p in app.query("TabPane")} == {
+                "search",
+                "documents",
+                "categories",
+            }
             await _settled(app, pilot)
 
     async def test_f2_and_f1_switch_tabs(self, stub_client: StubClient) -> None:
