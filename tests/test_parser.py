@@ -70,6 +70,14 @@ def sample_xlsx() -> Path:
 
 
 @pytest.fixture
+def sample_unsupported(tmp_path: Path) -> Path:
+    """A file whose extension the parser does not handle."""
+    path = tmp_path / "data.xyz"
+    path.write_text("Not a format Grimoire parses.")
+    return path
+
+
+@pytest.fixture
 def sample_txt() -> Path:
     """Create a text file fixture.
 
@@ -277,13 +285,15 @@ class TestDocumentParserSupportedFormats:
         """Test DOCX is detected as supported."""
         assert parser.is_supported(sample_docx) is True
 
-    def test_unsupported_txt(self, parser: DocumentParser, sample_txt: Path) -> None:
-        """Test TXT is detected as unsupported."""
-        # TXT is not in SUPPORTED_EXTENSIONS but should we support it?
-        # Currently not in the list per requirements
-        result = parser.is_supported(sample_txt)
-        # Note: TXT is not in the required format list
-        assert result is False
+    def test_supported_txt(self, parser: DocumentParser, sample_txt: Path) -> None:
+        """Plain text is supported (it bypasses Docling)."""
+        assert parser.is_supported(sample_txt) is True
+
+    def test_unsupported_extension(
+        self, parser: DocumentParser, sample_unsupported: Path
+    ) -> None:
+        """An extension outside SUPPORTED_EXTENSIONS is reported unsupported."""
+        assert parser.is_supported(sample_unsupported) is False
 
     def test_supported_xlsx(self, parser: DocumentParser, sample_xlsx: Path) -> None:
         """Test XLSX is detected as supported."""
@@ -304,10 +314,10 @@ class TestDocumentParserAsync:
         )
 
     async def test_parse_unsupported_format(
-        self, parser: DocumentParser, sample_txt: Path
+        self, parser: DocumentParser, sample_unsupported: Path
     ) -> None:
         """Test handling of unsupported file format."""
-        result = await parser.parse(sample_txt)
+        result = await parser.parse(sample_unsupported)
         assert result.status == "failed"
         assert "Unsupported" in result.error_message
 
