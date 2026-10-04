@@ -108,6 +108,13 @@ DocumentsPane {
     padding: 0 1;
 }
 
+/* One row, no border: the pane is short on a 24-line terminal. */
+#doc-search {
+    height: 1;
+    border: none;
+    padding: 0 1;
+}
+
 #doc-filters {
     height: 3;
 }
