@@ -11,6 +11,7 @@ from loguru import logger
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from grimoire import __version__
 from grimoire.api.routes import categories, documents, generate, ingest, query, watch
 
 # FastAPI resolves an `UploadFile = File(...)` parameter by parsing the
@@ -128,7 +129,7 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     app = FastAPI(
         title="Grimoire",
         description="Knowledge management and content generation API.",
-        version="2.0.0",
+        version=__version__,
         lifespan=lifespan if use_lifespan else None,
     )
 

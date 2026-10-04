@@ -13,7 +13,7 @@ Built with:
 - Ollama for local LLM inference
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "Sarah (slgryph)"
 __license__ = "MIT"
 
