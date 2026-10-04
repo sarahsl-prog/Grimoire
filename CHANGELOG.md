@@ -4,6 +4,23 @@ All notable changes to Grimoire are documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **BREAKING: the REST API now enforces API key tiers.** Previously tiers only
+  changed the rate limit over REST, so a read-tier key (`grim_rdl_...`) could
+  delete documents, ingest files, generate content and start watchers; only the
+  MCP server checked tiers. REST now matches MCP (agent includes dev includes
+  read):
+  - `rdl` and above: every `GET`, `POST /query/ask`, `POST /query/search`.
+  - `dvl` and above: `POST /ingest/file|directory|upload`, `POST /generate`,
+    `POST /categories`, `POST /watch/start`, `DELETE /watch/{id}`.
+  - `agt` only: `DELETE /documents/{id}`, `DELETE /categories/{id}`.
+
+  A key below the required tier gets `403` naming the tier needed. If a script
+  uses a read key to write, issue it a `dvl` or `agt` key with
+  `grimoire key create --tier dev|agent`. A test fails if a new write route is
+  added without a tier.
+
 ### Added
 
 - **Document search.** `GET /api/v1/documents` takes a `q` parameter: a
