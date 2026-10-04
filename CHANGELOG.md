@@ -6,6 +6,10 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- `grimoire mcp --sse` now binds `127.0.0.1` by default instead of `0.0.0.0`.
+  Pass `--host 0.0.0.0` to expose it. The `mcp` compose service is unaffected: it
+  runs uvicorn with its own `--host`.
+
 - The `/ingest` path allowlist is now `/tmp` only. It previously also allowed
   a hardcoded `/home/sunds`. Ingest files from `/tmp` or use the upload endpoint.
 
