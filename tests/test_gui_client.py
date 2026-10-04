@@ -430,6 +430,28 @@ class TestListDocuments:
         assert params["status"] == "completed"
         assert params["file_type"] == "pdf"
 
+    def test_sends_the_search_text_as_q(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(json={"documents": [], "total": 0})
+
+        client.list_documents(q="kube & co")
+
+        # Encoded by httpx, so a "&" in the text cannot add a query parameter.
+        assert dict(httpx_mock.get_request().url.params)["q"] == "kube & co"
+
+    def test_blank_search_text_is_not_sent(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(json={"documents": [], "total": 0})
+
+        client.list_documents(q="   ")
+
+        assert "q" not in dict(httpx_mock.get_request().url.params)
+
+    def test_search_text_is_trimmed(self, client, httpx_mock) -> None:
+        httpx_mock.add_response(json={"documents": [], "total": 0})
+
+        client.list_documents(q="  postgres  ")
+
+        assert dict(httpx_mock.get_request().url.params)["q"] == "postgres"
+
     def test_parses_page_metadata(self, client, httpx_mock) -> None:
         httpx_mock.add_response(
             json={"documents": [DOC_ROW], "total": 312, "offset": 0, "limit": 50}

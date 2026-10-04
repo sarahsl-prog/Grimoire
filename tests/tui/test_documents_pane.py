@@ -14,7 +14,14 @@ import pytest
 
 pytest.importorskip("textual", reason="TUI extra not installed")
 
-from textual.widgets import DataTable, Footer, Select, TabbedContent  # noqa: E402
+from textual.widgets import (  # noqa: E402
+    DataTable,
+    Footer,
+    Input,
+    Select,
+    Static,
+    TabbedContent,
+)
 
 from grimoire.api.schemas import DocumentListResponse, DocumentResponse  # noqa: E402
 from grimoire.client.errors import (  # noqa: E402
@@ -215,6 +222,7 @@ class TestFirstLoad:
             "limit": PAGE_SIZE,
             "status": None,
             "file_type": None,
+            "q": None,
         }
 
     async def test_showing_the_tab_again_does_not_reload(
@@ -643,6 +651,7 @@ class TestFilters:
             "limit": PAGE_SIZE,
             "status": "failed",
             "file_type": None,
+            "q": None,
         }
 
     async def test_both_filters_combine(self, stub_client, step) -> None:
@@ -678,6 +687,195 @@ class TestFilters:
             await _settled(app, pilot)
 
             assert stub_client.calls == []
+
+
+def _search_box(app: GrimoireApp) -> Input:
+    return app.query_one("#doc-search", Input)
+
+
+async def _search_for(app: GrimoireApp, pilot: Any, text: str) -> None:
+    """Type into the search box and press Enter, as a person would."""
+    box = _search_box(app)
+    box.focus()
+    await pilot.pause()
+    box.value = text
+    await pilot.press("enter")
+    await _settled(app, pilot)
+
+
+class TestSearch:
+    async def test_enter_sends_the_text_as_q_from_page_zero(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [
+            step(_page(50, total=120)),
+            step(_page(50, total=120, start=50)),
+            step(_page(1, total=1)),
+        ]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await pilot.press("right_square_bracket")  # leave page 0
+            await _settled(app, pilot)
+            await _search_for(app, pilot, "kubernetes")
+
+        last = stub_client.calls_to("list_documents")[-1][1]
+        assert last["q"] == "kubernetes"
+        assert last["offset"] == 0
+
+    async def test_typing_alone_does_not_reload(self, stub_client, step) -> None:
+        stub_client.documents_script = [step(_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            _search_box(app).focus()
+            await pilot.press("k", "u", "b", "e")
+            await _settled(app, pilot)
+
+            assert _search_box(app).value == "kube"
+        assert len(stub_client.calls_to("list_documents")) == 1
+
+    async def test_it_combines_with_the_filters(self, stub_client, step) -> None:
+        stub_client.documents_script = [step(_page()), step(_page()), step(_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await _search_for(app, pilot, "kube")
+            app.query_one("#status-filter", Select).value = "failed"
+            await _settled(app, pilot)
+
+        last = stub_client.calls_to("list_documents")[-1][1]
+        assert (last["q"], last["status"]) == ("kube", "failed")
+
+    async def test_paging_and_refresh_keep_the_applied_search(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [
+            step(_page()),
+            step(_page(50, total=120)),
+            step(_page(50, total=120, start=50)),
+            step(_page(50, total=120, start=50)),
+        ]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await _search_for(app, pilot, "kube")
+            _search_box(app).value = "edited but not submitted"
+            _table(app).focus()
+            await pilot.press("right_square_bracket")
+            await _settled(app, pilot)
+            await pilot.press("ctrl+r")
+            await _settled(app, pilot)
+
+        sent = [kw["q"] for _, kw in stub_client.calls_to("list_documents")]
+        assert sent == [None, "kube", "kube", "kube"]
+
+    async def test_blank_text_searches_for_nothing(self, stub_client, step) -> None:
+        stub_client.documents_script = [step(_page()), step(_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await _search_for(app, pilot, "   ")
+
+        assert stub_client.calls_to("list_documents")[-1][1]["q"] is None
+
+    async def test_the_footer_says_what_is_being_searched_for(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page()), step(_page(2, total=2))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await _search_for(app, pilot, "kube")
+
+            assert 'matching "kube"' in _pane(app).footer_text
+
+    async def test_no_matches_says_so_and_names_the_search(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page()), step(_page(0, total=0))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await _search_for(app, pilot, "zzz")
+
+            assert app.query_one("#documents-empty", Static).display is True
+            assert 'matching "zzz"' in _pane(app).footer_text
+
+    async def test_the_search_is_named_before_the_hidden_columns_note(
+        self, stub_client, step
+    ) -> None:
+        # On a narrow terminal the footer is cut off at its right edge, and the
+        # hidden-columns note is the longer, less important part.
+        stub_client.documents_script = [step(_page()), step(_page(2, total=2))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test(size=(60, 20)) as pilot:
+            await _open(app, pilot)
+            await _search_for(app, pilot, "kube")
+
+            text = _pane(app).footer_text
+            assert "hidden:" in text
+            assert text.index('matching "kube"') < text.index("hidden:")
+
+    async def test_slash_focuses_the_search_box(self, stub_client, step) -> None:
+        stub_client.documents_script = [step(_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            assert app.focused is _table(app)
+            await pilot.press("slash")
+            await pilot.pause()
+
+            assert app.focused is _search_box(app)
+            assert _search_box(app).value == ""  # the slash is a key, not text
+
+    async def test_escape_clears_the_search_and_reloads(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page()), step(_page()), step(_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await _search_for(app, pilot, "kube")
+            await pilot.press("escape")
+            await _settled(app, pilot)
+
+            assert _search_box(app).value == ""
+            assert app.focused is _table(app)
+        assert stub_client.calls_to("list_documents")[-1][1]["q"] is None
+
+    async def test_escape_with_nothing_to_clear_does_not_reload(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page())]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            _search_box(app).focus()
+            await pilot.press("escape")
+            await _settled(app, pilot)
+
+        assert len(stub_client.calls_to("list_documents")) == 1
+
+    async def test_the_box_is_capped_at_the_servers_limit(
+        self, stub_client, step
+    ) -> None:
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _settled(app, pilot)
+
+            assert _search_box(app).max_length == 200
+
+    async def test_markup_in_the_search_text_is_shown_literally(
+        self, stub_client, step
+    ) -> None:
+        stub_client.documents_script = [step(_page()), step(_page(0, total=0))]
+        app = GrimoireApp(stub_client, stub_client.config, None)
+        async with app.run_test() as pilot:
+            await _open(app, pilot)
+            await _search_for(app, pilot, "[bold red]x[/]")
+
+            assert "[bold red]x[/]" in _pane(app).footer_text
 
 
 class TestRefresh:

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import ScalarSelect, func, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import ScalarSelect, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload
 
@@ -17,6 +17,20 @@ from grimoire.api.schemas import (
 from grimoire.db.models import ApiKey, Category, Chunk, Document, DocumentTag
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+# Free-text search is a plain substring match, not a query language; the cap
+# keeps a pathological pattern from reaching the database.
+_MAX_SEARCH_LENGTH = 200
+
+
+def _escape_like(text: str) -> str:
+    """Make ``text`` match literally inside a ``LIKE`` pattern.
+
+    ``%`` and ``_`` are wildcards and ``\\`` is the escape character itself,
+    so a search for ``100%`` must not match every title. The backslash is
+    escaped first so the escapes added for the other two are not doubled.
+    """
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _chunk_count_column() -> ScalarSelect[int]:
@@ -56,6 +70,11 @@ async def list_documents(
     severity: str | None = None,
     cve_id: str | None = None,
     mitre_technique_id: str | None = None,
+    q: str | None = Query(
+        default=None,
+        max_length=_MAX_SEARCH_LENGTH,
+        description="Case-insensitive substring match on title or source path.",
+    ),
     api_key: ApiKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentListResponse:
@@ -63,8 +82,10 @@ async def list_documents(
 
     In addition to the legacy ``status`` / ``file_type`` filters, the
     indexed Phase-2 security columns are filterable: ``source_type``,
-    ``severity``, ``cve_id``, ``mitre_technique_id``. All filters compose
-    with ``AND`` semantics; unsupplied filters are ignored.
+    ``severity``, ``cve_id``, ``mitre_technique_id``. ``q`` is a free-text,
+    case-insensitive substring match on the title or the source path. All
+    filters compose with ``AND`` semantics; unsupplied (or blank) filters are
+    ignored.
     """
     # Build the shared WHERE clauses once and apply to both the
     # paginated select and the count query — keeps the two in sync without
@@ -82,6 +103,14 @@ async def list_documents(
         filters.append(Document.cve_id == cve_id)
     if mitre_technique_id:
         filters.append(Document.mitre_technique_id == mitre_technique_id)
+    if q and q.strip():
+        pattern = f"%{_escape_like(q.strip())}%"
+        filters.append(
+            or_(
+                Document.title.ilike(pattern, escape="\\"),
+                Document.source_path.ilike(pattern, escape="\\"),
+            )
+        )
 
     # Document's chunks / tags / generated_content relationships are
     # lazy="selectin", which would pull every listed document's chunk text into

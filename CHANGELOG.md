@@ -4,6 +4,14 @@ All notable changes to Grimoire are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Document search.** `GET /api/v1/documents` takes a `q` parameter: a
+  case-insensitive substring match on the title or source path, composable with
+  the existing filters and pagination (`%` and `_` in the text match literally).
+  The shared client's `list_documents` accepts `q`, and the TUI's Documents pane
+  has a search box (`/` to focus, `Enter` to apply, `Esc` to clear).
+
 ## [2.1.0] - 2026-10-04
 
 ### Security

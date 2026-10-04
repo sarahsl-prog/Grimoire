@@ -1,8 +1,11 @@
-"""The Documents pane: a paged, filterable table of what the corpus holds.
+"""The Documents pane: a paged, searchable, filterable table of the corpus.
 
 It is deliberately read-only.  Rows are fetched a page at a time from
-``GET /documents`` (newest first), filtered on the two fields the API supports
-that are worth a dropdown, status and file type.
+``GET /documents`` (newest first), filtered on status and file type (dropdowns)
+and on free text matched against the title and source path (``/`` to search,
+``Enter`` to apply, ``Esc`` to clear).  Search is applied on ``Enter`` rather
+than as you type: the client is synchronous, so a request per keystroke would
+mean a worker thread per keystroke.
 
 As in the Search pane, the client is synchronous and a thread worker cannot be
 killed, so a response that arrives after a newer request has been issued must
@@ -26,7 +29,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Button, DataTable, Select, Static
+from textual.widgets import Button, DataTable, Input, Select, Static
 from textual.worker import get_current_worker
 
 from grimoire.api.schemas import DocumentListResponse, DocumentResponse
@@ -46,6 +49,9 @@ from grimoire.tui.screens.document_detail import DocumentDetailScreen
 # The API's default page size.  The offset sent is always derived from the page
 # index times this, never taken from a response.
 PAGE_SIZE = 50
+
+# The server rejects a longer search (HTTP 422), so the box stops it at the source.
+_MAX_QUERY_LENGTH = 200
 
 # The title width is no longer fixed: `plan_columns` shrinks it (and drops the
 # least useful columns) to fit the terminal, so Added is never pushed off screen.
@@ -67,6 +73,7 @@ class _Request:
     page: int
     status: str | None
     file_type: str | None
+    query: str | None
     keep_cursor: bool
 
 
@@ -103,6 +110,8 @@ class DocumentsPane(Vertical):
     BINDINGS = [
         Binding("right_square_bracket", "next_page", "Next page"),
         Binding("left_square_bracket", "prev_page", "Prev page"),
+        Binding("slash", "focus_search", "Search"),
+        Binding("escape", "clear_search", "Clear search"),
     ]
 
     class Loaded(Message):
@@ -131,6 +140,10 @@ class DocumentsPane(Vertical):
         self._shown_page = 0  # the page the table currently holds
         self._target_page = 0  # the page most recently asked for
         self._total = 0
+        # The search text last *applied*.  Paging, refreshing and the dropdowns
+        # reuse this, not whatever is currently typed in the box, so a half-typed
+        # edit never changes which documents a page shows.
+        self._applied_query: str | None = None
         self._ids: list[str | None] = []  # parallel to table rows
         self._documents: list[DocumentResponse] = []  # the page the table shows
         self._plan: ColumnPlan | None = None  # the layout the table was built with
@@ -148,6 +161,11 @@ class DocumentsPane(Vertical):
     # -- layout -------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
+        yield Input(
+            placeholder="Search title or path (Enter to apply, Esc to clear)",
+            max_length=_MAX_QUERY_LENGTH,
+            id="doc-search",
+        )
         with Horizontal(id="doc-filters"):
             yield Select(
                 [(value, value) for value in DOC_STATUSES],
@@ -208,12 +226,13 @@ class DocumentsPane(Vertical):
             return self._ids[row]
         return None
 
-    def _filters(self) -> tuple[str | None, str | None]:
+    def _filters(self) -> tuple[str | None, str | None, str | None]:
         status = self.query_one("#status-filter", Select)
         file_type = self.query_one("#type-filter", Select)
         return (
             None if status.is_blank() else str(status.value),
             None if file_type.is_blank() else str(file_type.value),
+            self._applied_query,
         )
 
     # -- paging and filtering -------------------------------------------------
@@ -224,7 +243,38 @@ class DocumentsPane(Vertical):
             return self._has_data and self._target_page + 1 < _pages_for(self._total)
         if action == "prev_page":
             return self._has_data and self._target_page > 0
+        if action == "clear_search":
+            # Only offered when there is something to clear.
+            return bool(self._applied_query) or bool(
+                self.query_one("#doc-search", Input).value
+            )
         return super().check_action(action, parameters)
+
+    def action_focus_search(self) -> None:
+        self.query_one("#doc-search", Input).focus()
+
+    def action_clear_search(self) -> None:
+        box = self.query_one("#doc-search", Input)
+        had_applied = self._applied_query is not None
+        box.value = ""
+        self._applied_query = None
+        if had_applied:
+            self._load(0)
+        self.focus_primary()
+        self.refresh_bindings()
+
+    @on(Input.Submitted, "#doc-search")
+    def _on_search_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        text = event.value.strip()
+        self._applied_query = text or None
+        self._load(0)
+        self.refresh_bindings()
+
+    @on(Input.Changed, "#doc-search")
+    def _on_search_changed(self, event: Input.Changed) -> None:
+        event.stop()
+        self.refresh_bindings()  # Esc is only offered while there is text
 
     def action_next_page(self) -> None:
         if self.check_action("next_page", ()):
@@ -259,9 +309,11 @@ class DocumentsPane(Vertical):
     # -- loading --------------------------------------------------------------
 
     def _load(self, page: int, *, keep_cursor: bool = False) -> None:
-        status, file_type = self._filters()
+        status, file_type, query = self._filters()
         self._request_id += 1
-        request = _Request(self._request_id, page, status, file_type, keep_cursor)
+        request = _Request(
+            self._request_id, page, status, file_type, query, keep_cursor
+        )
         self._target_page = page
         self._in_flight = True
         self._set_status(_LOADING)
@@ -279,6 +331,7 @@ class DocumentsPane(Vertical):
                 limit=PAGE_SIZE,
                 status=request.status,
                 file_type=request.file_type,
+                q=request.query,
             )
             message = self.Loaded(request, result)
         except Exception as exc:
@@ -371,12 +424,18 @@ class DocumentsPane(Vertical):
                 f"Rows {start + 1}-{start + len(self._documents)} of {self._total}"
                 f" · page {self._shown_page + 1}/{_pages_for(self._total)}"
             )
+            # Before the hidden-columns note: that one is long and is what gets
+            # cut off on a narrow terminal, and the search is the more important.
+            if self._applied_query:
+                text += f' · matching "{self._applied_query}"'
             if self._plan is not None and self._plan.hidden:
                 # Say why a column is missing, and that a wider terminal brings
                 # it back, rather than leaving the user to wonder.
                 names = ", ".join(LABELS[key] for key in self._plan.hidden)
                 text += f" · hidden: {names} (widen the terminal)"
             self.footer_text = text
+        elif self._applied_query:
+            self.footer_text = f'No documents matching "{self._applied_query}".'
         else:
             self.footer_text = _NO_ROWS
         self.query_one("#doc-footer", Static).update(self.footer_text)
