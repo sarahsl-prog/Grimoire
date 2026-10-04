@@ -253,6 +253,9 @@ class CategoryResponse(BaseModel):
     description: str = ""
     parent_id: str | None = None
     color: str = "#3498db"
+    # Documents carrying exactly this category (not its descendants).  Filled by
+    # the list endpoint; 0 where it is not computed (a category just created).
+    document_count: int = 0
 
 
 class CategoryListResponse(BaseModel):
