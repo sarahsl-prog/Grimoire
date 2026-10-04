@@ -13,7 +13,7 @@ from __future__ import annotations
 import functools
 import json
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any
 
 from loguru import logger
 
@@ -29,7 +29,6 @@ except ImportError:  # pragma: no cover - exercised via tests with patching
     SpanType = None  # type: ignore[assignment,misc]
     _MLFLOW_AVAILABLE = False
 
-F = TypeVar("F", bound=Callable[..., Any])
 
 _mlflow_configured = False
 
@@ -166,7 +165,7 @@ def _summarize_tool_output(result: Any) -> dict[str, Any]:
     return summary
 
 
-def trace_mcp_tool(func: F, *, name: str) -> F:
+def trace_mcp_tool[F: Callable[..., Any]](func: F, *, name: str) -> F:
     """Wrap an MCP tool with MLflow tracing when configured."""
     if not _mlflow_configured or not _MLFLOW_AVAILABLE:
 

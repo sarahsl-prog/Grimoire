@@ -25,10 +25,7 @@ def load_documents(files: list[str]) -> list[Document]:
     docs = []
 
     for path in files:
-        if path.endswith(".pdf"):
-            loader = PyPDFLoader(path)
-        else:
-            loader = TextLoader(path)
+        loader = PyPDFLoader(path) if path.endswith(".pdf") else TextLoader(path)
 
         docs.extend(loader.load())
 

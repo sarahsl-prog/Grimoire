@@ -782,7 +782,7 @@ class TestErrorHandling:
 
         try:
             await db_session.commit()
-            assert False, "Should have raised IntegrityError"
+            raise AssertionError("Should have raised IntegrityError")
         except IntegrityError:
             await db_session.rollback()
 
@@ -1220,7 +1220,7 @@ class TestEnums:
         db_session.add(doc)
         await db_session.commit()
 
-        for i, content_type in enumerate(
+        for _i, content_type in enumerate(
             [
                 ContentType.SUMMARY,
                 ContentType.FLASH_CARD,

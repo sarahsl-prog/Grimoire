@@ -239,12 +239,11 @@ class DatabaseConfig(BaseModel):
     @classmethod
     def validate_postgres_url(cls, v: str) -> str:
         """Validate PostgreSQL URL has required components."""
-        if v.startswith(("postgresql://", "postgresql+asyncpg://")):
-            # Basic validation - should have user:pass@host:port/dbname
-            if "@" not in v:
-                raise ValueError(
-                    f"PostgreSQL URL should contain credentials (user:pass@host): {v}"
-                )
+        # Basic validation - should have user:pass@host:port/dbname
+        if v.startswith(("postgresql://", "postgresql+asyncpg://")) and "@" not in v:
+            raise ValueError(
+                f"PostgreSQL URL should contain credentials (user:pass@host): {v}"
+            )
         return v
 
 
@@ -728,7 +727,10 @@ class APIConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    host: str = Field(default="0.0.0.0", description="Bind host")  # noqa: S104
+    host: str = Field(
+        default="0.0.0.0",  # noqa: S104  # nosec B104
+        description="Bind host",
+    )
     port: int = Field(default=8001, ge=1, le=65535, description="Bind port")
     reload: bool = Field(default=False, description="Enable auto-reload (dev only)")
     workers: int = Field(default=4, ge=1, le=64, description="Worker processes")

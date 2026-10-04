@@ -622,7 +622,7 @@ class TestChromaDBMetadataFiltering:
         )
 
         assert len(results) == 2
-        categories = set(r["metadata"]["category"] for r in results)
+        categories = {r["metadata"]["category"] for r in results}
         assert categories == {"tech", "finance"}
 
     @pytest.mark.asyncio

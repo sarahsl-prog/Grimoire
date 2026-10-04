@@ -286,7 +286,8 @@ class DocumentParser:
         # Simple word count by splitting on whitespace
         return len(text.split())
 
-    def _process_docling_result(
+    # Complexity accepted: flat fallback chain over Docling result shapes, one branch per shape.
+    def _process_docling_result(  # noqa: C901
         self, result: Any, file_path: Path, file_hash: str
     ) -> ParsedDocument:
         """Process Docling conversion result into ParsedDocument.
@@ -321,14 +322,11 @@ class DocumentParser:
                     text = str(md_value)
             else:
                 # Fallback: try to get text from other attributes
-                if result is not None:
-                    if hasattr(result, "_mock_name"):
-                        # Mock objects should result in empty text
-                        text = ""
-                    else:
-                        text = str(result)
-                else:
+                # Mock objects should result in empty text
+                if result is None or hasattr(result, "_mock_name"):
                     text = ""
+                else:
+                    text = str(result)
 
             # Extract metadata from Docling result
             metadata = DocumentMetadata(
@@ -421,9 +419,12 @@ class DocumentParser:
                         }
 
                         # Try to get image data
-                        if hasattr(pic, "image") and pic.image:
-                            if hasattr(pic.image, "to_pil"):
-                                img_data["pil_image"] = pic.image.to_pil()
+                        if (
+                            hasattr(pic, "image")
+                            and pic.image
+                            and hasattr(pic.image, "to_pil")
+                        ):
+                            img_data["pil_image"] = pic.image.to_pil()
 
                         # Try to get caption
                         if hasattr(pic, "caption") and pic.caption:

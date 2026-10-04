@@ -509,7 +509,7 @@ class TestDocumentParserConcurrency:
         """Test that multiple parse calls can run concurrently."""
         # Create simple test files
         files = []
-        for i in range(3):
+        for _i in range(3):
             with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
                 f.write(b"test")
                 files.append(Path(f.name))

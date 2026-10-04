@@ -323,10 +323,7 @@ class WatcherAgent:
 
         # Skip hidden files and directories
         path = Path(change.path)
-        if any(part.startswith(".") for part in path.parts):
-            return False
-
-        return True
+        return not any(part.startswith(".") for part in path.parts)
 
     def _find_watch_id(self, watch_path: str) -> str | None:
         """Find the watch ID for a given watch path.

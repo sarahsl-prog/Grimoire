@@ -521,21 +521,23 @@ class TestCacheConnection:
         """Calling connect when already connected is safe."""
         import redis.asyncio as redis
 
-        with patch.object(redis, "ConnectionPool") as mock_pool:
-            with patch.object(redis, "Redis") as mock_redis_class:
-                mock_client = MagicMock()
-                mock_client.ping = AsyncMock(return_value=True)
-                mock_redis_class.return_value = mock_client
+        with (
+            patch.object(redis, "ConnectionPool") as mock_pool,
+            patch.object(redis, "Redis") as mock_redis_class,
+        ):
+            mock_client = MagicMock()
+            mock_client.ping = AsyncMock(return_value=True)
+            mock_redis_class.return_value = mock_client
 
-                cache = RedisCache()
-                await cache.connect()
-                assert cache.is_connected
+            cache = RedisCache()
+            await cache.connect()
+            assert cache.is_connected
 
-                # Second connect should be idempotent - should not try to connect again
-                await cache.connect()
-                assert cache.is_connected
-                # ConnectionPool should only be called once
-                assert mock_pool.call_count == 1
+            # Second connect should be idempotent - should not try to connect again
+            await cache.connect()
+            assert cache.is_connected
+            # ConnectionPool should only be called once
+            assert mock_pool.call_count == 1
 
     @pytest.mark.asyncio
     async def test_disconnect_safe_when_not_connected(self) -> None:
@@ -549,35 +551,39 @@ class TestCacheConnection:
         """Can use async context manager."""
         import redis.asyncio as redis
 
-        with patch.object(redis, "ConnectionPool"):
-            with patch.object(redis, "Redis") as mock_redis_class:
-                mock_client = MagicMock()
-                mock_client.ping = AsyncMock(return_value=True)
-                mock_client.close = AsyncMock(return_value=None)
-                mock_redis_class.return_value = mock_client
+        with (
+            patch.object(redis, "ConnectionPool"),
+            patch.object(redis, "Redis") as mock_redis_class,
+        ):
+            mock_client = MagicMock()
+            mock_client.ping = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock(return_value=None)
+            mock_redis_class.return_value = mock_client
 
-                async with RedisCache() as cache:
-                    assert cache.is_connected
+            async with RedisCache() as cache:
+                assert cache.is_connected
 
-                # After exiting context, close was called
-                mock_client.close.assert_awaited_once()
+            # After exiting context, close was called
+            mock_client.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_connect_logs_info(self) -> None:
         """Connection logs appropriate messages."""
         import redis.asyncio as redis
 
-        with patch.object(redis, "ConnectionPool"):
-            with patch.object(redis, "Redis") as mock_redis_class:
-                mock_client = MagicMock()
-                mock_client.ping = AsyncMock(return_value=True)
-                mock_redis_class.return_value = mock_client
+        with (
+            patch.object(redis, "ConnectionPool"),
+            patch.object(redis, "Redis") as mock_redis_class,
+        ):
+            mock_client = MagicMock()
+            mock_client.ping = AsyncMock(return_value=True)
+            mock_redis_class.return_value = mock_client
 
-                with patch("grimoire.core.cache.logger") as mock_logger:
-                    cache = RedisCache()
-                    await cache.connect()
+            with patch("grimoire.core.cache.logger") as mock_logger:
+                cache = RedisCache()
+                await cache.connect()
 
-                    mock_logger.info.assert_called()
+                mock_logger.info.assert_called()
 
 
 # =============================================================================
@@ -629,16 +635,18 @@ class TestCacheErrorHandling:
     @pytest.mark.asyncio
     async def test_missing_redis_package_import_error(self) -> None:
         """ImportError raised if redis package not installed."""
-        with patch.dict(sys.modules, {"redis": None, "redis.asyncio": None}):
-            with patch(
+        with (
+            patch.dict(sys.modules, {"redis": None, "redis.asyncio": None}),
+            patch(
                 "builtins.__import__",
                 side_effect=ImportError("No module named 'redis'"),
-            ):
-                with patch("grimoire.core.cache.logger"):
-                    cache = RedisCache()
-                    # The import is deferred to connect time
-                    with pytest.raises(ImportError):
-                        await cache.connect()
+            ),
+            patch("grimoire.core.cache.logger"),
+        ):
+            cache = RedisCache()
+            # The import is deferred to connect time
+            with pytest.raises(ImportError):
+                await cache.connect()
 
 
 # =============================================================================
@@ -659,17 +667,19 @@ class TestCacheAsyncBehavior:
         original_client = cache._client
         cache._client = None  # Force disconnected state
 
-        with patch.object(redis, "ConnectionPool"):
-            with patch.object(redis, "Redis") as mock_redis_class:
-                mock_client = MagicMock()
-                mock_client.ping = AsyncMock(return_value=True)
-                mock_client.get = AsyncMock(return_value='"value"')
-                mock_redis_class.return_value = mock_client
+        with (
+            patch.object(redis, "ConnectionPool"),
+            patch.object(redis, "Redis") as mock_redis_class,
+        ):
+            mock_client = MagicMock()
+            mock_client.ping = AsyncMock(return_value=True)
+            mock_client.get = AsyncMock(return_value='"value"')
+            mock_redis_class.return_value = mock_client
 
-                # After disconnecting, get() should auto-connect
-                result = await cache.get("key")
-                assert result == "value"
-                cache._client = original_client  # Restore for cleanup
+            # After disconnecting, get() should auto-connect
+            result = await cache.get("key")
+            assert result == "value"
+            cache._client = original_client  # Restore for cleanup
 
     @pytest.mark.asyncio
     async def test_auto_connect_on_set(self, cache_instance: RedisCache) -> None:
@@ -681,16 +691,18 @@ class TestCacheAsyncBehavior:
         original_client = cache._client
         cache._client = None  # Force disconnected state
 
-        with patch.object(redis, "ConnectionPool"):
-            with patch.object(redis, "Redis") as mock_redis_class:
-                mock_client = MagicMock()
-                mock_client.ping = AsyncMock(return_value=True)
-                mock_client.set = AsyncMock(return_value=True)
-                mock_redis_class.return_value = mock_client
+        with (
+            patch.object(redis, "ConnectionPool"),
+            patch.object(redis, "Redis") as mock_redis_class,
+        ):
+            mock_client = MagicMock()
+            mock_client.ping = AsyncMock(return_value=True)
+            mock_client.set = AsyncMock(return_value=True)
+            mock_redis_class.return_value = mock_client
 
-                # After disconnecting, set() should auto-connect
-                await cache.set("key", "value")
-                cache._client = original_client  # Restore for cleanup
+            # After disconnecting, set() should auto-connect
+            await cache.set("key", "value")
+            cache._client = original_client  # Restore for cleanup
 
     @pytest.mark.asyncio
     async def test_concurrent_operations(self, cache_instance: RedisCache) -> None:
