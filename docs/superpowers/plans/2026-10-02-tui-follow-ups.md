@@ -194,17 +194,29 @@ None of these come from the TUI; they were found while running the full gate
 and are recorded so they are not lost. Several overlap
 [`../../FUTURE_TODO.md`](../../FUTURE_TODO.md).
 
-- [ ] **F1. Six tests fail at the base commit** (identically before and after
-  the TUI):
-  - `tests/deploy/test_dockerfile.py::TestTorchVariant::test_torch_version_matches_the_lockfile`
-  - `tests/test_mcp_mlflow.py::test_trace_mcp_tool_wraps_when_active`
-  - `tests/test_parser.py::TestDocumentParserSupportedFormats::test_unsupported_txt`
-  - `tests/test_parser.py::TestDocumentParserAsync::test_parse_unsupported_format`
-  - `tests/test_storage_gdrive.py::TestGoogleDriveAdapterHappyPath::test_save_tokens`
-  - `tests/test_storage_onedrive.py::TestTokenPersistence::test_tokens_saved_after_authentication`
-
-  Some may be environment-related (Docling and the full dependency set were not
-  installed where this was run); triage which are real.
+- [x] **F1. Tests that fail at the base commit.** Triaged: every one was a
+  stale or non-hermetic test, or a real packaging bug. Nothing was a product
+  bug in the code under test.
+  - `test_torch_version_matches_the_lockfile`: **real bug.** `uv.lock` was in
+    `.gitignore`, yet the Dockerfile `COPY`s it and runs `uv sync --frozen`, so a
+    fresh clone could not build the image. `.gitignore` no longer ignores it
+    (the lockfile itself still needs committing from a machine that has it) and
+    the test skips with a reason when it is absent.
+  - `test_save_tokens` (Google Drive) and
+    `test_tokens_saved_after_authentication` (OneDrive): stale. Tokens are
+    encrypted at rest, the tests read plain JSON. They now assert the file is
+    not plaintext and that it decrypts, and point `HOME` at a temp dir so they
+    stop writing `~/.config/grimoire/.token_key` on the developer's machine.
+  - `test_trace_mcp_tool_wraps_when_active`: environment-dependent. Failed
+    whenever the optional `mlflow` extra was absent (`SpanType` is `None`);
+    now patches it, and no longer leaks `_mlflow_configured`.
+  - `test_unsupported_txt` and `test_parse_unsupported_format`: stale. `.txt`
+    is deliberately supported (plain text bypasses Docling). They now use a
+    genuinely unsupported extension, with a positive `.txt` test added.
+  - Six `tests/test_gui_main.py` tests (found while triaging): my own, broken
+    when B6 moved the client to `grimoire.client`; they patched the old
+    re-export. Repointed.
+  After this the non-TUI suite is green in an environment without Docling.
 - [x] **F2. `pre-commit run --all-files` fails on the repository as it stands.**
   ruff reports 174 findings, black wants to reformat five files
   (`grimoire/cli/status.py` and four under `tests/deploy/`), bandit reports 8
