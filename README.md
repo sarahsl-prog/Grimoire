@@ -423,13 +423,16 @@ and no value is logged. Launch from the project directory to pick up the same
 | `Esc` | while a query runs | Abandon it (the server may keep working) |
 | `o` or `Enter` | on a source | Open that source's document |
 | `]` / `[` | Documents | Next / previous page of 50 |
+| `/` | Documents | Search documents by title or path (`Enter` applies, `Esc` clears) |
 | `Enter` | on a document row | Open the document's detail |
 | `Esc` or `q` | in the detail view | Close it |
 
 The filter row on **Search / Ask** (tags, source type, severity, CVE id) sends
 the same metadata filters as `grimoire ask --severity ...`. **Documents** can be
-filtered by processing status and file type; both filters are applied by the
-server.
+filtered by processing status and file type, and searched by text (matched
+against the title and the source path, case-insensitively); all of these are
+applied by the server and combine. The same search is available from the API as
+`GET /api/v1/documents?q=...`.
 
 The status bar shows the API address (never the key), whether a key is set, and
 whether the API answered. Its indicator uses `GET /health`, which does not

@@ -902,7 +902,7 @@ filters reuse the retriever's existing `filter_dict` channel.
 |---|---|
 | `POST /query/ask` | Query params (`?severity=high&tactic=execution`) merged into `body.filter_dict`. Body wins on conflict. |
 | `POST /query/search` | Same query params; same merge. |
-| `GET /documents` | Indexed-column query params (`source_type`, `severity`, `cve_id`, `mitre_technique_id`) translate to SQL WHERE clauses. |
+| `GET /documents` | Indexed-column query params (`source_type`, `severity`, `cve_id`, `mitre_technique_id`) translate to SQL WHERE clauses. `q` (max 200 chars) is a case-insensitive substring match on title or source path, with `LIKE` wildcards escaped. |
 | `grimoire ask` / `search` | `--severity`, `--tactic`, `--technique`, `--source-type`, `--cve-id`, `--content-date-after`, `--platform` (repeatable). |
 | `grimoire ingest` | `--source-type` overrides SecurityChunker autodetection (Click `Choice` validator rejects unknown values). |
 

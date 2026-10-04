@@ -168,8 +168,9 @@ HTTP client of the API.
 - [ ] Watcher control (start, stop and status of the file watcher).
 - [ ] Wiki compilation.
 - [ ] Delete a document.
-- [ ] Free-text document search. The documents API has no title search or
-  category/tag filter, so this needs a server change first.
+- [x] Free-text document search. **Done:** `GET /documents?q=` (title or source
+  path) plus a search box in the TUI's Documents pane. A category/tag filter is
+  still not in the API; that belongs with the tags item below.
 - [ ] Theming beyond Textual's built-in themes.
 - [ ] Snapshot tests (`pytest-textual-snapshot`); skipped as flaky.
 
