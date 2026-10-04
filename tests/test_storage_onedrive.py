@@ -598,9 +598,15 @@ class TestTokenPersistence:
         assert adapter.token_data is None
 
     async def test_tokens_saved_after_authentication(
-        self, onedrive_config: CloudOnedriveConfig, httpx_mock: HTTPXMock
+        self,
+        onedrive_config: CloudOnedriveConfig,
+        httpx_mock: HTTPXMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Tokens are saved after successful authentication."""
+        """Tokens are saved after authentication, encrypted at rest."""
+        # Encryption creates a key under $HOME; keep that out of the real one.
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
         httpx_mock.add_response(
             url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
             json={
@@ -616,10 +622,12 @@ class TestTokenPersistence:
         token_path = Path(onedrive_config.token_store)
         assert token_path.exists()
 
-        with open(token_path) as f:
-            saved_data = json.load(f)
+        raw = token_path.read_text(encoding="utf-8")
+        assert "access_token" not in raw, "tokens must not be stored in plaintext"
 
-        assert saved_data["access_token"] == "access"
+        from grimoire.utils.token_crypto import decrypt_tokens
+
+        assert decrypt_tokens(raw)["access_token"] == "access"
 
     async def test_no_save_if_token_is_none(
         self, onedrive_config: CloudOnedriveConfig

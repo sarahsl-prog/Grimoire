@@ -188,9 +188,14 @@ class TestGoogleDriveAdapterHappyPath:
 
     @pytest.mark.asyncio
     async def test_save_tokens(
-        self, adapter: GoogleDriveAdapter, tmp_path: Path
+        self,
+        adapter: GoogleDriveAdapter,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Tokens are saved to token store with restricted permissions."""
+        """Tokens are saved encrypted, with restricted permissions."""
+        # Encryption creates a key under $HOME; keep that out of the real one.
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
         mock_tokens = {
             "access_token": "test_token",
             "refresh_token": "test_refresh",
@@ -202,8 +207,9 @@ class TestGoogleDriveAdapterHappyPath:
         token_path = Path(adapter.config.token_store)
         assert token_path.exists()
 
-        content = json.loads(token_path.read_text())
-        assert content["access_token"] == "test_token"
+        raw = token_path.read_text()
+        assert "test_token" not in raw, "tokens must not be stored in plaintext"
+        assert (await adapter._load_tokens())["access_token"] == "test_token"
 
         # Check permissions (Unix-only)
         if os.name == "posix":
