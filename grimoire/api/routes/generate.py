@@ -5,10 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from grimoire.api.auth import get_api_key
+from grimoire.api.auth import require_min_tier
 from grimoire.api.dependencies import get_content_gen_agent, get_db_session
 from grimoire.api.schemas import GenerateRequest, GenerateResponse
-from grimoire.db.models import ApiKey, ContentType
+from grimoire.db.models import ApiKey, ApiKeyTier, ContentType
 
 router = APIRouter(prefix="/generate", tags=["generate"])
 
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/generate", tags=["generate"])
 async def generate_content(
     request: Request,
     body: GenerateRequest,
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
     db: AsyncSession = Depends(get_db_session),
 ) -> GenerateResponse:
     """Generate content from documents.

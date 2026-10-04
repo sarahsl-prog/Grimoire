@@ -466,6 +466,12 @@ Grimoire exposes its full functionality as an MCP server, allowing AI assistants
 | Dev  | `dvl` | Read + ingest_file, ingest_directory, generate, create_category, watch_start, watch_stop, pg_query |
 | Agent | `agt` | Dev + delete_document |
 
+The same tiers gate the **REST API** (agent includes dev includes read). Reads
+and `POST /query/ask|search` accept any valid key; the write endpoints
+(`/ingest/*`, `/generate`, `POST /categories`, `/watch/start`, `DELETE /watch/{id}`)
+need `dvl` or higher; `DELETE /documents/{id}` and `DELETE /categories/{id}`
+need `agt`. A weaker key gets `403` saying which tier is required.
+
 **Security-domain search tools:**
 
 - `grimoire_search_cve` — search the NVD CVE corpus. Provide `cve_id` for an exact lookup (returns the document and its chunks directly from Postgres) or `query` plus optional `severity`, `min_cvss`, and `year` facets for a semantic search over CVE descriptions.

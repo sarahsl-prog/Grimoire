@@ -8,14 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from grimoire.api.auth import get_api_key
+from grimoire.api.auth import get_api_key, require_min_tier
 from grimoire.api.dependencies import get_db_session
 from grimoire.api.schemas import (
     CategoryCreateRequest,
     CategoryListResponse,
     CategoryResponse,
 )
-from grimoire.db.models import ApiKey, Category
+from grimoire.db.models import ApiKey, ApiKeyTier, Category
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -52,7 +52,7 @@ async def list_categories(
 async def create_category(
     request: Request,
     body: CategoryCreateRequest,
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
     db: AsyncSession = Depends(get_db_session),
 ) -> CategoryResponse:
     """Create a new category."""
@@ -130,7 +130,7 @@ async def create_category(
 async def delete_category(
     category_id: str,
     request: Request,
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.AGENT)),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """Delete a category."""

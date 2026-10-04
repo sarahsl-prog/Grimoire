@@ -303,6 +303,7 @@ cp ~/grimoire-backups/<TS>/.env.bak .env
 | `ValidationError: Extra inputs are not permitted` | Removed setting still in `grimoire.yaml`/`.env` | Delete the stale key (see step 5) |
 | `ImportError` / `AttributeError` in a vendored lib | Stale virtual environment | `uv sync` |
 | MCP client shows old or missing tools | Client cached the handshake | Restart the client; re-check `GRIMOIRE_API_KEY` tier |
+| `403 ... requires an API key of tier 'dvl'` (or `'agt'`) from a script that used to work | The REST API now enforces key tiers; the script uses a read-tier key to write | Issue a key of the needed tier: `grimoire key create --tier dev` (or `agent`), and update the script |
 | `Unauthorized` from every API key after upgrade | `GRIMOIRE_API__SECRET_KEY` changed | Restore the old secret, or re-issue keys with `grimoire key create` |
 | Chroma dimension / index errors | Embedding model changed | See [Changing the embedding model](#changing-the-embedding-model) |
 | Search returns nothing, `status` shows documents | Vectors lost, metadata kept | Restore the Chroma volume from backup |
