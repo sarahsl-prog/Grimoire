@@ -1178,7 +1178,9 @@ class TestStatusCommand:
         assert f"unreachable at {llm_url}" in result.output
 
 
-def _reindex_settings(vs_type: VectorStoreType = VectorStoreType.CHROMADB) -> Any:
+def _reindex_settings(
+    cache_path: Path, vs_type: VectorStoreType = VectorStoreType.CHROMADB
+) -> Any:
     return SimpleNamespace(
         vector_store=SimpleNamespace(
             type=vs_type,
@@ -1193,7 +1195,7 @@ def _reindex_settings(vs_type: VectorStoreType = VectorStoreType.CHROMADB) -> An
             device="cpu",
             batch_size=32,
         ),
-        cache=SimpleNamespace(storage="disk", path="/tmp/grimoire-test-cache"),
+        cache=SimpleNamespace(storage="disk", path=str(cache_path)),
     )
 
 
@@ -1214,9 +1216,9 @@ class TestReindexCommand:
 
     @patch(f"{_STATUS}.get_settings")
     def test_reindex_rejects_qdrant(
-        self, mock_settings: MagicMock, runner: CliRunner
+        self, mock_settings: MagicMock, runner: CliRunner, tmp_path: Path
     ) -> None:
-        mock_settings.return_value = _reindex_settings(VectorStoreType.QDRANT)
+        mock_settings.return_value = _reindex_settings(tmp_path, VectorStoreType.QDRANT)
 
         result = runner.invoke(cli, ["reindex"])
         assert result.exit_code != 0
@@ -1235,8 +1237,9 @@ class TestReindexCommand:
         mock_settings: MagicMock,
         mock_store_cls: MagicMock,
         runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
-        mock_settings.return_value = _reindex_settings()
+        mock_settings.return_value = _reindex_settings(tmp_path)
 
         mock_session = AsyncMock()
         mock_exec = MagicMock()
@@ -1267,8 +1270,9 @@ class TestReindexCommand:
         mock_settings: MagicMock,
         mock_store_cls: MagicMock,
         runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
-        mock_settings.return_value = _reindex_settings()
+        mock_settings.return_value = _reindex_settings(tmp_path)
 
         chunks = [_make_chunk("c1"), _make_chunk("c2")]
         mock_session = AsyncMock()
@@ -1302,8 +1306,9 @@ class TestReindexCommand:
         mock_settings: MagicMock,
         mock_store_cls: MagicMock,
         runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
-        mock_settings.return_value = _reindex_settings()
+        mock_settings.return_value = _reindex_settings(tmp_path)
 
         chunks = [_make_chunk("c1"), _make_chunk("c2")]
         mock_session = AsyncMock()
@@ -1340,8 +1345,9 @@ class TestReindexCommand:
         mock_settings: MagicMock,
         mock_store_cls: MagicMock,
         runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
-        mock_settings.return_value = _reindex_settings()
+        mock_settings.return_value = _reindex_settings(tmp_path)
 
         chunks = [_make_chunk("c1")]
         mock_session = AsyncMock()
@@ -1379,8 +1385,9 @@ class TestReindexCommand:
         mock_cache_factory: MagicMock,
         mock_embedder_cls: MagicMock,
         runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
-        mock_settings.return_value = _reindex_settings()
+        mock_settings.return_value = _reindex_settings(tmp_path)
 
         chunks = [_make_chunk("c1"), _make_chunk("c2")]
         mock_session = AsyncMock()
@@ -1455,6 +1462,7 @@ class TestVectorStoreSummary:
         mock_settings: MagicMock,
         mock_factory: MagicMock,
         runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
         from grimoire.core.cache import DiskCache
 
@@ -1462,7 +1470,7 @@ class TestVectorStoreSummary:
         mock_cache.get_stats.return_value = {"size": 100, "volume": 1024}
         mock_factory.create.return_value = mock_cache
         mock_settings.return_value.cache.storage = "disk"
-        mock_settings.return_value.cache.path = "/tmp/cache"
+        mock_settings.return_value.cache.path = str(tmp_path / "cache")
 
         result = runner.invoke(cli, ["cache", "stats"])
         assert result.exit_code == 0
@@ -1475,11 +1483,12 @@ class TestVectorStoreSummary:
         mock_settings: MagicMock,
         mock_factory: MagicMock,
         runner: CliRunner,
+        tmp_path: Path,
     ) -> None:
         mock_cache = AsyncMock()
         mock_factory.create.return_value = mock_cache
         mock_settings.return_value.cache.storage = "disk"
-        mock_settings.return_value.cache.path = "/tmp/cache"
+        mock_settings.return_value.cache.path = str(tmp_path / "cache")
 
         result = runner.invoke(cli, ["cache", "clear", "--no-confirm"])
         assert result.exit_code == 0
