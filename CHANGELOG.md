@@ -4,6 +4,23 @@ All notable changes to Grimoire are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Categories and tags in the TUI.** A third tab (`F3`) lists categories with
+  how many documents carry each, and `n` creates one (name, description,
+  optional parent). In a document's detail view, `a` adds a tag from the
+  categories it lacks and `x` removes one of its own; the Documents table
+  refreshes afterwards. All of this needs a `dvl` or `agt` key; a read key is
+  refused by the server and the reason is shown.
+- `PUT` / `DELETE /api/v1/documents/{id}/tags/{category_id}` (dev tier,
+  idempotent) to assign or remove a tag. Until now tags were only ever set by
+  auto-tagging at ingest.
+- `GET /api/v1/categories` returns `document_count` per category, and
+  `GET /api/v1/documents/{id}` returns `categories` (with ids) alongside the
+  existing name-only `tags`. Both are additive.
+- The shared client gains `list_categories`, `create_category`, `tag_document`
+  and `untag_document`.
+
 ### Security
 
 - **BREAKING: the REST API now enforces API key tiers.** Previously tiers only

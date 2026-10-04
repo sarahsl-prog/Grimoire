@@ -364,9 +364,10 @@ design.
 
 A [Textual](https://textual.textualize.io/) client for the same REST API, for
 when you are already in a terminal (including over SSH, where the desktop GUI
-cannot open a window). Two screens: **Search / Ask**, with the retrieved source
-chunks next to the answer, and **Documents**, a paged, filterable table of
-what the corpus holds with a detail view for each document. On a narrow
+cannot open a window). Three screens: **Search / Ask**, with the retrieved source
+chunks next to the answer; **Documents**, a paged, filterable table of what the
+corpus holds with a detail view for each document; and **Categories**, the
+labels documents are tagged with. On a narrow
 terminal the table drops its least useful columns (Tags, Chunks, Type, Size) and
 says so under the table; widening the terminal brings them back.
 
@@ -414,7 +415,7 @@ and no value is logged. Launch from the project directory to pick up the same
 
 | Key | Where | Action |
 |---|---|---|
-| `F1` / `F2` | anywhere | Switch to Search / Ask or Documents |
+| `F1` / `F2` / `F3` | anywhere | Switch to Search / Ask, Documents or Categories |
 | `Ctrl+R` | anywhere | Re-check the API; on Documents, reload the current page |
 | `Ctrl+K` | anywhere | Enter or replace the API key for this session (masked; kept in memory only, never saved) |
 | `?` | when not typing in a box | Key help panel (`Ctrl+P` opens the command palette) |
@@ -425,7 +426,9 @@ and no value is logged. Launch from the project directory to pick up the same
 | `]` / `[` | Documents | Next / previous page of 50 |
 | `/` | Documents | Search documents by title or path (`Enter` applies, `Esc` clears) |
 | `Enter` | on a document row | Open the document's detail |
+| `a` / `x` | in the detail view | Add / remove a tag on that document (pick from a list) |
 | `Esc` or `q` | in the detail view | Close it |
+| `n` | Categories | New category (name, description, optional parent) |
 
 The filter row on **Search / Ask** (tags, source type, severity, CVE id) sends
 the same metadata filters as `grimoire ask --severity ...`. **Documents** can be
@@ -433,6 +436,13 @@ filtered by processing status and file type, and searched by text (matched
 against the title and the source path, case-insensitively); all of these are
 applied by the server and combine. The same search is available from the API as
 `GET /api/v1/documents?q=...`.
+
+**Categories** lists every category with how many documents carry it, and `n`
+creates one. Tags are changed from a document's detail view. Creating a category
+and adding or removing a tag need a `dvl` (dev) or `agt` key; with a read-tier
+key the server refuses and the TUI shows its reason. The same operations are
+`POST /api/v1/categories` and `PUT` / `DELETE
+/api/v1/documents/{id}/tags/{category_id}`.
 
 The status bar shows the API address (never the key), whether a key is set, and
 whether the API answered. Its indicator uses `GET /health`, which does not

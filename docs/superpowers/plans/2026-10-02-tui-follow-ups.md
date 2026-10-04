@@ -163,7 +163,9 @@ HTTP client of the API.
 
 - [ ] Ingest, including a file picker (drag-and-drop does not exist in a
   terminal).
-- [ ] Categories and tags management.
+- [x] Categories and tags management. **Done:** a Categories tab (list, counts,
+  create), tag/untag from the document detail, and the API endpoints they needed.
+  Category delete is deliberately not in the TUI.
 - [ ] Content generation (summaries, flashcards, cliff-notes, outlines).
 - [ ] Watcher control (start, stop and status of the file watcher).
 - [ ] Wiki compilation.
