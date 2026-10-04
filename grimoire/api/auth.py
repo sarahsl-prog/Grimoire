@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import contextlib
 import secrets
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 import bcrypt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,3 +131,43 @@ async def get_api_key(
 
     request.state.api_key = api_key
     return api_key
+
+
+# Tiers are hierarchical, as in the MCP server's documentation: agent includes
+# everything dev can do, and dev everything read can.
+_TIER_RANK: dict[ApiKeyTier, int] = {
+    ApiKeyTier.READ: 0,
+    ApiKeyTier.DEV: 1,
+    ApiKeyTier.AGENT: 2,
+}
+
+
+def require_min_tier(minimum: ApiKeyTier) -> Callable[..., Awaitable[ApiKey]]:
+    """Build a dependency that authenticates, then requires at least ``minimum``.
+
+    It sits on top of :func:`get_api_key`, so a missing or invalid key is still
+    a 401 and tests that override ``get_api_key`` keep working. A key that is
+    valid but too weak gets a 403 that names the tiers involved, never the key.
+
+    The tier is attached to the returned function as ``min_tier`` so a test can
+    walk the app's routes and prove every write endpoint is gated.
+    """
+
+    async def dependency(api_key: ApiKey = Depends(get_api_key)) -> ApiKey:
+        if _TIER_RANK[api_key.tier] < _TIER_RANK[minimum]:
+            logger.warning(
+                f"Tier denied: key prefix {api_key.key_prefix} "
+                f"({api_key.tier.value}) needs {minimum.value}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"This operation requires an API key of tier "
+                    f"'{minimum.value}' or higher; this key is "
+                    f"'{api_key.tier.value}'."
+                ),
+            )
+        return api_key
+
+    dependency.min_tier = minimum  # type: ignore[attr-defined]
+    return dependency
