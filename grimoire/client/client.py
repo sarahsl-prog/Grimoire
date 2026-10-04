@@ -146,18 +146,23 @@ class GrimoireClient:
         limit: int = 50,
         status: str | None = None,
         file_type: str | None = None,
+        q: str | None = None,
     ) -> DocumentListResponse:
         """One page of documents, newest first.
 
         The endpoint orders by ``created_at`` descending, so no client-side
         sorting is needed. Only filters that are actually set go on the query
         string; the server treats an absent filter as "match everything".
+        ``q`` is free text matched against the title and source path; blank
+        text is dropped rather than sent.
         """
         params: dict[str, str | int] = {"offset": offset, "limit": limit}
         if status:
             params["status"] = status
         if file_type:
             params["file_type"] = file_type
+        if q and q.strip():
+            params["q"] = q.strip()
         response = self._request("GET", f"{_API_PREFIX}/documents", params=params)
         return self._parse(response, DocumentListResponse)
 
