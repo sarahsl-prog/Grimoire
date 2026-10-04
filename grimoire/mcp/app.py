@@ -13,6 +13,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from loguru import logger
 
+from grimoire import __version__
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -54,7 +56,7 @@ def create_mcp_app(use_lifespan: bool = True) -> FastAPI:
     app = FastAPI(
         title="Grimoire MCP",
         description="Model Context Protocol server for the Grimoire knowledge base.",
-        version="2.0.0",
+        version=__version__,
         lifespan=lifespan if use_lifespan else None,
     )
 

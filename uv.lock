@@ -1617,7 +1617,7 @@ wheels = [
 
 [[package]]
 name = "grimoire"
-version = "2.0.0"
+version = "2.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -1657,6 +1657,27 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "bandit" },
+    { name = "black" },
+    { name = "mlflow" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pyside6" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-httpx" },
+    { name = "pytest-qt" },
+    { name = "pytest-xdist" },
+    { name = "ruff" },
+    { name = "textual" },
+    { name = "types-aiofiles" },
+    { name = "types-colorama" },
+    { name = "types-pyyaml" },
+    { name = "types-redis" },
+    { name = "types-requests" },
+]
 dev = [
     { name = "bandit" },
     { name = "black" },
@@ -1711,6 +1732,7 @@ requires-dist = [
     { name = "diskcache", specifier = ">=5.6" },
     { name = "docling", specifier = ">=2.0" },
     { name = "fastapi", specifier = ">=0.110" },
+    { name = "grimoire", extras = ["mlflow", "gui", "tui", "dev"], marker = "extra == 'all'" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "langchain-community", specifier = ">=0.2" },
     { name = "langchain-ollama", specifier = ">=0.0.1" },
@@ -1751,7 +1773,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.28" },
     { name = "watchdog", specifier = ">=4.0" },
 ]
-provides-extras = ["mlflow", "gui", "tui", "dev"]
+provides-extras = ["mlflow", "gui", "tui", "dev", "all"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -24,6 +24,7 @@ import pytest
 from click.testing import CliRunner
 from pytest_httpx import HTTPXMock
 
+from grimoire import __version__
 from grimoire.cli.main import cli
 from grimoire.cli.status import _vector_store_summary
 from grimoire.config.settings import VectorStoreType
@@ -83,7 +84,7 @@ class TestCommandRegistration:
     def test_version(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "2.0.0" in result.output
+        assert __version__ in result.output
 
     @pytest.mark.parametrize(
         "cmd,expected",

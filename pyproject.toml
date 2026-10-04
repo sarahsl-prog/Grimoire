@@ -1,6 +1,6 @@
 [project]
 name = "grimoire"
-version = "2.0.0"
+version = "2.1.0"
 description = "Agent-based knowledge management system"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -85,6 +85,12 @@ dev = [
     "types-requests>=2.31",
     "types-aiofiles>=23.2",
     "types-colorama>=0.4",
+]
+
+# Everything optional, so `uv sync --extra all` (or `pip install grimoire[all]`)
+# replaces listing each extra. Keep this in step when adding a new extra.
+all = [
+    "grimoire[mlflow,gui,tui,dev]",
 ]
 
 [project.scripts]

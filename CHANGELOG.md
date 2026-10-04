@@ -4,6 +4,8 @@ All notable changes to Grimoire are documented in this file.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-04
+
 ### Security
 
 - `grimoire mcp --sse` now binds `127.0.0.1` by default instead of `0.0.0.0`.
@@ -23,6 +25,9 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- An `all` extra: `uv sync --extra all` (or `pip install grimoire[all]`) installs
+  every optional group (`mlflow`, `gui`, `tui`, `dev`). `uv sync --all-extras`
+  does the same.
 - **Terminal UI** (`grimoire-tui`, `grimoire --tui`, `grimoire tui`;
   `uv sync --extra tui`) – a Textual client for the REST API with Search/Ask
   (the answer beside its source chunks, metadata filters, `Esc` to abandon a
@@ -60,6 +65,15 @@ All notable changes to Grimoire are documented in this file.
   path the API server has always used.
 - Containerized deployments use the `chromadb` service over HTTP instead of
   an embedded (in-process) ChromaDB client.
+- The API and MCP apps now report `grimoire.__version__` instead of a
+  hard-coded string, so the version is defined once.
+- `uv.lock` is now tracked (the Dockerfile copies it).
+
+### Fixed
+
+- `grimoire status --detailed`, `cache stats` and `cache clear` now close the
+  disk cache they open instead of leaving a SQLite connection to the garbage
+  collector.
 
 ### Documentation
 

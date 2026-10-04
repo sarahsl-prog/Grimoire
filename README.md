@@ -98,7 +98,10 @@ troubleshooting. Both paths — bare-metal and Docker — are fully supported.
 # Run tests
 uv run pytest
 
-# Install with the GUI extra as well
+# Install every optional extra (mlflow, gui, tui, dev) in one go
+uv sync --extra all
+
+# ...or pick them individually, e.g. the GUI as well
 uv sync --extra dev --extra gui
 
 # Run the GUI tests headless

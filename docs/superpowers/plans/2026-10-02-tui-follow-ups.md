@@ -158,17 +158,20 @@ query agent substituted. These were **not** exercised:
 
 Not committed to; listed so the decision is visible.
 
+Dropped (2026-10-04): an in-process (serverless) mode. The TUI stays a thin
+HTTP client of the API.
+
 - [ ] Ingest, including a file picker (drag-and-drop does not exist in a
   terminal).
 - [ ] Categories and tags management.
-- [ ] Content generation, watcher control, wiki compilation.
+- [ ] Content generation (summaries, flashcards, cliff-notes, outlines).
+- [ ] Watcher control (start, stop and status of the file watcher).
+- [ ] Wiki compilation.
 - [ ] Delete a document.
 - [ ] Free-text document search. The documents API has no title search or
   category/tag filter, so this needs a server change first.
 - [ ] Theming beyond Textual's built-in themes.
 - [ ] Snapshot tests (`pytest-textual-snapshot`); skipped as flaky.
-- [ ] An in-process (serverless) mode that works without the API running.
-  Needs the agents loaded locally, which gives up the TUI's instant start.
 
 ## E. Documentation
 
