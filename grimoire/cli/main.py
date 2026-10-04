@@ -109,7 +109,7 @@ from grimoire.cli.mcp import mcp
 from grimoire.cli.migrate import migrate
 from grimoire.cli.query import ask, search
 from grimoire.cli.status import cache_group, reindex, status
-from grimoire.cli.tui import tui  # noqa: E402 - joins the import block above
+from grimoire.cli.tui import tui
 from grimoire.cli.watch import watch
 from grimoire.cli.wiki import wiki
 
