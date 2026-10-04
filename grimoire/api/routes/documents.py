@@ -7,14 +7,21 @@ from sqlalchemy import ScalarSelect, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload
 
-from grimoire.api.auth import get_api_key
+from grimoire.api.auth import get_api_key, require_min_tier
 from grimoire.api.dependencies import get_db_session
 from grimoire.api.schemas import (
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentResponse,
 )
-from grimoire.db.models import ApiKey, Category, Chunk, Document, DocumentTag
+from grimoire.db.models import (
+    ApiKey,
+    ApiKeyTier,
+    Category,
+    Chunk,
+    Document,
+    DocumentTag,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -236,7 +243,7 @@ async def get_document(
 async def delete_document(
     document_id: str,
     request: Request,
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.AGENT)),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """Delete a document and its associated data."""

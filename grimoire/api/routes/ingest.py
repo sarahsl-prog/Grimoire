@@ -19,7 +19,7 @@ from fastapi import (
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from grimoire.api.auth import get_api_key
+from grimoire.api.auth import require_min_tier
 from grimoire.api.dependencies import get_db_session, get_ingestion_agent
 from grimoire.api.schemas import (
     BatchIngestResponse,
@@ -27,7 +27,7 @@ from grimoire.api.schemas import (
     IngestFileRequest,
     IngestResultResponse,
 )
-from grimoire.db.models import ApiKey
+from grimoire.db.models import ApiKey, ApiKeyTier
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -177,7 +177,7 @@ def _is_path_allowed(raw_path: str) -> Path:
 async def ingest_file(
     request: Request,
     body: IngestFileRequest,
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
     db: AsyncSession = Depends(get_db_session),
 ) -> IngestResultResponse:
     """Ingest a single file into the knowledge base."""
@@ -200,7 +200,7 @@ async def ingest_upload(
     request: Request,
     file: UploadFile = File(...),
     auto_tag: bool = Form(default=True),
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
     db: AsyncSession = Depends(get_db_session),
 ) -> IngestResultResponse:
     """Ingest a file uploaded in the request body.
@@ -240,7 +240,7 @@ async def ingest_upload(
 async def ingest_directory(
     request: Request,
     body: IngestDirectoryRequest,
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
     db: AsyncSession = Depends(get_db_session),
 ) -> BatchIngestResponse:
     """Ingest all supported files from a directory."""

@@ -6,9 +6,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from grimoire.api.auth import get_api_key
+from grimoire.api.auth import get_api_key, require_min_tier
 from grimoire.api.schemas import WatcherStatsResponse, WatchResponse, WatchStartRequest
-from grimoire.db.models import ApiKey
+from grimoire.db.models import ApiKey, ApiKeyTier
 
 router = APIRouter(prefix="/watch", tags=["watch"])
 
@@ -35,7 +35,7 @@ def _get_watcher() -> Any:
 async def start_watch(
     request: Request,
     body: WatchStartRequest,
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
 ) -> WatchResponse:
     """Start watching a path for changes."""
     watcher = _get_watcher()
@@ -57,7 +57,7 @@ async def start_watch(
 async def stop_watch(
     watch_id: str,
     request: Request,
-    api_key: ApiKey = Depends(get_api_key),
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
 ) -> None:
     """Stop a specific watch."""
     watcher = _get_watcher()
