@@ -120,6 +120,7 @@ If you use the optional extras, re-sync them too:
 ```bash
 uv sync --extra mlflow        # observability
 uv sync --extra dev           # tests, lint, mypy
+uv sync --extra all           # all of the above plus the GUI and TUI
 ```
 
 ---

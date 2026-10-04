@@ -87,6 +87,12 @@ dev = [
     "types-colorama>=0.4",
 ]
 
+# Everything optional, so `uv sync --extra all` (or `pip install grimoire[all]`)
+# replaces listing each extra. Keep this in step when adding a new extra.
+all = [
+    "grimoire[mlflow,gui,tui,dev]",
+]
+
 [project.scripts]
 grimoire = "grimoire.cli.main:main"
 grimoire-gui = "grimoire.gui.__main__:main"
