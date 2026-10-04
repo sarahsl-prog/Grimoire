@@ -233,6 +233,16 @@ ignore_missing_imports = true
 # ignores look unused and @mlflow.trace look like an untyped decorator. Both are
 # correct when the extra IS installed, so results must not flip with the local
 # environment.
+# PySide6 is optional too (grimoire[gui]). Without it every Qt base class is Any,
+# which trips subclassing-any / untyped-decorator in the GUI package. Results
+# must not depend on whether the extra happens to be installed.
+[[tool.mypy.overrides]]
+module = ["grimoire.gui.*"]
+warn_unused_ignores = false
+disallow_subclassing_any = false
+disallow_untyped_decorators = false
+warn_return_any = false
+
 [[tool.mypy.overrides]]
 module = ["grimoire.mcp.mlflow_logging"]
 warn_unused_ignores = false
