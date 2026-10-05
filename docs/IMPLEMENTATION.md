@@ -902,6 +902,8 @@ filters reuse the retriever's existing `filter_dict` channel.
 |---|---|
 | `POST /query/ask` | Query params (`?severity=high&tactic=execution`) merged into `body.filter_dict`. Body wins on conflict. |
 | `POST /query/search` | Same query params; same merge. |
+| `GET /categories` | Each category carries `document_count` (documents tagged exactly with it, not its descendants), from one grouped LEFT JOIN. |
+| `PUT` / `DELETE /documents/{id}/tags/{category_id}` | Dev tier. Idempotent; 404 when the document or the category does not exist. A tag added this way is recorded as `tagged_by=user`; one that already exists is left untouched. `GET /documents/{id}` returns `categories` (full objects, with ids) next to the name-only `tags`. |
 | `GET /documents` | Indexed-column query params (`source_type`, `severity`, `cve_id`, `mitre_technique_id`) translate to SQL WHERE clauses. `q` (max 200 chars) is a case-insensitive substring match on title or source path, with `LIKE` wildcards escaped. |
 | `grimoire ask` / `search` | `--severity`, `--tactic`, `--technique`, `--source-type`, `--cve-id`, `--content-date-after`, `--platform` (repeatable). |
 | `grimoire ingest` | `--source-type` overrides SecurityChunker autodetection (Click `Choice` validator rejects unknown values). |

@@ -42,6 +42,9 @@ class StubClient:
     search_script: list[_Step] = field(default_factory=list)
     documents_script: list[_Step] = field(default_factory=list)
     detail_script: list[_Step] = field(default_factory=list)
+    categories_script: list[_Step] = field(default_factory=list)
+    create_category_script: list[_Step] = field(default_factory=list)
+    tag_script: list[_Step] = field(default_factory=list)
     # Every ask/search call, in order: (method, positional args, keyword args).
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(
         default_factory=list
@@ -75,6 +78,22 @@ class StubClient:
     def get_document(self, document_id: str) -> Any:
         self.calls.append(("get_document", (document_id,), {}))
         return self._run(self.detail_script.pop(0))
+
+    def list_categories(self) -> Any:
+        self.calls.append(("list_categories", (), {}))
+        return self._run(self.categories_script.pop(0))
+
+    def create_category(self, name: str, **kwargs: Any) -> Any:
+        self.calls.append(("create_category", (name,), kwargs))
+        return self._run(self.create_category_script.pop(0))
+
+    def tag_document(self, document_id: str, category_id: str) -> Any:
+        self.calls.append(("tag_document", (document_id, category_id), {}))
+        return self._run(self.tag_script.pop(0))
+
+    def untag_document(self, document_id: str, category_id: str) -> Any:
+        self.calls.append(("untag_document", (document_id, category_id), {}))
+        return self._run(self.tag_script.pop(0))
 
     def calls_to(self, method: str) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
         return [(a, k) for m, a, k in self.calls if m == method]

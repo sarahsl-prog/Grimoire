@@ -16,6 +16,8 @@ from loguru import logger
 from pydantic import BaseModel
 
 from grimoire.api.schemas import (
+    CategoryListResponse,
+    CategoryResponse,
     DocumentDetailResponse,
     DocumentListResponse,
     IngestResultResponse,
@@ -37,6 +39,10 @@ from grimoire.client.errors import (
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 _API_PREFIX = "/api/v1"
+
+# The server's limit on a category name (CategoryCreateRequest.name).  Checked
+# here too so a name it would refuse never costs a round trip.
+_MAX_CATEGORY_NAME = 100
 
 
 class GrimoireClient:
@@ -169,6 +175,59 @@ class GrimoireClient:
     def recent_documents(self, *, limit: int = 10) -> DocumentListResponse:
         """Most recently created documents."""
         return self.list_documents(offset=0, limit=limit)
+
+    def list_categories(self) -> CategoryListResponse:
+        """Every category, by name, each with how many documents carry it."""
+        response = self._request("GET", f"{_API_PREFIX}/categories")
+        return self._parse(response, CategoryListResponse)
+
+    def create_category(
+        self,
+        name: str,
+        *,
+        description: str = "",
+        parent_slug: str | None = None,
+    ) -> CategoryResponse:
+        """Create a category (needs a dev or agent key).
+
+        Raises:
+            RequestRejected: The name is blank or longer than the server allows,
+                the parent does not exist (404), or the key is too weak (403).
+        """
+        cleaned = name.strip()
+        if not cleaned:
+            raise RequestRejected("A category name is required.")
+        if len(cleaned) > _MAX_CATEGORY_NAME:
+            raise RequestRejected(
+                f"A category name can be at most {_MAX_CATEGORY_NAME} characters."
+            )
+        body: dict[str, str] = {"name": cleaned}
+        if description.strip():
+            body["description"] = description.strip()
+        if parent_slug and parent_slug.strip():
+            body["parent_slug"] = parent_slug.strip()
+        response = self._request("POST", f"{_API_PREFIX}/categories", json=body)
+        return self._parse(response, CategoryResponse)
+
+    def tag_document(self, document_id: str, category_id: str) -> None:
+        """Tag a document with a category; harmless if it already has it."""
+        self._request("PUT", self._tag_url(document_id, category_id))
+
+    def untag_document(self, document_id: str, category_id: str) -> None:
+        """Remove a category from a document; harmless if it is not there."""
+        self._request("DELETE", self._tag_url(document_id, category_id))
+
+    @staticmethod
+    def _tag_url(document_id: str, category_id: str) -> str:
+        doc, cat = document_id.strip(), category_id.strip()
+        if not doc or not cat:
+            raise RequestRejected("A document id and a category id are required.")
+        # safe="" encodes "/" and "?" so neither id can add a path segment or a
+        # query string.
+        return (
+            f"{_API_PREFIX}/documents/{quote(doc, safe='')}"
+            f"/tags/{quote(cat, safe='')}"
+        )
 
     def get_document(self, document_id: str) -> DocumentDetailResponse:
         """Full detail for one document.

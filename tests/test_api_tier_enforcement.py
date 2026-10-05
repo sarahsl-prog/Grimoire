@@ -36,6 +36,16 @@ WRITE_MATRIX: list[tuple[str, str, ApiKeyTier]] = [
     ("POST", "/api/v1/categories", D),
     ("POST", "/api/v1/watch/start", D),
     ("DELETE", "/api/v1/watch/w-1", D),
+    (
+        "PUT",
+        "/api/v1/documents/a0000000-0000-4000-8000-000000000001/tags/b0000000-0000-4000-8000-000000000001",
+        D,
+    ),
+    (
+        "DELETE",
+        "/api/v1/documents/a0000000-0000-4000-8000-000000000001/tags/b0000000-0000-4000-8000-000000000001",
+        D,
+    ),
     ("DELETE", "/api/v1/documents/a0000000-0000-4000-8000-000000000001", A),
     ("DELETE", "/api/v1/categories/a0000000-0000-4000-8000-000000000001", A),
 ]

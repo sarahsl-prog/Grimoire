@@ -299,7 +299,17 @@ class DocumentsPane(Vertical):
         row = event.cursor_row
         document_id = self._ids[row] if 0 <= row < len(self._ids) else None
         if document_id:  # a row the server sent without an id cannot be fetched
-            self.app.push_screen(DocumentDetailScreen(self._client, document_id))
+            self.app.push_screen(
+                DocumentDetailScreen(self._client, document_id), self._after_detail
+            )
+
+    def _after_detail(self, changed: bool | None) -> None:
+        """Reload the page if the detail view changed this document's tags.
+
+        The table's Tags column would otherwise show the old count.
+        """
+        if changed:
+            self.refresh_data()
 
     @on(Button.Pressed, "#doc-refresh")
     def _on_refresh_pressed(self, event: Button.Pressed) -> None:

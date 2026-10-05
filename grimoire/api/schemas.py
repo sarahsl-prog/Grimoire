@@ -227,6 +227,9 @@ class DocumentDetailResponse(DocumentResponse):
     """Full document detail with tags and chunks."""
 
     tags: list[str] = Field(default_factory=list)
+    # The same tags as full categories, so a client has the ids it needs to
+    # remove one.  `tags` (names only) stays for existing clients.
+    categories: list[CategoryResponse] = Field(default_factory=list)
     error_message: str | None = None
 
 
@@ -253,6 +256,13 @@ class CategoryResponse(BaseModel):
     description: str = ""
     parent_id: str | None = None
     color: str = "#3498db"
+    # Documents carrying exactly this category (not its descendants).  Filled by
+    # the list endpoint; 0 where it is not computed (a category just created).
+    document_count: int = 0
+
+
+# DocumentDetailResponse (above) refers to CategoryResponse, defined just here.
+DocumentDetailResponse.model_rebuild()
 
 
 class CategoryListResponse(BaseModel):

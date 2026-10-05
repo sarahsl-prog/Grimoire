@@ -8,6 +8,10 @@ Every value comes from the database or from ingested files, so it is untrusted:
 each value widget is created with ``markup=False``, and a very long value (a
 stack trace in an error message, say) is capped rather than laid out in full.
 
+Tags can be edited here: ``a`` adds one (from the categories the document does
+not have), ``x`` removes one.  Both go through the API as the key in use, so a
+read-tier key is refused by the server and the reason is shown in the modal.
+
 The fetch runs in a thread worker.  A thread cannot be killed, so a screen that
 is dismissed mid-fetch still has its request finish; Textual cancels the
 screen's workers when it is removed, and a message posted to a screen that has
@@ -16,7 +20,7 @@ already gone is simply discarded, so the late result never lands anywhere.
 
 from __future__ import annotations
 
-from textual import work
+from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Grid, Vertical, VerticalScroll
@@ -25,13 +29,15 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 from textual.worker import get_current_worker
 
-from grimoire.api.schemas import DocumentDetailResponse
+from grimoire.api.schemas import CategoryResponse, DocumentDetailResponse
 from grimoire.client.client import GrimoireClient
 from grimoire.tui.errors import reachability, user_message
 from grimoire.tui.formatting import format_size, format_timestamp
 from grimoire.tui.messages import ConnectionReport
+from grimoire.tui.screens.tag_picker import TagPickerScreen
 
 _LOADING = "Loading…"
+_HINT = "a add tag · x remove tag · Esc close"
 _UNTITLED = "(untitled)"
 _BLANK = "-"
 _MAX_VALUE = 5_000
@@ -72,11 +78,13 @@ def _tags_text(tags: list[str]) -> str:
     return _shown(", ".join(t.strip() for t in tags if t and t.strip()))
 
 
-class DocumentDetailScreen(ModalScreen[None]):
+class DocumentDetailScreen(ModalScreen[bool]):
     """Show one document's details.
 
-    ``Escape``, ``q`` or the Close button dismisses it.  A failed fetch is shown
-    inside the modal and does not close it, so the message can be read.
+    ``Escape``, ``q`` or the Close button dismisses it, with ``True`` if a tag
+    was added or removed (so the caller can refresh its table) and ``False``
+    otherwise.  A failed fetch is shown inside the modal and does not close it,
+    so the message can be read.
 
     Args:
         client: API client.  Owned by the caller.
@@ -90,6 +98,8 @@ class DocumentDetailScreen(ModalScreen[None]):
     BINDINGS = [
         Binding("escape", "close", "Close"),
         Binding("q", "close", "Close"),
+        Binding("a", "add_tag", "Add tag"),
+        Binding("x", "remove_tag", "Remove tag"),
     ]
 
     class Loaded(Message):
@@ -106,10 +116,22 @@ class DocumentDetailScreen(ModalScreen[None]):
             super().__init__()
             self.error = error
 
+    class TagChanged(Message):
+        """A tag was added or removed on the server."""
+
+    class TagFailed(Message):
+        """An add or remove raised."""
+
+        def __init__(self, error: BaseException) -> None:
+            super().__init__()
+            self.error = error
+
     def __init__(self, client: GrimoireClient, document_id: str) -> None:
         super().__init__()
         self._client = client
         self._document_id = document_id
+        self._categories: list[CategoryResponse] = []  # the document's own tags
+        self._changed = False
         self.status_text = _LOADING
         self.values: dict[str, str] = {key: _BLANK for key, _ in _FIELDS}
 
@@ -133,6 +155,9 @@ class DocumentDetailScreen(ModalScreen[None]):
                         classes="detail-value",
                         markup=False,
                     )
+            # The app footer under a modal still shows the pane behind it, so the
+            # keys that only exist in here have to be named in here.
+            yield Static(_HINT, id="detail-hint", markup=False)
             yield Button("Close", id="detail-close")
 
     def on_mount(self) -> None:
@@ -157,6 +182,7 @@ class DocumentDetailScreen(ModalScreen[None]):
 
     def on_document_detail_screen_loaded(self, message: Loaded) -> None:
         result = message.result
+        self._categories = list(result.categories)
         self._set_status("")
         self._set_values(
             {
@@ -206,9 +232,67 @@ class DocumentDetailScreen(ModalScreen[None]):
     # -- actions ------------------------------------------------------------
 
     def action_close(self) -> None:
-        self.dismiss(None)
+        self.dismiss(self._changed)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "detail-close":
             event.stop()
-            self.dismiss(None)
+            self.dismiss(self._changed)
+
+    # -- tag editing --------------------------------------------------------
+
+    def action_add_tag(self) -> None:
+        self.app.push_screen(
+            TagPickerScreen(
+                "Add a tag",
+                client=self._client,
+                exclude=frozenset(c.id for c in self._categories),
+                empty_text="This document already has every category.",
+            ),
+            lambda chosen: self._edit_tag(chosen, remove=False),
+        )
+
+    def action_remove_tag(self) -> None:
+        if not self._categories:
+            self._set_status("This document has no tags to remove.")
+            return
+        self.app.push_screen(
+            TagPickerScreen("Remove a tag", categories=list(self._categories)),
+            lambda chosen: self._edit_tag(chosen, remove=True),
+        )
+
+    def _edit_tag(self, chosen: CategoryResponse | None, *, remove: bool) -> None:
+        if chosen is None:
+            return
+        self._set_status("Removing tag…" if remove else "Adding tag…")
+        self._apply_tag(chosen.id, remove)
+
+    @work(thread=True, exit_on_error=False, group="tag")
+    def _apply_tag(self, category_id: str, remove: bool) -> None:
+        worker = get_current_worker()
+        message: Message
+        try:
+            if remove:
+                self._client.untag_document(self._document_id, category_id)
+            else:
+                self._client.tag_document(self._document_id, category_id)
+            message = self.TagChanged()
+        except Exception as exc:
+            message = self.TagFailed(exc)
+        if not worker.is_cancelled:
+            self.post_message(message)
+
+    @on(TagChanged)
+    def _on_tag_changed(self, message: TagChanged) -> None:
+        message.stop()
+        self._changed = True
+        self._set_status("")
+        self._fetch()  # shows the new tag list
+
+    @on(TagFailed)
+    def _on_tag_failed(self, message: TagFailed) -> None:
+        message.stop()
+        self._set_status(user_message(message.error), error=True)
+        reachable = reachability(message.error)
+        if reachable is not None:
+            self.post_message(ConnectionReport(reachable=reachable))

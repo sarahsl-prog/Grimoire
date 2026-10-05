@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import lazyload
 
 from grimoire.api.auth import get_api_key, require_min_tier
 from grimoire.api.dependencies import get_db_session
@@ -15,7 +16,7 @@ from grimoire.api.schemas import (
     CategoryListResponse,
     CategoryResponse,
 )
-from grimoire.db.models import ApiKey, ApiKeyTier, Category
+from grimoire.db.models import ApiKey, ApiKeyTier, Category, DocumentTag
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -27,8 +28,19 @@ async def list_categories(
     db: AsyncSession = Depends(get_db_session),
 ) -> CategoryListResponse:
     """List all categories."""
-    result = await db.execute(select(Category).order_by(Category.name))
-    cats = result.scalars().all()
+    # One query with a LEFT JOIN, so a category nobody carries still appears
+    # (count 0) and the counts cannot belong to a different category than the
+    # row they sit on.  lazyload("*") because Category's relationships would
+    # otherwise load per row, and a lazy load inside an async request raises.
+    rows = (
+        await db.execute(
+            select(Category, func.count(DocumentTag.document_id))
+            .options(lazyload("*"))
+            .outerjoin(DocumentTag, DocumentTag.category_id == Category.id)
+            .group_by(Category.id)
+            .order_by(Category.name)
+        )
+    ).all()
 
     total = (await db.execute(select(func.count(Category.id)))).scalar() or 0
 
@@ -41,8 +53,9 @@ async def list_categories(
                 description=cat.description or "",
                 parent_id=cat.parent_id,
                 color=cat.color or "#3498db",
+                document_count=count,
             )
-            for cat in cats
+            for cat, count in rows
         ],
         total=total,
     )

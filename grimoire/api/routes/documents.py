@@ -10,6 +10,7 @@ from sqlalchemy.orm import lazyload
 from grimoire.api.auth import get_api_key, require_min_tier
 from grimoire.api.dependencies import get_db_session
 from grimoire.api.schemas import (
+    CategoryResponse,
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentResponse,
@@ -21,6 +22,7 @@ from grimoire.db.models import (
     Chunk,
     Document,
     DocumentTag,
+    TaggedBy,
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -192,10 +194,11 @@ async def get_document(
     # Names come from an explicit query: ``doc.tags`` holds DocumentTag rows
     # whose ``category`` is lazy, and a lazy load inside an async request
     # raises.  Sorted so the response is stable.
-    tag_names = list(
+    tag_categories = list(
         (
             await db.execute(
-                select(Category.name)
+                select(Category)
+                .options(lazyload("*"))
                 .join(DocumentTag, DocumentTag.category_id == Category.id)
                 .where(DocumentTag.document_id == doc.id)
                 .order_by(Category.name, Category.id)
@@ -204,6 +207,7 @@ async def get_document(
         .scalars()
         .all()
     )
+    tag_names = [cat.name for cat in tag_categories]
     chunk_count = (
         await db.execute(
             select(func.count(Chunk.id)).where(Chunk.document_id == doc.id)
@@ -235,8 +239,90 @@ async def get_document(
         chunk_count=chunk_count,
         tag_count=len(tag_names),
         tags=tag_names,
+        categories=[
+            CategoryResponse(
+                id=cat.id,
+                name=cat.name,
+                slug=cat.slug,
+                description=cat.description or "",
+                parent_id=cat.parent_id,
+                color=cat.color or "#3498db",
+            )
+            for cat in tag_categories
+        ],
         error_message=doc.error_message,
     )
+
+
+async def _tag_target(
+    db: AsyncSession, document_id: str, category_id: str
+) -> DocumentTag | None:
+    """The existing tag link, after checking both ends exist.
+
+    Raises:
+        HTTPException: 404 naming whichever of the document or category is
+            unknown, so a typo is not mistaken for "already untagged".
+    """
+    if await db.get(Document, document_id) is None:
+        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+    if await db.get(Category, category_id) is None:
+        raise HTTPException(status_code=404, detail=f"Category {category_id} not found")
+    return await db.get(DocumentTag, (document_id, category_id))
+
+
+@router.put("/{document_id}/tags/{category_id}", status_code=204)
+async def tag_document(
+    document_id: str,
+    category_id: str,
+    request: Request,
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """Tag a document with a category (idempotent).
+
+    A tag that is already there, whoever set it, is left exactly as it is.
+    """
+    if await _tag_target(db, document_id, category_id) is not None:
+        return
+    db.add(
+        DocumentTag(
+            document_id=document_id,
+            category_id=category_id,
+            confidence=1.0,
+            tagged_by=TaggedBy.USER,
+        )
+    )
+    try:
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        from loguru import logger
+
+        logger.error(f"Failed to tag document {document_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to tag document") from exc
+
+
+@router.delete("/{document_id}/tags/{category_id}", status_code=204)
+async def untag_document(
+    document_id: str,
+    category_id: str,
+    request: Request,
+    api_key: ApiKey = Depends(require_min_tier(ApiKeyTier.DEV)),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """Remove a category from a document (idempotent)."""
+    link = await _tag_target(db, document_id, category_id)
+    if link is None:
+        return
+    await db.delete(link)
+    try:
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        from loguru import logger
+
+        logger.error(f"Failed to untag document {document_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to untag document") from exc
 
 
 @router.delete("/{document_id}", status_code=204)
