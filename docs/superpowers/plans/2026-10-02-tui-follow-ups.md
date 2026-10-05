@@ -161,8 +161,9 @@ Not committed to; listed so the decision is visible.
 Dropped (2026-10-04): an in-process (serverless) mode. The TUI stays a thin
 HTTP client of the API.
 
-- [ ] Ingest, including a file picker (drag-and-drop does not exist in a
-  terminal).
+- [x] Ingest. **Done:** an Ingest tab with a path box and a one-at-a-time upload
+  queue. A file browser and directory ingest were deliberately left out (single
+  files only, decided 2026-10-05).
 - [x] Categories and tags management. **Done:** a Categories tab (list, counts,
   create), tag/untag from the document detail, and the API endpoints they needed.
   Category delete is deliberately not in the TUI.
