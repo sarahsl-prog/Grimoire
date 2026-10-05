@@ -96,6 +96,7 @@ class CategoriesPane(Vertical):
         self._request_id = 0
         self._has_data = False
         self._in_flight = False
+        self._stale = False  # something changed the corpus since the last load
         self._categories: list[CategoryResponse] = []
         self.status_text = ""
         self.footer_text = ""
@@ -126,8 +127,14 @@ class CategoriesPane(Vertical):
 
     def tab_shown(self) -> None:
         """First time the tab is shown, load.  A failed first load retries here."""
-        if not self._has_data and not self._in_flight:
+        if self._in_flight:
+            return
+        if not self._has_data or self._stale:
             self._load()
+
+    def mark_stale(self) -> None:
+        """Note that the corpus changed elsewhere; reload next time the tab shows."""
+        self._stale = True
 
     def focus_primary(self) -> None:
         table = self.query_one("#categories-table", DataTable)
@@ -186,6 +193,7 @@ class CategoriesPane(Vertical):
         if message.request_id != self._request_id:
             return  # a newer request is on its way
         self._in_flight = False
+        self._stale = False
         self._has_data = True
         self._categories = list(message.result.categories)
         self._set_status("")

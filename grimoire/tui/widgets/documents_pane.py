@@ -137,6 +137,7 @@ class DocumentsPane(Vertical):
         self._activated = False  # the tab has been shown at least once
         self._has_data = False  # a page has loaded successfully
         self._in_flight = False
+        self._stale = False  # something changed the corpus since the last load
         self._shown_page = 0  # the page the table currently holds
         self._target_page = 0  # the page most recently asked for
         self._total = 0
@@ -198,8 +199,16 @@ class DocumentsPane(Vertical):
     def tab_shown(self) -> None:
         """First time the tab is shown, load.  A failed first load retries here."""
         self._activated = True
-        if not self._has_data and not self._in_flight:
+        if self._in_flight:
+            return
+        if not self._has_data:
             self._load(0)
+        elif self._stale:
+            self.refresh_data()
+
+    def mark_stale(self) -> None:
+        """Note that the corpus changed elsewhere; reload next time the tab shows."""
+        self._stale = True
 
     def focus_primary(self) -> None:
         """Give the keyboard to the table (or the Refresh button when it is hidden)."""
@@ -366,6 +375,7 @@ class DocumentsPane(Vertical):
             return
 
         self._in_flight = False
+        self._stale = False
         self._total = result.total
         self._shown_page = self._target_page = request.page
         self._has_data = True
