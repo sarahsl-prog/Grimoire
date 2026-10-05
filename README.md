@@ -364,10 +364,10 @@ design.
 
 A [Textual](https://textual.textualize.io/) client for the same REST API, for
 when you are already in a terminal (including over SSH, where the desktop GUI
-cannot open a window). Three screens: **Search / Ask**, with the retrieved source
+cannot open a window). Four screens: **Search / Ask**, with the retrieved source
 chunks next to the answer; **Documents**, a paged, filterable table of what the
-corpus holds with a detail view for each document; and **Categories**, the
-labels documents are tagged with. On a narrow
+corpus holds with a detail view for each document; **Categories**, the labels
+documents are tagged with; and **Ingest**, for sending files to the API. On a narrow
 terminal the table drops its least useful columns (Tags, Chunks, Type, Size) and
 says so under the table; widening the terminal brings them back.
 
@@ -415,7 +415,7 @@ and no value is logged. Launch from the project directory to pick up the same
 
 | Key | Where | Action |
 |---|---|---|
-| `F1` / `F2` / `F3` | anywhere | Switch to Search / Ask, Documents or Categories |
+| `F1` / `F2` / `F3` / `F4` | anywhere | Switch to Search / Ask, Documents, Categories or Ingest |
 | `Ctrl+R` | anywhere | Re-check the API; on Documents, reload the current page |
 | `Ctrl+K` | anywhere | Enter or replace the API key for this session (masked; kept in memory only, never saved) |
 | `?` | when not typing in a box | Key help panel (`Ctrl+P` opens the command palette) |
@@ -429,6 +429,7 @@ and no value is logged. Launch from the project directory to pick up the same
 | `a` / `x` | in the detail view | Add / remove a tag on that document (pick from a list) |
 | `Esc` or `q` | in the detail view | Close it |
 | `n` | Categories | New category (name, description, optional parent) |
+| `Enter` | Ingest | Queue the path in the box for upload |
 
 The filter row on **Search / Ask** (tags, source type, severity, CVE id) sends
 the same metadata filters as `grimoire ask --severity ...`. **Documents** can be
@@ -443,6 +444,15 @@ and adding or removing a tag need a `dvl` (dev) or `agt` key; with a read-tier
 key the server refuses and the TUI shows its reason. The same operations are
 `POST /api/v1/categories` and `PUT` / `DELETE
 /api/v1/documents/{id}/tags/{category_id}`.
+
+**Ingest** takes the path of a file *on the machine running the TUI* and uploads
+it (`POST /api/v1/ingest/upload`), so it works over SSH and against a remote
+server. Paths pasted with quotes or typed with `~` are cleaned up. Files go up
+one at a time, each with its own result row (`done`, `skipped` if it is already
+in the corpus, or `failed` with the reason); one failure does not stop the rest.
+The *Auto-tag* box controls LLM tagging. Single files only: a directory is
+refused with a message. Ingesting needs a `dvl` or `agt` key. After a file is
+added, the Documents and Categories tabs reload the next time you open them.
 
 The status bar shows the API address (never the key), whether a key is set, and
 whether the API answered. Its indicator uses `GET /health`, which does not

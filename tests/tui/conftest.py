@@ -45,6 +45,7 @@ class StubClient:
     categories_script: list[_Step] = field(default_factory=list)
     create_category_script: list[_Step] = field(default_factory=list)
     tag_script: list[_Step] = field(default_factory=list)
+    upload_script: list[_Step] = field(default_factory=list)
     # Every ask/search call, in order: (method, positional args, keyword args).
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(
         default_factory=list
@@ -94,6 +95,10 @@ class StubClient:
     def untag_document(self, document_id: str, category_id: str) -> Any:
         self.calls.append(("untag_document", (document_id, category_id), {}))
         return self._run(self.tag_script.pop(0))
+
+    def upload(self, path: Any, **kwargs: Any) -> Any:
+        self.calls.append(("upload", (path,), kwargs))
+        return self._run(self.upload_script.pop(0))
 
     def calls_to(self, method: str) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
         return [(a, k) for m, a, k in self.calls if m == method]

@@ -6,6 +6,13 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **Ingest in the TUI.** A fourth tab (`F4`): type the path of a file on the
+  machine running the TUI and press Enter to upload it. Uploads run one at a
+  time with a result row each (done, skipped as a duplicate, or failed with the
+  reason), and a failure does not stop the rest. Auto-tag can be switched off.
+  Single files only. After a successful ingest the Documents and Categories
+  tabs reload when next shown. Needs a `dvl` or `agt` key.
+
 - **Categories and tags in the TUI.** A third tab (`F3`) lists categories with
   how many documents carry each, and `n` creates one (name, description,
   optional parent). In a document's detail view, `a` adds a tag from the

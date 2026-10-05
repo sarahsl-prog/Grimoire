@@ -358,3 +358,46 @@ TagPickerScreen {
     height: auto;
     max-height: 14;
 }
+
+/* -- Ingest pane ----------------------------------------------------------- */
+
+IngestPane {
+    padding: 0 1;
+}
+
+#ingest-input-row {
+    height: 3;
+}
+
+#ingest-path {
+    width: 1fr;
+}
+
+#ingest-autotag {
+    width: auto;
+    margin-left: 1;
+}
+
+#ingest-status {
+    height: auto;
+    color: $text-muted;
+}
+
+#ingest-status.-error {
+    color: $error;
+}
+
+#ingest-table {
+    height: 1fr;
+}
+
+#ingest-empty {
+    height: 1fr;
+    content-align: center middle;
+    color: $text-muted;
+}
+
+#ingest-footer {
+    height: auto;
+    color: $text-muted;
+}

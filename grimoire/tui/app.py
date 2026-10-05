@@ -34,6 +34,7 @@ from grimoire.tui.messages import ConnectionReport
 from grimoire.tui.screens.api_key import ApiKeyScreen
 from grimoire.tui.widgets.categories_pane import CategoriesPane
 from grimoire.tui.widgets.documents_pane import DocumentsPane
+from grimoire.tui.widgets.ingest_pane import IngestPane
 from grimoire.tui.widgets.search_pane import SearchPane
 from grimoire.tui.widgets.status_bar import StatusBar
 
@@ -69,6 +70,7 @@ class GrimoireApp(App[None]):
         Binding("f1", "show_tab('search')", "Search"),
         Binding("f2", "show_tab('documents')", "Documents"),
         Binding("f3", "show_tab('categories')", "Categories"),
+        Binding("f4", "show_tab('ingest')", "Ingest"),
         Binding("ctrl+r", "refresh_all", "Refresh"),
         # priority: a focused Input binds Ctrl+K to "delete to end of line", and
         # the query box has the keyboard most of the time.
@@ -109,6 +111,10 @@ class GrimoireApp(App[None]):
         """Build the Categories pane."""
         return CategoriesPane(self._client, id="categories-pane")
 
+    def make_ingest_pane(self) -> Widget:
+        """Build the Ingest pane."""
+        return IngestPane(self._client, id="ingest-pane")
+
     # -- composition and lifecycle ----------------------------------------
 
     def compose(self) -> ComposeResult:
@@ -118,6 +124,7 @@ class GrimoireApp(App[None]):
             yield TabPane("Search / Ask", self.make_search_pane(), id="search")
             yield TabPane("Documents", self.make_documents_pane(), id="documents")
             yield TabPane("Categories", self.make_categories_pane(), id="categories")
+            yield TabPane("Ingest", self.make_ingest_pane(), id="ingest")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -192,6 +199,13 @@ class GrimoireApp(App[None]):
             reachable = False
         if not worker.is_cancelled:
             self.post_message(ConnectionReport(reachable))
+
+    def on_ingest_pane_completed(self, message: IngestPane.Completed) -> None:
+        """A file was ingested: the document and category views are now stale."""
+        for documents in self.query(DocumentsPane):
+            documents.mark_stale()
+        for categories in self.query(CategoriesPane):
+            categories.mark_stale()
 
     def on_connection_report(self, message: ConnectionReport) -> None:
         try:
