@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -28,16 +27,13 @@ from grimoire.api.schemas import (
     IngestResultResponse,
 )
 from grimoire.db.models import ApiKey, ApiKeyTier
+from grimoire.utils.path_guard import (
+    PathNotAllowedError,
+    configured_roots,
+    resolve_allowed,
+)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
-
-# Resolve allowed roots once at module load — harmless because they are
-# absolute system paths.  Symlinks inside them are still followed at runtime.
-# Allowlist of path prefixes, not a temp-file write, hence the S108/B108 waivers.
-_ALLOWED_ROOTS = [
-    Path("/tmp").resolve(),  # noqa: S108  # nosec B108
-]
-_MAX_PATH_LEN = 2048
 
 # Read the body a megabyte at a time.  Streaming rather than awaiting the
 # whole upload keeps a large file off the heap: one chunk is resident at a
@@ -138,39 +134,18 @@ async def _stream_upload_to_disk(
 
 
 def _is_path_allowed(raw_path: str) -> Path:
-    """Sanitize a user-provided path and verify it stays under allowed roots.
+    """Resolve a caller-supplied server path, or raise the matching HTTP error.
 
-    Steps:
-      1. Reject null bytes and overly long strings.
-      2. Resolve symlinks via realpath() and resolve().
-      3. Ensure the canonical path is under an allowed root.
-
-    Raises HTTPException(400) for invalid input and HTTPException(403) for
-    paths that escape the chroot-style boundary.
+    The rules live in ``grimoire.utils.path_guard`` (shared with the watch
+    routes and the MCP tools); this only maps its refusal onto a status code:
+    400 for a malformed path, 403 for one outside the configured roots.
     """
-    if "\x00" in raw_path:
-        raise HTTPException(status_code=400, detail="Null bytes not allowed in path")
-
-    if len(raw_path) > _MAX_PATH_LEN:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Path exceeds maximum length of {_MAX_PATH_LEN} characters",
-        )
-
-    # realpath follows symlinks; resolve() makes it absolute and collapses "..".
-    resolved = Path(raw_path).resolve()
     try:
-        real = Path(os.path.realpath(resolved))
-    except OSError:
-        real = resolved
-
-    if not any(real.is_relative_to(root) for root in _ALLOWED_ROOTS):
+        return resolve_allowed(raw_path, configured_roots())
+    except PathNotAllowedError as exc:
         raise HTTPException(
-            status_code=403,
-            detail="Path not in allowed directories. Use paths under /tmp.",
-        )
-
-    return real
+            status_code=403 if exc.forbidden else 400, detail=exc.message
+        ) from None
 
 
 @router.post("/file", response_model=IngestResultResponse)

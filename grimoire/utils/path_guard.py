@@ -49,6 +49,17 @@ def _canonical(path: Path) -> Path:
         return resolved
 
 
+def configured_roots() -> list[Path]:
+    """The roots from settings (``api.allowed_roots``), read at call time.
+
+    Read per call, not at import, so a changed setting or a test override takes
+    effect without reloading modules.
+    """
+    from grimoire.config.settings import get_settings
+
+    return list(get_settings().api.allowed_roots)
+
+
 def resolve_allowed(raw_path: str, roots: Sequence[Path]) -> Path:
     """Return the canonical form of ``raw_path`` if it lies inside a root.
 
