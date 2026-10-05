@@ -339,7 +339,7 @@ async def test_ingest_directory_allowed_for_dev_tier(mcp_server: Any) -> None:
         mock_agent.return_value.ingest_directory = AsyncMock(
             return_value=MagicMock(
                 model_dump=lambda: {
-                    "directory": "/nonexistent/dir",
+                    "directory": "/tmp/grimoire-test-dir",
                     "status": "completed",
                 },
             )
@@ -347,7 +347,7 @@ async def test_ingest_directory_allowed_for_dev_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool(
             "grimoire_ingest_directory",
             {
-                "params": {"directory": "/nonexistent/dir"},
+                "params": {"directory": "/tmp/grimoire-test-dir"},
             },
         )
         assert '"status": "ok"' in result.content[0].text
@@ -452,7 +452,7 @@ async def test_watch_start_allowed_for_dev_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool(
             "grimoire_watch_start",
             {
-                "params": {"path": "/nonexistent/dir"},
+                "params": {"path": "/tmp/grimoire-test-dir"},
             },
         )
     assert '"status": "ok"' in result.content[0].text
@@ -682,7 +682,7 @@ async def test_ingest_allowed_for_dev_tier(mcp_server: Any) -> None:
         mock_agent.return_value.ingest_file = AsyncMock(
             return_value=MagicMock(
                 model_dump=lambda: {
-                    "file_path": "/nonexistent/test.txt",
+                    "file_path": "/tmp/grimoire-test.txt",
                     "status": "completed",
                 },
             )
@@ -690,7 +690,7 @@ async def test_ingest_allowed_for_dev_tier(mcp_server: Any) -> None:
         result = await mcp_server.call_tool(
             "grimoire_ingest_file",
             {
-                "params": {"file_path": "/nonexistent/test.txt"},
+                "params": {"file_path": "/tmp/grimoire-test.txt"},
             },
         )
         assert '"status": "ok"' in result.content[0].text
@@ -1267,3 +1267,66 @@ def test_mcp_accepts_valid_api_key(client: TestClient) -> None:
     """Requests to /mcp with a valid X-API-Key pass auth."""
     response = client.get("/mcp/sse", headers={"X-API-Key": "grim_agt_testkey123"})
     assert response.status_code != 401
+
+
+# ---------------------------------------------------------------------------
+# Server-path confinement (api.allowed_roots)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "params"),
+    [
+        ("grimoire_ingest_file", {"file_path": "/etc/passwd"}),
+        ("grimoire_ingest_directory", {"directory": "/etc"}),
+        ("grimoire_watch_start", {"path": "/etc"}),
+    ],
+)
+async def test_path_tools_refuse_paths_outside_allowed_roots(
+    mcp_server: Any, tool: str, params: dict[str, str]
+) -> None:
+    """A DEV key still cannot point the server at arbitrary directories."""
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+
+    with (
+        patch("grimoire.mcp.tools.get_ingestion_agent") as mock_agent,
+        patch("grimoire.mcp.tools._get_mcp_watcher") as mock_watcher,
+    ):
+        result = await mcp_server.call_tool(tool, {"params": params})
+
+    text = result.content[0].text
+    assert '"status": "error"' in text
+    assert "not in an allowed directory" in text
+    assert "/etc" not in text.replace("Allowed:", "")  # never echoes the path
+    mock_agent.assert_not_called()
+    mock_watcher.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_watch_start_cloud_backend_skips_path_guard(mcp_server: Any) -> None:
+    """A cloud backend path is a remote name, not a server filesystem path."""
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+    mock_watcher = MagicMock()
+    mock_watcher.watch = AsyncMock(return_value="watch-2")
+
+    with patch("grimoire.mcp.tools._get_mcp_watcher", return_value=mock_watcher):
+        result = await mcp_server.call_tool(
+            "grimoire_watch_start",
+            {"params": {"path": "remote:docs", "backend": "rclone"}},
+        )
+    assert '"status": "ok"' in result.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_watch_start_duplicate_is_a_tool_error(mcp_server: Any) -> None:
+    """The watcher's ValueError (already watched) becomes a clean error."""
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+    mock_watcher = MagicMock()
+    mock_watcher.watch = AsyncMock(side_effect=ValueError("Already watching"))
+
+    with patch("grimoire.mcp.tools._get_mcp_watcher", return_value=mock_watcher):
+        result = await mcp_server.call_tool(
+            "grimoire_watch_start", {"params": {"path": "/tmp"}}
+        )
+    assert '"status": "error"' in result.content[0].text

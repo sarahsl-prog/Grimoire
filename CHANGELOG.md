@@ -4,6 +4,21 @@ All notable changes to Grimoire are documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **Server paths are confined everywhere.** Only REST file/directory ingest
+  checked the path; REST `watch/start` and the MCP tools `grimoire_watch_start`,
+  `grimoire_ingest_file` and `grimoire_ingest_directory` accepted any path, so a
+  `dvl` key could make the server read and index anything it could open. All
+  five now share one guard (`grimoire.utils.path_guard`) that resolves `..` and
+  symlinks and requires the path to sit inside `api.allowed_roots`. **Breaking:**
+  the default is `["/tmp"]`; widen it with
+  `GRIMOIRE_API__ALLOWED_ROOTS='["/data/watch","/tmp"]'`. Refusals say which
+  roots are allowed but never echo the rejected path. Cloud/rclone watches are
+  not path-checked (their paths are remote names), and the `grimoire` CLI is
+  unrestricted since running it needs a shell on the host. Also: an unknown
+  watch backend or an already-watched path is now a 400, not a 500.
+
 ### Added
 
 - **Content generation in the TUI.** `g` in a document's detail view opens a
