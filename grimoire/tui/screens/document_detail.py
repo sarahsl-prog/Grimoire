@@ -34,10 +34,11 @@ from grimoire.client.client import GrimoireClient
 from grimoire.tui.errors import reachability, user_message
 from grimoire.tui.formatting import format_size, format_timestamp
 from grimoire.tui.messages import ConnectionReport
+from grimoire.tui.screens.generate import GenerateScreen
 from grimoire.tui.screens.tag_picker import TagPickerScreen
 
 _LOADING = "Loading…"
-_HINT = "a add tag · x remove tag · Esc close"
+_HINT = "a add tag · x remove tag · g generate · Esc close"
 _UNTITLED = "(untitled)"
 _BLANK = "-"
 _MAX_VALUE = 5_000
@@ -100,6 +101,7 @@ class DocumentDetailScreen(ModalScreen[bool]):
         Binding("q", "close", "Close"),
         Binding("a", "add_tag", "Add tag"),
         Binding("x", "remove_tag", "Remove tag"),
+        Binding("g", "generate", "Generate"),
     ]
 
     class Loaded(Message):
@@ -131,6 +133,7 @@ class DocumentDetailScreen(ModalScreen[bool]):
         self._client = client
         self._document_id = document_id
         self._categories: list[CategoryResponse] = []  # the document's own tags
+        self._title = ""  # for the Generate heading, once loaded
         self._changed = False
         self.status_text = _LOADING
         self.values: dict[str, str] = {key: _BLANK for key, _ in _FIELDS}
@@ -183,6 +186,7 @@ class DocumentDetailScreen(ModalScreen[bool]):
     def on_document_detail_screen_loaded(self, message: Loaded) -> None:
         result = message.result
         self._categories = list(result.categories)
+        self._title = (result.title or "").strip() or result.source_path
         self._set_status("")
         self._set_values(
             {
@@ -238,6 +242,13 @@ class DocumentDetailScreen(ModalScreen[bool]):
         if event.button.id == "detail-close":
             event.stop()
             self.dismiss(self._changed)
+
+    # -- generating ---------------------------------------------------------
+
+    def action_generate(self) -> None:
+        self.app.push_screen(
+            GenerateScreen(self._client, self._document_id, self._title or _UNTITLED)
+        )
 
     # -- tag editing --------------------------------------------------------
 

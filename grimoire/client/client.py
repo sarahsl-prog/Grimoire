@@ -20,6 +20,7 @@ from grimoire.api.schemas import (
     CategoryResponse,
     DocumentDetailResponse,
     DocumentListResponse,
+    GenerateResponse,
     IngestResultResponse,
     QueryResponse,
     SearchResponse,
@@ -43,6 +44,17 @@ _API_PREFIX = "/api/v1"
 # The server's limit on a category name (CategoryCreateRequest.name).  Checked
 # here too so a name it would refuse never costs a round trip.
 _MAX_CATEGORY_NAME = 100
+
+# What POST /generate accepts (grimoire.db.models.ContentType minus "image",
+# which the endpoint does not serve) and the bounds of its `count` option.
+GENERATE_TYPES: tuple[str, ...] = (
+    "summary",
+    "flash_card",
+    "cliff_notes",
+    "outline",
+    "extract",
+)
+_MIN_COUNT, _MAX_COUNT = 1, 100
 
 
 class GrimoireClient:
@@ -228,6 +240,62 @@ class GrimoireClient:
             f"{_API_PREFIX}/documents/{quote(doc, safe='')}"
             f"/tags/{quote(cat, safe='')}"
         )
+
+    def generate(
+        self,
+        document_ids: list[str],
+        content_type: str,
+        *,
+        style: str | None = None,
+        count: int | None = None,
+        query: str | None = None,
+    ) -> GenerateResponse:
+        """Generate a summary, flash cards, notes, an outline or an extract.
+
+        Needs a dev or agent key.  An LLM does the work, so this waits for the
+        long timeout rather than the default one.
+
+        Args:
+            document_ids: The documents to generate from.
+            content_type: One of ``GENERATE_TYPES``.
+            style: Summary style (the server defaults to ``concise``).
+            count: Number of flash cards (1 to 100).
+            query: What to extract; required for ``extract``.
+
+        Raises:
+            RequestRejected: The request is one the server would refuse (checked
+                here first, so it costs no round trip), a document is unknown
+                (404), or the key is too weak (403).
+        """
+        ids = [d.strip() for d in document_ids]
+        if not ids or not all(ids):
+            raise RequestRejected("Choose at least one document to generate from.")
+        if content_type not in GENERATE_TYPES:
+            raise RequestRejected(
+                f"Unknown content type '{content_type}'. "
+                f"Choose one of: {', '.join(GENERATE_TYPES)}."
+            )
+        cleaned_query = (query or "").strip()
+        if content_type == "extract" and not cleaned_query:
+            raise RequestRejected("Say what to extract.")
+        if count is not None and not _MIN_COUNT <= count <= _MAX_COUNT:
+            raise RequestRejected(
+                f"The number of cards must be between {_MIN_COUNT} and {_MAX_COUNT}."
+            )
+        body: dict[str, Any] = {"document_ids": ids, "content_type": content_type}
+        if style and style.strip():
+            body["style"] = style.strip()
+        if count is not None:
+            body["count"] = count
+        if cleaned_query:
+            body["query"] = cleaned_query
+        response = self._request(
+            "POST",
+            f"{_API_PREFIX}/generate",
+            json=body,
+            timeout=self._long_timeout(),
+        )
+        return self._parse(response, GenerateResponse)
 
     def get_document(self, document_id: str) -> DocumentDetailResponse:
         """Full detail for one document.

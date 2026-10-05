@@ -401,3 +401,58 @@ IngestPane {
     height: auto;
     color: $text-muted;
 }
+
+/* -- Generate modal -------------------------------------------------------- */
+
+GenerateScreen {
+    align: center middle;
+}
+
+#gen-box {
+    width: 90%;
+    max-width: 110;
+    height: auto;
+    max-height: 95%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#gen-heading {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#gen-controls {
+    height: 3;
+}
+
+#gen-kind {
+    width: 1fr;
+    margin-right: 1;
+}
+
+#gen-status {
+    height: auto;
+    color: $text-muted;
+}
+
+#gen-status.-error {
+    color: $error;
+}
+
+#gen-result {
+    height: auto;
+    max-height: 22;
+    border: round $primary-muted;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+#gen-meta {
+    color: $text-muted;
+}
+
+#gen-close {
+    margin-top: 1;
+}

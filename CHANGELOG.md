@@ -6,6 +6,13 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **Content generation in the TUI.** `g` in a document's detail view opens a
+  Generate screen: summary, flash cards, cliff notes, outline, or an extract
+  (with a question). The result is shown in place with the model, duration and
+  whether it was cached; generated text is displayed as plain text and capped
+  for display. Needs a `dvl` or `agt` key. The shared client gains `generate()`,
+  which validates what the server would refuse and waits for the long timeout.
+
 - **Ingest in the TUI.** A fourth tab (`F4`): type the path of a file on the
   machine running the TUI and press Enter to upload it. Uploads run one at a
   time with a result row each (done, skipped as a duplicate, or failed with the
