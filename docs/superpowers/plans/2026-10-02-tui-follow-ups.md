@@ -167,7 +167,9 @@ HTTP client of the API.
 - [x] Categories and tags management. **Done:** a Categories tab (list, counts,
   create), tag/untag from the document detail, and the API endpoints they needed.
   Category delete is deliberately not in the TUI.
-- [ ] Content generation (summaries, flashcards, cliff-notes, outlines).
+- [x] Content generation (summaries, flashcards, cliff-notes, outlines).
+  **Done:** `g` in the document detail opens a Generate screen (also extracts).
+  The API needed no change.
 - [ ] Watcher control (start, stop and status of the file watcher).
 - [ ] Wiki compilation.
 - [x] Delete a document. **Dropped (2026-10-04):** not building it into the TUI;

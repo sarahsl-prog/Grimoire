@@ -427,6 +427,7 @@ and no value is logged. Launch from the project directory to pick up the same
 | `/` | Documents | Search documents by title or path (`Enter` applies, `Esc` clears) |
 | `Enter` | on a document row | Open the document's detail |
 | `a` / `x` | in the detail view | Add / remove a tag on that document (pick from a list) |
+| `g` | in the detail view | Generate a summary, flash cards, cliff notes, an outline or an extract from that document |
 | `Esc` or `q` | in the detail view | Close it |
 | `n` | Categories | New category (name, description, optional parent) |
 | `Enter` | Ingest | Queue the path in the box for upload |
@@ -444,6 +445,14 @@ and adding or removing a tag need a `dvl` (dev) or `agt` key; with a read-tier
 key the server refuses and the TUI shows its reason. The same operations are
 `POST /api/v1/categories` and `PUT` / `DELETE
 /api/v1/documents/{id}/tags/{category_id}`.
+
+**Generate** (`g` in a document's detail view) asks the API's content generator
+for a summary, flash cards, cliff notes, an outline, or an *extract* (which also
+asks what to extract) and shows the result in place, with the model, the time it
+took, and whether it came from the cache. It can take a minute or more, so the
+screen says it is working and can be closed meanwhile (the server may keep going,
+and its answer is then discarded). Output is shown as plain text and capped at
+50,000 characters. Needs a `dvl` or `agt` key.
 
 **Ingest** takes the path of a file *on the machine running the TUI* and uploads
 it (`POST /api/v1/ingest/upload`), so it works over SSH and against a remote
