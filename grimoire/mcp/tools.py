@@ -31,6 +31,11 @@ from grimoire.cli.helpers import build_watcher
 from grimoire.config.settings import get_settings
 from grimoire.db.models import ApiKeyTier, ProcessingStatus
 from grimoire.db.session import get_db_context
+from grimoire.utils.path_guard import (
+    PathNotAllowedError,
+    configured_roots,
+    resolve_allowed,
+)
 
 from .auth_stdio import require_tier
 
@@ -734,19 +739,27 @@ async def grimoire_ask(params: AskInput, ctx: Context) -> str:
 async def grimoire_ingest_file(params: IngestFileInput, ctx: Context) -> str:
     """Ingest a single file into the knowledge base.  Requires DEV tier or higher."""
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
+    try:
+        path = resolve_allowed(params.file_path, configured_roots())
+    except PathNotAllowedError as exc:
+        return _err(exc.message)
     agent = get_ingestion_agent()
     async with get_db_context() as db:
-        result = await agent.ingest_file(db, params.file_path, auto_tag=params.auto_tag)
+        result = await agent.ingest_file(db, str(path), auto_tag=params.auto_tag)
     return _ok(result.model_dump())
 
 
 async def grimoire_ingest_directory(params: IngestDirectoryInput, ctx: Context) -> str:
     """Ingest all supported files from a directory.  Requires DEV tier or higher."""
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
+    try:
+        directory = resolve_allowed(params.directory, configured_roots())
+    except PathNotAllowedError as exc:
+        return _err(exc.message)
     agent = get_ingestion_agent()
     async with get_db_context() as db:
         result = await agent.ingest_directory(
-            db, params.directory, recursive=params.recursive, auto_tag=params.auto_tag
+            db, str(directory), recursive=params.recursive, auto_tag=params.auto_tag
         )
     return _ok(result.model_dump())
 
@@ -989,16 +1002,26 @@ async def grimoire_create_category(params: CreateCategoryInput, ctx: Context) ->
 async def grimoire_watch_start(params: WatchStartInput, ctx: Context) -> str:
     """Start watching a path for changes.  Requires DEV tier or higher."""
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
+    path = params.path
+    if params.backend in ("local", "usb"):
+        # Cloud/rclone paths are remote names, not server filesystem paths.
+        try:
+            path = str(resolve_allowed(params.path, configured_roots()))
+        except PathNotAllowedError as exc:
+            return _err(exc.message)
     watcher = _get_mcp_watcher()
-    watch_id = await watcher.watch(
-        params.path,
-        backend=params.backend,
-        recursive=params.recursive,
-    )
+    try:
+        watch_id = await watcher.watch(
+            path,
+            backend=params.backend,
+            recursive=params.recursive,
+        )
+    except ValueError as exc:
+        return _err(str(exc))
     return _ok(
         {
             "watch_id": watch_id,
-            "path": params.path,
+            "path": path,
             "backend": params.backend,
             "is_running": True,
         }

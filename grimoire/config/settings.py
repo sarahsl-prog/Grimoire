@@ -723,6 +723,11 @@ class APIConfig(BaseModel):
             not deleted after ingest, because Document.source_path points at
             them.
         max_upload_bytes: Hard cap enforced while streaming an upload.
+        allowed_roots: Directories on the server that REST and MCP callers may
+            point ingest and watch at.  Defaults to ``/tmp`` only.  Absolute
+            paths, never ``/``.  Set with ``GRIMOIRE_API__ALLOWED_ROOTS`` as a
+            JSON list, e.g. ``'["/data/watch"]'``.  An empty list refuses every
+            server-side path (uploads are unaffected).  The CLI is not limited.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -747,6 +752,29 @@ class APIConfig(BaseModel):
         ge=1,
         description="Maximum accepted upload size in bytes",
     )
+    allowed_roots: list[Path] = Field(
+        default_factory=lambda: [Path("/tmp")],  # noqa: S108  # nosec B108
+        description=(
+            "Server directories REST and MCP callers may ingest from or watch. "
+            "Absolute paths only; '/' is rejected."
+        ),
+    )
+
+    @field_validator("allowed_roots")
+    @classmethod
+    def _validate_allowed_roots(cls, roots: list[Path]) -> list[Path]:
+        for root in roots:
+            if not root.is_absolute():
+                raise ValueError(
+                    f"allowed_roots entries must be absolute paths, got '{root}'. "
+                    "A relative path would depend on the server's working directory."
+                )
+            if root.resolve() == Path(root.anchor):
+                raise ValueError(
+                    "allowed_roots must not be the filesystem root: that would "
+                    "allow every path and defeat the allowlist."
+                )
+        return roots
 
     @field_validator("secret_key")
     @classmethod

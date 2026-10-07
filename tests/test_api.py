@@ -1047,6 +1047,52 @@ class TestWatchAPI:
             resp = client.delete("/api/v1/watch/nonexistent")
         assert resp.status_code == 404
 
+    def _watcher(self, **kw):
+        inst = MagicMock()
+        inst.watch = AsyncMock(**({"return_value": "w1"} | kw))
+        return inst
+
+    def test_start_watch_outside_allowed_roots_is_403(self, client):
+        inst = self._watcher()
+        with patch(f"{_ROUTES_WATCH}._get_watcher", return_value=inst):
+            resp = client.post("/api/v1/watch/start", json={"path": "/etc"})
+        assert resp.status_code == 403
+        assert "allowed directory" in resp.json()["detail"]
+        inst.watch.assert_not_called()
+
+    def test_start_watch_inside_allowed_root_passes_resolved_path(self, client):
+        inst = self._watcher()
+        with patch(f"{_ROUTES_WATCH}._get_watcher", return_value=inst):
+            resp = client.post("/api/v1/watch/start", json={"path": "/tmp/../tmp/docs"})
+        assert resp.status_code == 201
+        # The watcher gets the canonical path, not the caller's spelling.
+        assert inst.watch.call_args.args[0].endswith("/tmp/docs")
+        assert ".." not in inst.watch.call_args.args[0]
+
+    def test_start_watch_unknown_backend_is_400(self, client):
+        inst = self._watcher()
+        with patch(f"{_ROUTES_WATCH}._get_watcher", return_value=inst):
+            resp = client.post(
+                "/api/v1/watch/start", json={"path": "/tmp/x", "backend": "ftp"}
+            )
+        assert resp.status_code == 400
+        inst.watch.assert_not_called()
+
+    def test_start_watch_cloud_backend_skips_path_guard(self, client):
+        inst = self._watcher()
+        with patch(f"{_ROUTES_WATCH}._get_watcher", return_value=inst):
+            resp = client.post(
+                "/api/v1/watch/start",
+                json={"path": "remote:docs", "backend": "rclone"},
+            )
+        assert resp.status_code == 201
+
+    def test_start_watch_duplicate_is_400_not_500(self, client):
+        inst = self._watcher(side_effect=ValueError("Already watching"))
+        with patch(f"{_ROUTES_WATCH}._get_watcher", return_value=inst):
+            resp = client.post("/api/v1/watch/start", json={"path": "/tmp/docs"})
+        assert resp.status_code == 400
+
 
 # =============================================================================
 # Edge Cases

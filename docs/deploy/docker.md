@@ -48,6 +48,12 @@ sequence (embedding model load can take a minute on a cold `model_cache`).
 | `pgadmin` (profile `tools`) | 5050 | Optional Postgres management UI |
 | `redis-commander` (profile `tools`) | 8081 | Optional Redis management UI |
 
+> **Server paths.** The REST API and MCP server only ingest from, or watch,
+> directories under `api.allowed_roots` (default `["/tmp"]`). To let API clients
+> use `/data/watch`, set `GRIMOIRE_API__ALLOWED_ROOTS='["/data/watch","/tmp"]'`
+> on the `api` service. The `watcher` service runs the CLI, which is not
+> restricted.
+
 The `tools` profile services don't start with a plain `docker compose up`;
 add `--profile tools` to bring them up alongside the rest.
 
