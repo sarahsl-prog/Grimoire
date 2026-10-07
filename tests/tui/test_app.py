@@ -56,7 +56,7 @@ async def _settled(app: GrimoireApp, pilot: Any) -> None:
 
 
 class TestLayout:
-    async def test_has_the_four_tabs_with_search_first(
+    async def test_has_the_five_tabs_with_search_first(
         self, stub_client: StubClient
     ) -> None:
         app = _make(stub_client)
@@ -69,6 +69,7 @@ class TestLayout:
                 "documents",
                 "categories",
                 "ingest",
+                "watch",
             }
             await _settled(app, pilot)
 

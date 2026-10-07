@@ -47,6 +47,9 @@ class StubClient:
     tag_script: list[_Step] = field(default_factory=list)
     upload_script: list[_Step] = field(default_factory=list)
     generate_script: list[_Step] = field(default_factory=list)
+    watch_status_script: list[_Step] = field(default_factory=list)
+    start_watch_script: list[_Step] = field(default_factory=list)
+    stop_watch_script: list[_Step] = field(default_factory=list)
     # Every ask/search call, in order: (method, positional args, keyword args).
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(
         default_factory=list
@@ -106,6 +109,18 @@ class StubClient:
     ) -> Any:
         self.calls.append(("generate", (document_ids, content_type), kwargs))
         return self._run(self.generate_script.pop(0))
+
+    def watch_status(self) -> Any:
+        self.calls.append(("watch_status", (), {}))
+        return self._run(self.watch_status_script.pop(0))
+
+    def start_watch(self, path: str, **kwargs: Any) -> Any:
+        self.calls.append(("start_watch", (path,), kwargs))
+        return self._run(self.start_watch_script.pop(0))
+
+    def stop_watch(self, watch_id: str) -> Any:
+        self.calls.append(("stop_watch", (watch_id,), {}))
+        return self._run(self.stop_watch_script.pop(0))
 
     def calls_to(self, method: str) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
         return [(a, k) for m, a, k in self.calls if m == method]

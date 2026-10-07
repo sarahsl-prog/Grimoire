@@ -24,6 +24,8 @@ from grimoire.api.schemas import (
     IngestResultResponse,
     QueryResponse,
     SearchResponse,
+    WatcherStatsResponse,
+    WatchResponse,
 )
 from grimoire.client.config import SUPPORTED_EXTENSIONS, GuiConfig
 from grimoire.client.errors import (
@@ -229,6 +231,41 @@ class GrimoireClient:
         """Remove a category from a document; harmless if it is not there."""
         self._request("DELETE", self._tag_url(document_id, category_id))
 
+    def watch_status(self) -> WatcherStatsResponse:
+        """Active watches and the watcher's file counters (any key).
+
+        Raises:
+            ServerError: The server was started without ``--watch`` (503).
+        """
+        response = self._request("GET", f"{_API_PREFIX}/watch/status")
+        return self._parse(response, WatcherStatsResponse)
+
+    def start_watch(self, path: str, *, recursive: bool = True) -> WatchResponse:
+        """Watch a directory *on the server* (needs a dev or agent key).
+
+        The server only accepts paths under its ``api.allowed_roots``.
+
+        Raises:
+            RequestRejected: The path is blank, outside the allowed roots (403),
+                or already watched (400).
+        """
+        cleaned = path.strip()
+        if not cleaned:
+            raise RequestRejected("A directory to watch is required.")
+        response = self._request(
+            "POST",
+            f"{_API_PREFIX}/watch/start",
+            json={"path": cleaned, "recursive": recursive},
+        )
+        return self._parse(response, WatchResponse)
+
+    def stop_watch(self, watch_id: str) -> None:
+        """Stop one watch (needs a dev or agent key)."""
+        cleaned = watch_id.strip()
+        if not cleaned:
+            raise RequestRejected("A watch id is required.")
+        self._request("DELETE", f"{_API_PREFIX}/watch/{quote(cleaned, safe='')}")
+
     @staticmethod
     def _tag_url(document_id: str, category_id: str) -> str:
         doc, cat = document_id.strip(), category_id.strip()
@@ -406,10 +443,23 @@ class GrimoireClient:
             retry_after = self._retry_after(response)
             suffix = f" Retry in {retry_after}s." if retry_after else ""
             return RateLimited(f"Rate limited.{suffix}", retry_after=retry_after)
+        if status == 503 and self._is_json_detail(response):
+            # A deliberate 503 (e.g. the watcher was not started) carries a
+            # sentence written for the caller; an upstream proxy's HTML does not.
+            return ServerError(f"The API is not ready: {detail}")
         if status >= 500:
             logger.error(f"API returned {status}: {response.text[:500]}")
             return ServerError("Grimoire API error - check the API logs.")
         return RequestRejected(detail)
+
+    @staticmethod
+    def _is_json_detail(response: httpx.Response) -> bool:
+        """True when the body is FastAPI's ``{"detail": "<text>"}``."""
+        try:
+            body = response.json()
+        except ValueError:
+            return False
+        return isinstance(body, dict) and isinstance(body.get("detail"), str)
 
     @staticmethod
     def _retry_after(response: httpx.Response) -> int | None:
