@@ -170,7 +170,10 @@ HTTP client of the API.
 - [x] Content generation (summaries, flashcards, cliff-notes, outlines).
   **Done:** `g` in the document detail opens a Generate screen (also extracts).
   The API needed no change.
-- [ ] Watcher control (start, stop and status of the file watcher).
+- [x] Watcher control (start, stop and status of the file watcher). **Done:** a
+  Watch tab (list, counters, start, stop). Closing it exposed that REST watch and
+  the MCP ingest/watch tools took any server path, so those are now confined to
+  `api.allowed_roots` (see CHANGELOG, Security).
 - [ ] Wiki compilation.
 - [x] Delete a document. **Dropped (2026-10-04):** not building it into the TUI;
   the CLI and MCP already delete. Prompted a real fix instead: the REST API

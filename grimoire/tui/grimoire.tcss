@@ -324,6 +324,75 @@ NewCategoryScreen {
     margin-right: 2;
 }
 
+/* -- Watch tab and its modal ------------------------------------------------ */
+
+#watch-toolbar {
+    height: auto;
+}
+
+#watch-toolbar Button {
+    margin-right: 2;
+}
+
+#watch-status {
+    height: auto;
+}
+
+#watch-status.-error {
+    color: $error;
+}
+
+#watch-table {
+    height: 1fr;
+}
+
+#watch-empty {
+    height: auto;
+    padding: 1 2;
+    color: $text-muted;
+}
+
+#watch-summary {
+    height: auto;
+    color: $text-muted;
+}
+
+NewWatchScreen {
+    align: center middle;
+}
+
+#newwatch-box {
+    width: 70%;
+    max-width: 80;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#newwatch-heading {
+    text-style: bold;
+}
+
+#newwatch-hint {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#newwatch-error {
+    color: $error;
+    height: auto;
+}
+
+#newwatch-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#newwatch-buttons Button {
+    margin-right: 2;
+}
+
 /* -- Tag picker modal ------------------------------------------------------ */
 
 TagPickerScreen {

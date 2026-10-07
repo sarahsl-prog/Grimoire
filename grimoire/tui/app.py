@@ -37,6 +37,7 @@ from grimoire.tui.widgets.documents_pane import DocumentsPane
 from grimoire.tui.widgets.ingest_pane import IngestPane
 from grimoire.tui.widgets.search_pane import SearchPane
 from grimoire.tui.widgets.status_bar import StatusBar
+from grimoire.tui.widgets.watch_pane import WatchPane
 
 _NO_KEY_WARNING = (
     "No API key set. Press Ctrl+K to enter one, or export GRIMOIRE_API_KEY "
@@ -71,6 +72,7 @@ class GrimoireApp(App[None]):
         Binding("f2", "show_tab('documents')", "Documents"),
         Binding("f3", "show_tab('categories')", "Categories"),
         Binding("f4", "show_tab('ingest')", "Ingest"),
+        Binding("f5", "show_tab('watch')", "Watch"),
         Binding("ctrl+r", "refresh_all", "Refresh"),
         # priority: a focused Input binds Ctrl+K to "delete to end of line", and
         # the query box has the keyboard most of the time.
@@ -115,6 +117,10 @@ class GrimoireApp(App[None]):
         """Build the Ingest pane."""
         return IngestPane(self._client, id="ingest-pane")
 
+    def make_watch_pane(self) -> Widget:
+        """Build the Watch pane."""
+        return WatchPane(self._client, id="watch-pane")
+
     # -- composition and lifecycle ----------------------------------------
 
     def compose(self) -> ComposeResult:
@@ -125,6 +131,7 @@ class GrimoireApp(App[None]):
             yield TabPane("Documents", self.make_documents_pane(), id="documents")
             yield TabPane("Categories", self.make_categories_pane(), id="categories")
             yield TabPane("Ingest", self.make_ingest_pane(), id="ingest")
+            yield TabPane("Watch", self.make_watch_pane(), id="watch")
         yield Footer()
 
     def on_mount(self) -> None:

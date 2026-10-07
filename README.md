@@ -415,7 +415,7 @@ and no value is logged. Launch from the project directory to pick up the same
 
 | Key | Where | Action |
 |---|---|---|
-| `F1` / `F2` / `F3` / `F4` | anywhere | Switch to Search / Ask, Documents, Categories or Ingest |
+| `F1` … `F5` | anywhere | Switch to Search / Ask, Documents, Categories, Ingest or Watch |
 | `Ctrl+R` | anywhere | Re-check the API; on Documents, reload the current page |
 | `Ctrl+K` | anywhere | Enter or replace the API key for this session (masked; kept in memory only, never saved) |
 | `?` | when not typing in a box | Key help panel (`Ctrl+P` opens the command palette) |
@@ -431,6 +431,7 @@ and no value is logged. Launch from the project directory to pick up the same
 | `Esc` or `q` | in the detail view | Close it |
 | `n` | Categories | New category (name, description, optional parent) |
 | `Enter` | Ingest | Queue the path in the box for upload |
+| `n` / `x` | Watch | Watch a directory / stop the highlighted watch |
 
 The filter row on **Search / Ask** (tags, source type, severity, CVE id) sends
 the same metadata filters as `grimoire ask --severity ...`. **Documents** can be
@@ -462,6 +463,15 @@ in the corpus, or `failed` with the reason); one failure does not stop the rest.
 The *Auto-tag* box controls LLM tagging. Single files only: a directory is
 refused with a message. Ingesting needs a `dvl` or `agt` key. After a file is
 added, the Documents and Categories tabs reload the next time you open them.
+
+**Watch** lists the directories the server is watching, with the watcher's running
+totals (files processed and failed), from `GET /api/v1/watch/status` (any key).
+`n` starts a watch and `x` stops the highlighted one (`POST /api/v1/watch/start`,
+`DELETE /api/v1/watch/{id}`; both need a `dvl` or `agt` key). The directory is a
+path *on the machine running the API*, not the TUI, and must be under the
+server's `api.allowed_roots` (default `/tmp`; see `.env.example`); a refusal is
+shown in the dialog. A server started without `--watch` has no watcher, and the
+tab says so.
 
 The status bar shows the API address (never the key), whether a key is set, and
 whether the API answered. Its indicator uses `GET /health`, which does not

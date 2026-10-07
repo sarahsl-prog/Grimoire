@@ -21,6 +21,15 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **Watcher control in the TUI.** A fifth tab (`F5`) lists the directories the
+  server is watching with its files-processed and failed counters; `n` starts a
+  watch (a path on the API's machine, recursive by default) and `x` stops the
+  highlighted one. Start and stop need a `dvl` or `agt` key; the server's
+  refusal (for example a path outside `api.allowed_roots`) is shown in the
+  dialog. The shared client gains `watch_status()`, `start_watch()` and
+  `stop_watch()`, and a deliberate 503 (server started without `--watch`) now
+  surfaces its reason instead of a generic server error.
+
 - **Content generation in the TUI.** `g` in a document's detail view opens a
   Generate screen: summary, flash cards, cliff notes, outline, or an extract
   (with a question). The result is shown in place with the model, duration and

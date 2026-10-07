@@ -47,7 +47,6 @@ class TestWatchStatus:
         with pytest.raises(ServerError, match="not initialized"):
             client.watch_status()
 
-
     def test_a_proxys_html_503_stays_generic(self, client, httpx_mock) -> None:
         httpx_mock.add_response(status_code=503, text="<html>upstream down</html>")
 
