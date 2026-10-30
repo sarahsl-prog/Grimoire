@@ -114,13 +114,35 @@ class ContentLengthGuard:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application startup and shutdown."""
     from grimoire.config.settings import get_settings
-    from grimoire.db.session import close_db, initialize_db
+    from grimoire.db.session import close_db, get_db_manager, initialize_db
 
     settings = get_settings()
     await initialize_db(settings.database.url)
+
+    # Initialize watcher agent for REST /watch endpoints
+    watcher_agent = None
+    try:
+        from grimoire.agents.watcher import WatcherAgent
+        from grimoire.api.routes import watch as watch_module
+        from grimoire.cli.helpers import build_ingestion_agent
+        from grimoire.storage.watch_manager import WatchManager
+
+        db_manager = get_db_manager()
+        watcher_agent = WatcherAgent(
+            watch_manager=WatchManager(),
+            ingestion_agent=build_ingestion_agent(),
+            db_session_factory=db_manager.session,
+        )
+        watch_module.set_watcher(watcher_agent)
+        logger.info("WatcherAgent initialized for REST /watch endpoints")
+    except Exception as e:
+        logger.warning(f"Failed to initialize WatcherAgent: {e}")
+
     try:
         yield
     finally:
+        if watcher_agent is not None:
+            await watcher_agent.stop_all()
         await close_db()
 
 

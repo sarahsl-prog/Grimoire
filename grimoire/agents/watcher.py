@@ -459,6 +459,9 @@ class WatcherAgent:
                     await db.commit()
                     tracker.files_processed += 1
                     logger.info(f"WatcherAgent: deleted document for {file_path}")
+
+                    # Invalidate query cache so stale results are not served.
+                    await self._invalidate_query_cache()
             except Exception as e:
                 tracker.files_failed += 1
                 logger.error(f"WatcherAgent: error deleting {file_path}: {e}")
@@ -478,6 +481,8 @@ class WatcherAgent:
             if result.status == "completed":
                 tracker.files_processed += 1
                 logger.info(f"WatcherAgent: ingested {file_path}")
+                # Invalidate query cache after re-ingestion.
+                await self._invalidate_query_cache()
             elif result.status == "skipped":
                 logger.debug(f"WatcherAgent: skipped {file_path} (duplicate)")
             else:
@@ -489,6 +494,25 @@ class WatcherAgent:
         except Exception as e:
             tracker.files_failed += 1
             logger.error(f"WatcherAgent: error processing {file_path}: {e}")
+
+    # -------------------------------------------------------------------------
+    # Cache invalidation helper
+    # -------------------------------------------------------------------------
+
+    async def _invalidate_query_cache(self) -> None:
+        """Invalidate the query cache via the shared QueryAgent singleton.
+
+        Best-effort: failures are logged but not raised.
+        """
+        try:
+            from grimoire.api.dependencies import get_query_agent
+
+            agent = get_query_agent()
+            if hasattr(agent, "invalidate_cache"):
+                await agent.invalidate_cache()
+                logger.debug("WatcherAgent: query cache invalidated")
+        except Exception as e:
+            logger.warning(f"WatcherAgent: query cache invalidation failed: {e}")
 
     # -------------------------------------------------------------------------
     # Context Manager

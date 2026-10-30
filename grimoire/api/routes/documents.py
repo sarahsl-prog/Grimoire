@@ -372,3 +372,15 @@ async def delete_document(
         raise HTTPException(
             status_code=500, detail="Failed to delete document"
         ) from commit_error
+
+    # Invalidate query cache so stale results are not served.
+    try:
+        from grimoire.api.dependencies import get_query_agent
+
+        agent = get_query_agent()
+        if hasattr(agent, "invalidate_cache"):
+            await agent.invalidate_cache()
+            logger.debug(f"Query cache invalidated after deleting {document_id}")
+    except Exception as cache_err:
+        # Cache invalidation is best-effort; do not fail the request.
+        logger.warning(f"Failed to invalidate query cache: {cache_err}")

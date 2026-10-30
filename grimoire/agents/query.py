@@ -542,6 +542,21 @@ class QueryAgent:
         except Exception as e:
             logger.warning(f"Cache store failed: {e}")
 
+    async def invalidate_cache(self) -> None:
+        """Clear all cached query results.
+
+        Call this after document ingestion, deletion, or re-ingestion to
+        prevent stale results from being served within the TTL window.
+        """
+        if not self._cache:
+            return
+
+        try:
+            await self._cache.clear()
+            logger.info("Query cache invalidated")
+        except Exception as e:
+            logger.warning(f"Query cache invalidation failed: {e}")
+
     @staticmethod
     def _elapsed_ms(start_time: float) -> int:
         """Calculate elapsed time in milliseconds."""
