@@ -99,7 +99,7 @@ services:
 
   # ChromaDB - Vector database
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:1.5.9
     container_name: grimoire-chromadb
     restart: unless-stopped
     environment:
