@@ -134,7 +134,7 @@ Every pull request runs these workflows from `.github/workflows/`:
 | Workflow | Job | What it does | Required? |
 |---|---|---|---|
 | `ci.yml` | Lint & type check | `uv run pre-commit run --all-files` (ruff, black, mypy, bandit) with the `dev` extra | Yes |
-| `ci.yml` | Unit tests (py3.12, py3.13) | `pytest` with coverage and the `all` extra (needed because `pytest-qt` requires PySide6), Qt in offscreen mode | Yes |
+| `ci.yml` | Unit tests (py3.12, py3.13) | `pytest` with coverage, the `all` extra and a Redis service (the rate limiter needs it) (needed because `pytest-qt` requires PySide6), Qt in offscreen mode | Yes |
 | `integration.yml` | Integration tests (compose stack) | Builds the image, starts Postgres/Redis/ChromaDB/API with docker compose, mints a key, and runs `tests/integration/test_live_api.py -m "not slow"` against `localhost`. It never touches the deployed server. | Yes |
 | `ollama-review.yml` | Ollama code review | Sends the PR diff to an Ollama model and posts the review as one sticky comment | **No (advisory)** |
 
