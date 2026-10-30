@@ -392,7 +392,7 @@ class WatcherAgent:
         watch_id: str,
         change: FileChange,
     ) -> None:
-        """Handle a single file change event by running ingestion.
+        """Handle a single file change event by running ingestion or deletion.
 
         Args:
             watch_id: ID of the watch that produced the event.
@@ -409,6 +409,54 @@ class WatcherAgent:
         )
         tracker.last_event_at = datetime.now(tz=UTC)
 
+        # -------------------------------------------------------------------
+        # DELETED: remove document + vectors from the system.
+        # -------------------------------------------------------------------
+        if change.change_type == FileChangeType.DELETED:
+            try:
+                async with self._db_session_factory() as db:
+                    repo = DocumentRepository(db)
+                    doc = await repo.get_by_source_path(file_path)
+                    if doc is None:
+                        logger.debug(
+                            f"No tracked document for deleted path {file_path}"
+                        )
+                        return
+
+                    vector_ids = [
+                        chunk.vector_id for chunk in doc.chunks if chunk.vector_id
+                    ]
+                    if vector_ids:
+                        from grimoire.config.settings import get_settings
+
+                        settings = get_settings()
+                        vector_store = ChromaDBStore(
+                            persist_directory=settings.vector_store.chromadb.path,
+                            collection_name=settings.vector_store.chromadb.collection_name,
+                            host=settings.vector_store.host,
+                            port=settings.vector_store.port,
+                        )
+                        await vector_store.initialize(
+                            collection_name=settings.vector_store.chromadb.collection_name,
+                            embedding_dim=1,
+                        )
+                        await vector_store.delete(vector_ids)
+                        logger.info(
+                            f"Deleted {len(vector_ids)} vectors for {file_path}"
+                        )
+
+                    await db.delete(doc)
+                    await db.commit()
+                    tracker.files_processed += 1
+                    logger.info(f"WatcherAgent: deleted document for {file_path}")
+            except Exception as e:
+                tracker.files_failed += 1
+                logger.error(f"WatcherAgent: error deleting {file_path}: {e}")
+            return
+
+        # -------------------------------------------------------------------
+        # CREATED / MODIFIED: ingest the file.
+        # -------------------------------------------------------------------
         try:
             async with self._db_session_factory() as db:
                 result = await self._ingestion_agent.ingest_file(
