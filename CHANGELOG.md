@@ -21,6 +21,15 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **CI on every pull request.** Three gating workflows run on each PR: lint and
+  type check (the `pre-commit` gate), unit tests on Python 3.12 and 3.13, and
+  integration tests that run `tests/integration/test_live_api.py` against a
+  docker compose stack built from the PR, not the deployed server. A fourth,
+  advisory workflow posts a code review from an Ollama model
+  (`scripts/ci/ollama_review.py`) as a sticky PR comment. It runs on the
+  runner's CPU by default, or on your own server via the `OLLAMA_HOST` secret.
+  See "Continuous integration" in the README.
+
 - **Watcher control in the TUI.** A fifth tab (`F5`) lists the directories the
   server is watching with its files-processed and failed counters; `n` starts a
   watch (a path on the API's machine, recursive by default) and `x` stops the
