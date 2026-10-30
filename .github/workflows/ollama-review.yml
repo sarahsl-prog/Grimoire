@@ -1,0 +1,102 @@
+# Advisory code review by a local Ollama model, posted as one sticky PR comment.
+#
+# Never make this a required check: the review is an opinion from a small
+# model, and scripts/ci/ollama_review.py exits 0 even when Ollama fails.
+#
+# Where the model runs:
+# - Default: an Ollama container on the runner (CPU). Models are cached between
+#   runs, so only the first run downloads the weights.
+# - Set the repository secret OLLAMA_HOST (e.g. https://ollama.example.com) to
+#   use your own GPU server instead. Secrets are not passed to PRs from forks,
+#   so those fall back to the runner container.
+#
+# Tunables (repository variables, Settings → Secrets and variables → Actions):
+#   OLLAMA_REVIEW_MODEL            default qwen2.5-coder:7b
+#   OLLAMA_REVIEW_MAX_DIFF_CHARS   default 48000
+
+name: Ollama review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ollama-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Ollama code review
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OLLAMA_REVIEW_MODEL: ${{ vars.OLLAMA_REVIEW_MODEL || 'qwen2.5-coder:7b' }}
+      OLLAMA_REVIEW_MAX_DIFF_CHARS: ${{ vars.OLLAMA_REVIEW_MAX_DIFF_CHARS || '48000' }}
+      REMOTE_OLLAMA_HOST: ${{ secrets.OLLAMA_HOST }}
+      # Pinned: Ollama's API has changed shape between releases before.
+      OLLAMA_IMAGE: ollama/ollama:0.40.13
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Values from the event go through env, never straight into the script,
+      # so a crafted branch name cannot inject shell.
+      - name: Collect diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --no-color "$BASE_SHA...$HEAD_SHA" > pr.diff
+
+      - name: Choose Ollama host
+        run: |
+          if [ -n "$REMOTE_OLLAMA_HOST" ]; then
+            echo "OLLAMA_HOST=$REMOTE_OLLAMA_HOST" >> "$GITHUB_ENV"
+            echo "LOCAL_OLLAMA=false" >> "$GITHUB_ENV"
+          else
+            echo "OLLAMA_HOST=http://localhost:11434" >> "$GITHUB_ENV"
+            echo "LOCAL_OLLAMA=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Restore model cache
+        if: ${{ env.LOCAL_OLLAMA == 'true' }}
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.ollama
+          key: ollama-${{ env.OLLAMA_REVIEW_MODEL }}
+
+      - name: Start Ollama and pull model
+        if: ${{ env.LOCAL_OLLAMA == 'true' }}
+        run: |
+          mkdir -p ~/.ollama
+          docker run -d --name ollama -p 11434:11434 -v ~/.ollama:/root/.ollama "$OLLAMA_IMAGE"
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:11434/api/version >/dev/null && break
+            sleep 2
+          done
+          docker exec ollama ollama pull "$OLLAMA_REVIEW_MODEL"
+          # The container writes as root; let the cache action read it back.
+          sudo chown -R "$(id -u):$(id -g)" ~/.ollama
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+
+      - name: Review
+        run: python scripts/ci/ollama_review.py --diff pr.diff --out review.md
+
+      - name: Post sticky comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          cat review.md >> "$GITHUB_STEP_SUMMARY"
+          # Fork PRs get a read-only token; the job summary still has the review.
+          gh pr comment "$PR_NUMBER" --body-file review.md --edit-last --create-if-none \
+            || echo "::warning::could not post the PR comment (fork PR?); see the job summary"
