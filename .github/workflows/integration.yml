@@ -61,10 +61,10 @@ jobs:
       - name: Create CI API key
         id: key
         run: |
-          out="$(docker compose exec -T api grimoire keys create --tier agent --name ci-integration)"
+          out="$(docker compose exec -T api grimoire key create --tier agent --name ci-integration)"
           key="$(grep -oE 'grim_[a-z]{3}_[A-Za-z0-9_-]+' <<<"$out" | head -n1)"
           if [ -z "$key" ]; then
-            echo "::error::could not parse an API key from 'grimoire keys create'"
+            echo "::error::could not parse an API key from 'grimoire key create'"
             exit 1
           fi
           echo "::add-mask::$key"
