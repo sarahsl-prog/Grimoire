@@ -357,44 +357,6 @@ class LoggingConfig(BaseModel):
         return self
 
 
-class CeleryConfig(BaseModel):
-    """Celery distributed task queue configuration.
-
-    Attributes:
-        broker_url: Redis URL for message broker.
-        result_backend: Redis URL for result storage.
-        task_serializer: Serialization format for tasks.
-        accept_content: Accepted content types.
-        result_serializer: Result serialization format.
-        timezone: Timezone for task scheduling.
-        enable_utc: Use UTC for all timestamps.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    broker_url: str = Field(
-        default="redis://localhost:6379/0", description="Redis broker URL"
-    )
-    result_backend: str = Field(
-        default="redis://localhost:6379/1", description="Redis result backend URL"
-    )
-    task_serializer: str = Field(default="json", description="Task serializer")
-    accept_content: list[str] = Field(
-        default_factory=lambda: ["json"], description="Accepted content types"
-    )
-    result_serializer: str = Field(default="json", description="Result serializer")
-    timezone: str = Field(default="UTC", description="Timezone for tasks")
-    enable_utc: bool = Field(default=True, description="Enable UTC timestamps")
-
-    @field_validator("broker_url", "result_backend")
-    @classmethod
-    def validate_redis_url(cls, v: str) -> str:
-        """Validate Redis URL format."""
-        if not v.startswith("redis://"):
-            raise ValueError(f"Celery URL must be a redis:// URL: {v}")
-        return v
-
-
 class RedisConfig(BaseModel):
     """Redis configuration for caching and messaging.
 
@@ -1072,7 +1034,6 @@ class GrimoireSettings(BaseSettings):
         database: Database configuration.
         vector_store: Vector store configuration.
         logging: Logging configuration.
-        celery: Celery task queue configuration.
         redis: Redis configuration.
         query: Query/RAG configuration.
         cache: Cache configuration.
@@ -1108,9 +1069,6 @@ class GrimoireSettings(BaseSettings):
     )
     logging: LoggingConfig = Field(
         default_factory=LoggingConfig, description="Logging settings"
-    )
-    celery: CeleryConfig = Field(
-        default_factory=CeleryConfig, description="Celery settings"
     )
     redis: RedisConfig = Field(
         default_factory=RedisConfig, description="Redis settings"

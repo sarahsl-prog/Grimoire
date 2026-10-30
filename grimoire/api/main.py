@@ -172,6 +172,17 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     app.add_middleware(SessionIdMiddleware)
 
+    # OpenTelemetry instrumentation (if enabled in settings)
+    try:
+        settings = get_settings()
+        if settings.observability.tracing:
+            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+            FastAPIInstrumentor.instrument_app(app)
+            logger.info("OpenTelemetry FastAPI instrumentation enabled")
+    except Exception:
+        pass  # OTEL is optional; failure must not prevent startup
+
     # API routes
     app.include_router(ingest.router, prefix="/api/v1")
     app.include_router(query.router, prefix="/api/v1")

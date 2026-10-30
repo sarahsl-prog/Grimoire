@@ -37,6 +37,20 @@ class DatabaseSessionManager:
             pool_pre_ping=True,
             echo=False,
         )
+
+        # Optional OpenTelemetry SQLAlchemy instrumentation
+        try:
+            from grimoire.config import get_settings
+
+            settings = get_settings()
+            if settings.observability.tracing:
+                from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+                SQLAlchemyInstrumentor().instrument(
+                    engine=self._engine.sync_engine,
+                )
+        except Exception:
+            pass
         self._session_maker = async_sessionmaker(
             self._engine,
             class_=AsyncSession,

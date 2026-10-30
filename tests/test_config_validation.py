@@ -23,7 +23,6 @@ from grimoire.config import (
     APIConfig,
     CacheConfig,
     CacheStorage,
-    CeleryConfig,
     ChunkingConfig,
     ChunkingStrategy,
     CloudConfig,
@@ -724,22 +723,6 @@ class TestLoggingConfig:
         assert config.use_json is False
 
 
-class TestCeleryConfig:
-    """Test Celery configuration."""
-
-    def test_default_celery_config(self) -> None:
-        """Test default Celery configuration."""
-        config = CeleryConfig()
-        assert config.broker_url.startswith("redis://")
-        assert config.timezone == "UTC"
-        assert config.enable_utc is True
-
-    def test_celery_broker_validation(self) -> None:
-        """Test Celery broker URL validation."""
-        with pytest.raises(ValidationError):
-            CeleryConfig(broker_url="http://invalid.url")
-
-
 class TestCacheConfig:
     """Test Cache configuration."""
 
@@ -1042,7 +1025,6 @@ def test_all_config_sections_present() -> None:
     assert hasattr(settings, "database")
     assert hasattr(settings, "vector_store")
     assert hasattr(settings, "logging")
-    assert hasattr(settings, "celery")
     assert hasattr(settings, "redis")
     assert hasattr(settings, "query")
     assert hasattr(settings, "cache")
