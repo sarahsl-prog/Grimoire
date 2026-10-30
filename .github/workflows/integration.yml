@@ -73,6 +73,18 @@ jobs:
           echo "::add-mask::$key"
           echo "api_key=$key" >> "$GITHUB_OUTPUT"
 
+      # The API loads the embedding model lazily, on the first search. On a
+      # fresh runner that means downloading it too, which blows through the
+      # tests' 30 s client timeout. Pay that cost here, once, with room to spare.
+      - name: Warm up embedding model
+        env:
+          API_KEY: ${{ steps.key.outputs.api_key }}
+        run: >-
+          curl -sS --fail-with-body --max-time 600
+          -H "X-API-Key: $API_KEY" -H "Content-Type: application/json"
+          -d '{"query": "warm up", "top_k": 1}'
+          http://localhost:8001/api/v1/query/search -o /dev/null
+
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           version: ${{ env.UV_VERSION }}
