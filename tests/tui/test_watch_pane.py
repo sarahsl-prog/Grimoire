@@ -15,7 +15,13 @@ import pytest
 
 pytest.importorskip("textual", reason="TUI extra not installed")
 
-from textual.widgets import Button, Checkbox, DataTable, Input, TabbedContent  # noqa: E402
+from textual.widgets import (  # noqa: E402
+    Button,
+    Checkbox,
+    DataTable,
+    Input,
+    TabbedContent,
+)
 
 from grimoire.api.schemas import WatcherStatsResponse, WatchResponse  # noqa: E402
 from grimoire.client.errors import RequestRejected, ServerError  # noqa: E402
