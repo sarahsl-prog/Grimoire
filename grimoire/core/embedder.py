@@ -11,6 +11,7 @@ Features:
 - Per-index model support (technical vs general indices)
 """
 
+import asyncio
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -255,7 +256,8 @@ class Embedder:
         # Generate embedding
         try:
             model = self._load_model()
-            embedding = model.encode(
+            embedding = await asyncio.to_thread(
+                model.encode,
                 text,
                 convert_to_numpy=True,
                 normalize_embeddings=self.config.normalize_embeddings,
@@ -346,7 +348,8 @@ class Embedder:
                         f"({len(batch)} texts)"
                     )
 
-                    embeddings = model.encode(
+                    embeddings = await asyncio.to_thread(
+                        model.encode,
                         batch,
                         batch_size=len(batch),
                         convert_to_numpy=True,

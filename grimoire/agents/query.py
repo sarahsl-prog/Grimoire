@@ -187,7 +187,7 @@ class QueryAgent:
 
         # Check cache
         if use_cache and self._cache:
-            cached = await self._check_cache(query, filter_dict)
+            cached = await self._check_cache(query, filter_dict, top_k)
             if cached:
                 cached.duration_ms = self._elapsed_ms(start_time)
                 cached.cached = True
@@ -228,7 +228,7 @@ class QueryAgent:
 
         # Store in cache
         if use_cache and self._cache:
-            await self._store_cache(query, filter_dict, result)
+            await self._store_cache(query, filter_dict, top_k, result)
 
         return result
 
@@ -458,18 +458,27 @@ class QueryAgent:
         self,
         query: str,
         filter_dict: dict[str, Any] | None,
+        top_k: int,
     ) -> str:
         """Generate a cache key for a query.
 
         Args:
             query: User query.
             filter_dict: Optional filters.
+            top_k: Number of search results requested.
 
         Returns:
             SHA-256 hash key.
         """
         key_data = json.dumps(
-            {"query": query.lower().strip(), "filters": filter_dict},
+            {
+                "query": query.lower().strip(),
+                "filters": filter_dict,
+                "top_k": top_k,
+                "max_context_chunks": self._max_context_chunks,
+                "llm_model": self._llm_model,
+                "temperature": self._temperature,
+            },
             sort_keys=True,
         )
         return hashlib.sha256(key_data.encode()).hexdigest()
@@ -478,12 +487,14 @@ class QueryAgent:
         self,
         query: str,
         filter_dict: dict[str, Any] | None,
+        top_k: int,
     ) -> QueryResult | None:
         """Check if a query result is cached.
 
         Args:
             query: User query.
             filter_dict: Optional filters.
+            top_k: Number of search results requested.
 
         Returns:
             Cached QueryResult if found, None otherwise.
@@ -492,7 +503,7 @@ class QueryAgent:
             return None
 
         try:
-            key = self._cache_key(query, filter_dict)
+            key = self._cache_key(query, filter_dict, top_k)
             data = await self._cache.get(key)
             if data:
                 logger.debug(f"Cache hit for query: {query[:50]}...")
@@ -506,6 +517,7 @@ class QueryAgent:
         self,
         query: str,
         filter_dict: dict[str, Any] | None,
+        top_k: int,
         result: QueryResult,
     ) -> None:
         """Store a query result in cache.
@@ -513,13 +525,14 @@ class QueryAgent:
         Args:
             query: User query.
             filter_dict: Optional filters.
+            top_k: Number of search results requested.
             result: Result to cache.
         """
         if not self._cache or result.llm_error:
             return
 
         try:
-            key = self._cache_key(query, filter_dict)
+            key = self._cache_key(query, filter_dict, top_k)
             await self._cache.set(
                 key,
                 result.model_dump(),

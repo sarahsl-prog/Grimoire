@@ -72,8 +72,8 @@ def _tag_count_column() -> ScalarSelect[int]:
 @router.get("", response_model=DocumentListResponse)
 async def list_documents(
     request: Request,
-    offset: int = 0,
-    limit: int = 50,
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    limit: int = Query(50, ge=1, le=250, description="Pagination limit (max 250)"),
     status: str | None = None,
     file_type: str | None = None,
     source_type: str | None = None,

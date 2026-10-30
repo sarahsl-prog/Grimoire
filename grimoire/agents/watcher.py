@@ -151,6 +151,7 @@ class WatcherAgent:
         self._processing_queue: asyncio.Queue[tuple[str, FileChange]] = asyncio.Queue()
         self._processor_task: asyncio.Task[None] | None = None
         self._running = False
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
         logger.debug("WatcherAgent initialized")
 
@@ -293,12 +294,20 @@ class WatcherAgent:
             # Find the tracker by matching path prefix
             watch_id = self._find_watch_id(watch_path)
             if watch_id:
-                try:
-                    self._processing_queue.put_nowait((watch_id, change))
-                except asyncio.QueueFull:
-                    logger.warning(
-                        f"Processing queue full, dropping event: {change.path}"
+                loop = self._event_loop
+                if loop is not None:
+                    loop.call_soon_threadsafe(
+                        self._processing_queue.put_nowait, (watch_id, change)
                     )
+                else:
+                    # Fallback: event loop not captured yet (should not happen
+                    # after _start_processor runs, but defensively handle).
+                    try:
+                        self._processing_queue.put_nowait((watch_id, change))
+                    except asyncio.QueueFull:
+                        logger.warning(
+                            f"Processing queue full, dropping event: {change.path}"
+                        )
 
         return on_change
 
@@ -357,6 +366,7 @@ class WatcherAgent:
             return
 
         self._running = True
+        self._event_loop = asyncio.get_running_loop()
         self._processor_task = asyncio.create_task(
             self._process_events(),
             name="watcher_event_processor",
