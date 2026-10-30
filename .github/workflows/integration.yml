@@ -62,7 +62,10 @@ jobs:
         id: key
         run: |
           out="$(docker compose exec -T api grimoire key create --tier agent --name ci-integration)"
-          key="$(grep -oE 'grim_[a-z]{3}_[A-Za-z0-9_-]+' <<<"$out" | head -n1)"
+          # The output shows the 12-char key prefix first and the full key
+          # last; only the last match is a usable key.
+          key="$(grep -oE 'grim_[a-z]{3}_[A-Za-z0-9_-]+' <<<"$out" | tail -n1)"
+          if [ "${#key}" -le 12 ]; then key=""; fi
           if [ -z "$key" ]; then
             echo "::error::could not parse an API key from 'grimoire key create'"
             exit 1
