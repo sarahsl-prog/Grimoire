@@ -1093,23 +1093,33 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
             await db.rollback()
             return _err("Failed to delete document.")
 
-    # Vector cleanup after durable commit — best-effort.
-    # Failure leaves orphaned vectors (search noise) but document is fully deleted.
+    # Vector cleanup after durable commit — no longer silently swallowed.
+    # We call ChromaDBStore directly because grimoire.services.vector_store
+    # does not exist (C-1).
     if vector_ids:
-        try:
-            from grimoire.services.vector_store import get_vector_store_service
+        from grimoire.vectorstore import ChromaDBStore
 
-            settings = get_settings()
-            vector_store = get_vector_store_service(settings)
-            await vector_store.delete_vectors(vector_ids)
-        except ImportError:
-            logger.debug(
-                f"Vector store service not available, skipping cleanup for {params.document_id}"
+        settings = get_settings()
+        vector_store = ChromaDBStore(
+            persist_directory=settings.vector_store.chromadb.path,
+            collection_name=settings.vector_store.chromadb.collection_name,
+            host=settings.vector_store.host,
+            port=settings.vector_store.port,
+        )
+        await vector_store.initialize(
+            collection_name=settings.vector_store.chromadb.collection_name,
+            embedding_dim=1,
+        )
+        try:
+            await vector_store.delete(vector_ids)
+            logger.info(
+                f"Deleted {len(vector_ids)} vectors for document {params.document_id}"
             )
         except Exception as e:
-            logger.warning(
-                f"Vectors not cleaned up for {params.document_id}: {e}. May require manual ChromaDB cleanup."
+            logger.error(
+                f"Failed to delete vectors for {params.document_id}: {e}"
             )
+            return _err("Document deleted but vector cleanup failed.")
 
     return _ok({"deleted": params.document_id})
 

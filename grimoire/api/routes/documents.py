@@ -24,6 +24,7 @@ from grimoire.db.models import (
     DocumentTag,
     TaggedBy,
 )
+from loguru import logger
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -337,33 +338,29 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
 
-    # Clean up vector store entries before deleting document
-    # This prevents orphaned vectors in ChromaDB/Qdrant
-    # Gracefully handle case where vector store service doesn't exist yet
-    try:
-        try:
-            from grimoire.config.settings import get_settings
-            from grimoire.services.vector_store import get_vector_store_service
+    # Clean up vector store entries before deleting document.
+    # Failure here is logged as an error and surfaced to the caller; we do not
+    # silently swallow ImportError or broad Exceptions anymore (C-1).
+    from grimoire.config.settings import get_settings
+    from grimoire.vectorstore import ChromaDBStore
 
-            settings = get_settings()
-            vector_store = get_vector_store_service(settings)
-
-            # Delete vectors for all chunks
-            vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
-            if vector_ids:
-                await vector_store.delete_vectors(vector_ids)
-        except ImportError:
-            # Vector store service not implemented yet - just log and continue
-            from loguru import logger
-
-            logger.debug(
-                f"Vector store service not available, skipping vector cleanup for {document_id}"
-            )
-    except Exception as e:
-        from loguru import logger
-
-        logger.warning(f"Failed to delete vectors for document {document_id}: {e}")
-        # Continue with document deletion even if vector cleanup fails
+    settings = get_settings()
+    vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
+    if vector_ids:
+        vector_store = ChromaDBStore(
+            persist_directory=settings.vector_store.chromadb.path,
+            collection_name=settings.vector_store.chromadb.collection_name,
+            host=settings.vector_store.host,
+            port=settings.vector_store.port,
+        )
+        # embedding_dim is only validated during init; we pass 1 because deletion
+        # does not add documents and the collection is expected to exist already.
+        await vector_store.initialize(
+            collection_name=settings.vector_store.chromadb.collection_name,
+            embedding_dim=1,
+        )
+        await vector_store.delete(vector_ids)
+        logger.info(f"Deleted {len(vector_ids)} vectors for document {document_id}")
 
     await db.delete(doc)
     try:

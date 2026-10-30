@@ -20,8 +20,10 @@ from pydantic import BaseModel, Field
 
 from grimoire.agents.ingestion import IngestionAgent
 from grimoire.db.models import StorageBackend
+from grimoire.db.repositories import DocumentRepository
 from grimoire.storage.base import FileChange, FileChangeType
 from grimoire.storage.watch_manager import WatchManager
+from grimoire.vectorstore import ChromaDBStore
 
 # =============================================================================
 # Data Models
@@ -309,6 +311,12 @@ class WatcherAgent:
         Returns:
             True if the file should be processed.
         """
+        # DELETED events are always processed (file is already gone, so we
+        # cannot check its extension).
+        if change.change_type == FileChangeType.DELETED:
+            path = Path(change.path)
+            return not any(part.startswith(".") for part in path.parts)
+
         # Only process created and modified events
         if change.change_type not in (
             FileChangeType.CREATED,
