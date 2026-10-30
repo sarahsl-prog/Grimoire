@@ -93,6 +93,16 @@ All notable changes to Grimoire are documented in this file.
   The shared client's `list_documents` accepts `q`, and the TUI's Documents pane
   has a search box (`/` to focus, `Enter` to apply, `Esc` to clear).
 
+### Fixed
+
+- **Malformed IDs in REST paths are 404s, not 500s.** `GET`/`DELETE
+  /api/v1/documents/{id}`, `DELETE /api/v1/categories/{id}` and the
+  `/documents/{id}/tags/{category_id}` routes passed the raw path segment to
+  Postgres, which rejects anything that is not a UUID, so a typo produced an
+  internal server error. They now answer "not found" without querying. Found by
+  the new compose-stack integration tests; unit tests mock the database and
+  could not see it.
+
 ## [2.1.0] - 2026-10-04
 
 ### Security
