@@ -4,13 +4,12 @@
 # while containers talk to service DNS names.
 x-grimoire-env: &grimoire-env
   GRIMOIRE_CONFIG: /app/grimoire.yaml
-  GRIMOIRE_DATABASE__URL: postgresql+asyncpg://${POSTGRES_USER:-grimoire}:${POSTGRES_PASSWORD:-grimoire}@postgres:5432/${POSTGRES_DB:-grimoire}
+  GRIMOIRE_DATABASE__URL: postgresql+asyncpg://${POSTGRES_USER:-grimoire}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-grimoire}
   GRIMOIRE_VECTOR_STORE__HOST: chromadb
   GRIMOIRE_VECTOR_STORE__PORT: "8000"
   GRIMOIRE_REDIS__HOST: redis
   GRIMOIRE_REDIS__PORT: "6379"
-  GRIMOIRE_CELERY__BROKER_URL: redis://redis:6379/0
-  GRIMOIRE_CELERY__RESULT_BACKEND: redis://redis:6379/1
+  GRIMOIRE_REDIS__PASSWORD: ${REDIS_PASSWORD}
   GRIMOIRE_LOGGING__LOG_DIR: /app/logs
   GRIMOIRE_CACHE__PATH: /app/cache
   GRIMOIRE_API__UPLOAD_DIR: /app/uploads
@@ -47,11 +46,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-grimoire}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grimoire}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-grimoire}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "${POSTGRES_PORT:-5434}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./logs/postgres:/var/log/postgresql
@@ -84,7 +83,7 @@ services:
     container_name: grimoire-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -95,7 +94,7 @@ services:
       start_period: 10s
     networks:
       - grimoire-network
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
 
   # ChromaDB - Vector database
   chromadb:
@@ -108,8 +107,9 @@ services:
       - ANONYMIZED_TELEMETRY=FALSE
       - CHROMA_SERVER_HOST=0.0.0.0
       - CHROMA_SERVER_HTTP_PORT=8000
+      - CHROMA_SERVER_AUTHN_TOKEN=${CHROMA_SERVER_AUTHN_TOKEN}
     ports:
-      - "${CHROMADB_PORT:-8060}:8000"
+      - "127.0.0.1:${CHROMADB_PORT:-8060}:8000"
     volumes:
       - chromadb_data:/chroma/chroma
     # The chromadb/chroma image ships no curl, wget, or python — only a

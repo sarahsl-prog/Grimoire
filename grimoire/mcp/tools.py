@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from loguru import logger
@@ -371,6 +372,16 @@ class PgQueryInput(BaseModel):
             )
         if re.search(r"\bSELECT\b.*\bINTO\b", stripped, re.DOTALL):
             raise ValueError("SELECT INTO is not permitted.")
+        # Reject data-modifying keywords that could appear inside CTEs or subqueries
+        forbidden = re.compile(
+            r"\b(DELETE|UPDATE|INSERT|MERGE|ALTER|CREATE|GRANT|COPY|DROP)\b",
+            re.IGNORECASE,
+        )
+        if forbidden.search(v):
+            raise ValueError(
+                "Data-modifying keywords (DELETE, UPDATE, INSERT, MERGE, ALTER, "
+                "CREATE, GRANT, COPY, DROP) are not permitted."
+            )
         return v
 
 
@@ -1127,9 +1138,9 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     """Run a read-only SELECT query against the Postgres database.
 
-    The user-supplied SQL is executed as a subquery with a separate, validated
-    row limit applied by SQLAlchemy bound parameters.  The Pydantic validator
-    already rejects non-SELECT/WITH statements and SELECT INTO.
+    The user-supplied SQL is validated by PgQueryInput to reject any
+    non-SELECT statements and data-modifying keywords. Execution is wrapped
+    in READ ONLY mode with a statement timeout.
     """
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
     from sqlalchemy import text
@@ -1137,19 +1148,34 @@ async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     from grimoire.db.session import get_db_manager
 
     inner = params.sql.rstrip(";")
-    # Use a bound parameter for the limit so that user SQL is never
-    # interpolated into the executable statement.
-    sql = text(
-        "SELECT * FROM (:inner_query) AS _grimoire_q LIMIT :row_limit"
-    ).bindparams(inner_query=inner, row_limit=params.limit)
+
+    # Additional defence-in-depth: block reads from sensitive tables.
+    # This is a best-effort regex guard; the read-only transaction is the
+    # primary protection against writes.
+    blocked_tables = {"api_keys", "api_key"}
+    lower_sql = inner.lower()
+    for table in blocked_tables:
+        # Match table name as a whole word in FROM or JOIN clauses
+        if re.search(rf"\b{table}\b", lower_sql):
+            logger.warning(f"Blocked pg_query accessing restricted table: {table}")
+            return _err("Query references a restricted table.")
+
+    # Build the outer query.  The inner SELECT is interpolated after
+    # validation; only the row_limit is a true bound parameter.
+    sql = text(f"SELECT * FROM ({inner}) AS _grimoire_q LIMIT :row_limit").bindparams(
+        row_limit=params.limit
+    )
 
     manager = get_db_manager()
     async with manager.session() as db:
         try:
+            await db.execute(text("SET TRANSACTION READ ONLY"))
+            await db.execute(text("SET LOCAL statement_timeout = '30s'"))
             rows = await db.execute(sql)
             data = [dict(r._mapping) for r in rows]
         except Exception as e:
-            return _err(f"Query failed: {e}")
+            logger.error(f"pg_query execution failed: {e}")
+            return _err("Query execution failed.")
 
     return _ok({"row_count": len(data), "rows": data})
 

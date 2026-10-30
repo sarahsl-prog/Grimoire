@@ -539,7 +539,9 @@ async def test_pg_query_returns_error_on_failure(mcp_server: Any) -> None:
             ctx=MagicMock(),
         )
     assert '"status": "error"' in result
-    assert "DB down" in result
+    assert "Query execution failed." in result
+    # Full exception detail is no longer leaked to the client (F-4/F-7).
+    assert "DB down" not in result
 
 
 @pytest.mark.parametrize(
@@ -595,6 +597,57 @@ def test_pg_query_rejects_select_into(sql: str) -> None:
 
     with pytest.raises(ValidationError):
         PgQueryInput(sql=sql)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM documents; DELETE FROM documents",
+        "WITH t AS (UPDATE documents SET title='x') SELECT * FROM t",
+        "SELECT * FROM documents; INSERT INTO documents VALUES (1)",
+        "SELECT * FROM documents; ALTER TABLE documents ADD COLUMN foo",
+        "SELECT * FROM documents; CREATE TABLE foo (id INT)",
+        "SELECT * FROM documents; GRANT SELECT ON documents TO public",
+        "SELECT * FROM documents; COPY documents TO '/tmp/out.csv'",
+        "SELECT * FROM documents; DROP TABLE documents",
+        "SELECT * FROM documents; MERGE INTO documents USING t ON d.id=t.id",
+    ],
+)
+def test_pg_query_rejects_data_modifying_keywords(sql: str) -> None:
+    """Data-modifying keywords inside or alongside SELECT are rejected (F-4/F-7)."""
+    from pydantic import ValidationError
+
+    from grimoire.mcp.tools import PgQueryInput
+
+    with pytest.raises(ValidationError):
+        PgQueryInput(sql=sql)
+
+
+@pytest.mark.asyncio
+async def test_pg_query_blocks_api_keys_table() -> None:
+    """Queries referencing api_keys are blocked at execution time (F-4/F-7)."""
+    from grimoire.mcp.tools import PgQueryInput, grimoire_pg_query
+
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(return_value=iter([]))
+
+    @asynccontextmanager
+    async def _ctx() -> Any:
+        yield mock_db
+
+    mock_manager = MagicMock()
+    mock_manager.session = _ctx
+
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+
+    with patch("grimoire.db.session.get_db_manager", return_value=mock_manager):
+        result = await grimoire_pg_query(
+            PgQueryInput(sql="SELECT * FROM api_keys", limit=10),
+            ctx=MagicMock(),
+        )
+
+    assert '"status": "error"' in result
+    assert "restricted table" in result
 
 
 @pytest.mark.asyncio
