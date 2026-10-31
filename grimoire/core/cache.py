@@ -14,9 +14,12 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from enum import Enum
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from grimoire.config.settings import GrimoireSettings
 
 
 class CacheKeyPrefix(Enum):
@@ -777,5 +780,47 @@ class CacheFactory:
                 f"Unknown cache backend: {backend}. Use 'redis' or 'disk'."
             )
 
+    @staticmethod
+    def from_settings(
+        settings: "GrimoireSettings | None" = None,
+        namespace: CacheKeyPrefix | None = None,
+    ) -> Cache:
+        """Create the configured cache for one component.
+
+        Use this rather than ``create()``: it passes each backend the options
+        it actually takes. ``create(backend="redis", path=...)`` raised
+        ``TypeError`` (RedisCache has no ``path``) and never passed the Redis
+        host or password, so the Redis backend could not be used at all.
+
+        Args:
+            settings: Settings to use; defaults to ``get_settings()``.
+            namespace: Which component's entries this cache holds
+                (EMBEDDING, QUERY, GENERATION). ``clear()`` only removes that
+                namespace, so invalidating query results no longer wipes
+                cached embeddings and generated content. ``None`` addresses
+                every Grimoire entry, for ``grimoire cache stats`` / ``clear``.
+
+        Returns:
+            A RedisCache or DiskCache.
+        """
+        from grimoire.config.settings import CacheStorage, get_settings
+
+        settings = settings or get_settings()
+        if settings.cache.storage == CacheStorage.REDIS:
+            redis = settings.redis
+            return RedisCache(
+                host=redis.host,
+                port=redis.port,
+                db=redis.db_cache,
+                password=redis.password,
+                # Every namespace starts with "grimoire:", so the bare prefix
+                # covers them all.
+                namespace=namespace if namespace is not None else _ALL_NAMESPACES,
+            )
+        return DiskCache(path=settings.cache.path)
+
+
+# Prefix shared by every CacheKeyPrefix value.
+_ALL_NAMESPACES = "grimoire:"
 
 __all__ = ["Cache", "RedisCache", "DiskCache", "CacheFactory", "CacheKeyPrefix"]

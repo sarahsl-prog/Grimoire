@@ -140,9 +140,7 @@ async def status(ctx: click.Context, detailed: bool) -> None:
 
             # Cache stats
             try:
-                cache = CacheFactory.create(
-                    backend=settings.cache.storage, path=settings.cache.path
-                )
+                cache = CacheFactory.from_settings(settings)
                 if isinstance(cache, DiskCache):
                     stats = await cache.get_stats()
                     cache.close()
@@ -205,7 +203,7 @@ async def reindex(
     try:
         from sqlalchemy import select, update
 
-        from grimoire.core.cache import CacheFactory
+        from grimoire.core.cache import CacheFactory, CacheKeyPrefix
         from grimoire.core.embedder import Embedder, EmbeddingConfig
         from grimoire.db.models import Chunk as ChunkModel
         from grimoire.vectorstore.factory import create_vector_store
@@ -271,9 +269,7 @@ async def reindex(
             device=settings.embeddings.device,
             batch_size=settings.embeddings.batch_size,
         )
-        cache = CacheFactory.create(
-            backend=settings.cache.storage, path=settings.cache.path
-        )
+        cache = CacheFactory.from_settings(settings, CacheKeyPrefix.EMBEDDING)
         embedder = Embedder(config=embed_config, cache=cache)
         # Writes are validated against this dimension. The command used to
         # open the store with embedding_dim=1, so every add_documents call
@@ -348,9 +344,7 @@ async def cache_clear(ctx: click.Context, confirm: bool) -> None:
         return
 
     settings = get_settings()
-    cache = CacheFactory.create(
-        backend=settings.cache.storage, path=settings.cache.path
-    )
+    cache = CacheFactory.from_settings(settings)
     await cache.clear()
     if isinstance(cache, DiskCache):
         cache.close()
@@ -368,9 +362,7 @@ async def cache_stats(ctx: click.Context) -> None:
         grimoire cache stats
     """
     settings = get_settings()
-    cache = CacheFactory.create(
-        backend=settings.cache.storage, path=settings.cache.path
-    )
+    cache = CacheFactory.from_settings(settings)
 
     click.echo(click.style("Cache Statistics", bold=True))
     click.echo(f"  Backend: {settings.cache.storage}")

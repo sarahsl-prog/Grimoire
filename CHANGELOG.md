@@ -150,6 +150,12 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **The Redis cache backend works.** With `cache.storage: redis`, every agent
+  builder crashed: they called `CacheFactory.create(backend="redis", path=...)`
+  and `RedisCache` takes no `path`. The Redis host, port, password and
+  `redis.db_cache` were never passed either. Caches are now built with
+  `CacheFactory.from_settings()`, and embeddings, query results and generated
+  content each get their own namespace.
 - **`grimoire reindex` can repair missing embeddings again.** It opened the
   vector store with a placeholder `embedding_dim=1`, so every write failed the
   store's own dimension check ("dimension 768, expected 1") and nothing was

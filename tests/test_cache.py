@@ -18,12 +18,19 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 
-from grimoire.core.cache import Cache, CacheKeyPrefix, DiskCache, RedisCache
+from grimoire.core.cache import (
+    Cache,
+    CacheFactory,
+    CacheKeyPrefix,
+    DiskCache,
+    RedisCache,
+)
 
 # =============================================================================
 # Fixtures
@@ -944,3 +951,53 @@ class TestDiskCacheClose:
         cache.close()
         assert "size" in await cache.get_stats()  # reopened on demand
         cache.close()
+
+
+class TestCacheFromSettings:
+    """CacheFactory.from_settings passes each backend the options it takes."""
+
+    @staticmethod
+    def _settings(storage: str, tmp_path: Path) -> Any:
+        from grimoire.config.settings import CacheStorage, GrimoireSettings
+
+        base = GrimoireSettings()
+        return base.model_copy(
+            update={
+                "cache": base.cache.model_copy(
+                    update={"storage": CacheStorage(storage), "path": tmp_path}
+                ),
+                "redis": base.redis.model_copy(
+                    update={
+                        "host": "redis.internal",
+                        "port": 6380,
+                        "password": "s3cret",
+                        "db_cache": 5,
+                    }
+                ),
+            }
+        )
+
+    def test_redis_gets_connection_settings(self, tmp_path: Path) -> None:
+        """Regression: create(backend='redis', path=...) raised TypeError."""
+        cache = CacheFactory.from_settings(
+            self._settings("redis", tmp_path), CacheKeyPrefix.QUERY
+        )
+        assert isinstance(cache, RedisCache)
+        assert (cache._host, cache._port, cache._db) == ("redis.internal", 6380, 5)
+        assert cache._password == "s3cret"
+        assert cache._namespace == CacheKeyPrefix.QUERY.value
+
+    def test_redis_without_namespace_covers_every_namespace(
+        self, tmp_path: Path
+    ) -> None:
+        cache = CacheFactory.from_settings(self._settings("redis", tmp_path))
+        assert isinstance(cache, RedisCache)
+        for prefix in CacheKeyPrefix:
+            assert prefix.value.startswith(cache._namespace)
+
+    def test_disk_uses_the_configured_path(self, tmp_path: Path) -> None:
+        cache = CacheFactory.from_settings(
+            self._settings("disk", tmp_path), CacheKeyPrefix.EMBEDDING
+        )
+        assert isinstance(cache, DiskCache)
+        assert cache.path == tmp_path

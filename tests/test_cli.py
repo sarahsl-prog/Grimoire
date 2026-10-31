@@ -1060,7 +1060,7 @@ class TestStatusCommand:
         mock_cache.client.info = AsyncMock(
             return_value={"redis_version": "7.2.0", "connected_clients": 3}
         )
-        mock_factory.create.return_value = mock_cache
+        mock_factory.from_settings.return_value = mock_cache
 
         result = runner.invoke(cli, ["status", "--detailed"])
         assert result.exit_code == 0
@@ -1098,7 +1098,7 @@ class TestStatusCommand:
 
         mock_cache = AsyncMock()
         mock_cache.client.info = AsyncMock(side_effect=ConnectionError("refused"))
-        mock_factory.create.return_value = mock_cache
+        mock_factory.from_settings.return_value = mock_cache
 
         result = runner.invoke(cli, ["status", "--detailed"])
         assert result.exit_code == 0
@@ -1528,7 +1528,7 @@ class TestVectorStoreSummary:
 
         mock_cache = MagicMock(spec=DiskCache)
         mock_cache.get_stats.return_value = {"size": 100, "volume": 1024}
-        mock_factory.create.return_value = mock_cache
+        mock_factory.from_settings.return_value = mock_cache
         mock_settings.return_value.cache.storage = "disk"
         mock_settings.return_value.cache.path = str(tmp_path / "cache")
 
@@ -1546,7 +1546,7 @@ class TestVectorStoreSummary:
         tmp_path: Path,
     ) -> None:
         mock_cache = AsyncMock()
-        mock_factory.create.return_value = mock_cache
+        mock_factory.from_settings.return_value = mock_cache
         mock_settings.return_value.cache.storage = "disk"
         mock_settings.return_value.cache.path = str(tmp_path / "cache")
 
@@ -2446,7 +2446,7 @@ class TestDiskCacheIsClosedByCommands:
         disk_cache: Any,
         runner: CliRunner,
     ) -> None:
-        mock_factory.create.return_value = disk_cache
+        mock_factory.from_settings.return_value = disk_cache
         mock_settings.return_value.cache.storage = "disk"
 
         result = runner.invoke(cli, ["cache", "stats"])
@@ -2463,7 +2463,7 @@ class TestDiskCacheIsClosedByCommands:
         disk_cache: Any,
         runner: CliRunner,
     ) -> None:
-        mock_factory.create.return_value = disk_cache
+        mock_factory.from_settings.return_value = disk_cache
         mock_settings.return_value.cache.storage = "disk"
 
         result = runner.invoke(cli, ["cache", "clear", "--no-confirm"])
@@ -2492,7 +2492,7 @@ class TestDiskCacheIsClosedByCommands:
         ctx.__aenter__ = AsyncMock(return_value=mock_session)
         ctx.__aexit__ = AsyncMock(return_value=False)
         mock_ctx.return_value = ctx
-        mock_factory.create.return_value = disk_cache
+        mock_factory.from_settings.return_value = disk_cache
 
         result = runner.invoke(cli, ["status", "--detailed"])
 

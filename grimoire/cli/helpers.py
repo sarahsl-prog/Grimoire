@@ -75,7 +75,7 @@ async def teardown_db() -> None:
 def build_ingestion_agent() -> Any:
     """Create an IngestionAgent from current settings."""
     from grimoire.agents.ingestion import IngestionAgent
-    from grimoire.core.cache import CacheFactory
+    from grimoire.core.cache import CacheFactory, CacheKeyPrefix
     from grimoire.core.embedder import Embedder, EmbeddingConfig
     from grimoire.core.parser import DocumentParser
     from grimoire.core.tagger import Tagger
@@ -90,11 +90,10 @@ def build_ingestion_agent() -> Any:
         device=settings.embeddings.device,
         batch_size=settings.embeddings.batch_size,
     )
-    cache = CacheFactory.create(
-        backend=settings.cache.storage,
-        path=settings.cache.path,
+    embedder = Embedder(
+        config=embed_config,
+        cache=CacheFactory.from_settings(settings, CacheKeyPrefix.EMBEDDING),
     )
-    embedder = Embedder(config=embed_config, cache=cache)
 
     vector_store = create_vector_store(settings)
 
@@ -112,7 +111,7 @@ def build_ingestion_agent() -> Any:
 def build_query_agent() -> Any:
     """Create a QueryAgent from current settings."""
     from grimoire.agents.query import QueryAgent
-    from grimoire.core.cache import CacheFactory
+    from grimoire.core.cache import CacheFactory, CacheKeyPrefix
     from grimoire.core.embedder import Embedder, EmbeddingConfig
     from grimoire.search.hybrid import HybridSearch
     from grimoire.vectorstore.factory import create_vector_store
@@ -124,11 +123,13 @@ def build_query_agent() -> Any:
         device=settings.embeddings.device,
         batch_size=settings.embeddings.batch_size,
     )
-    cache = CacheFactory.create(
-        backend=settings.cache.storage,
-        path=settings.cache.path,
+    embedder = Embedder(
+        config=embed_config,
+        cache=CacheFactory.from_settings(settings, CacheKeyPrefix.EMBEDDING),
     )
-    embedder = Embedder(config=embed_config, cache=cache)
+    # Separate from the embedder's cache: invalidate_cache() clears only
+    # this namespace, so a document change doesn't wipe cached embeddings.
+    cache = CacheFactory.from_settings(settings, CacheKeyPrefix.QUERY)
 
     vector_store = create_vector_store(settings)
 
@@ -158,14 +159,11 @@ def build_query_agent() -> Any:
 def build_content_gen_agent() -> Any:
     """Create a ContentGenerationAgent from current settings."""
     from grimoire.agents.content_gen import ContentGenerationAgent
-    from grimoire.core.cache import CacheFactory
+    from grimoire.core.cache import CacheFactory, CacheKeyPrefix
 
     settings = get_settings()
 
-    cache = CacheFactory.create(
-        backend=settings.cache.storage,
-        path=settings.cache.path,
-    )
+    cache = CacheFactory.from_settings(settings, CacheKeyPrefix.GENERATION)
 
     return ContentGenerationAgent(
         llm_url=settings.llm.url,
