@@ -765,7 +765,18 @@ class AuthConfig(BaseModel):
             "dvl": "120/minute",
             "rdl": "30/minute",
         },
-        description="Rate limits per tier code (slowapi format)",
+        description=(
+            "Per-API-key rate limit for each tier code (agt, dvl, rdl), in "
+            "limits format, e.g. '600/minute'. Applied after authentication."
+        ),
+    )
+    failed_auth_limit: str = Field(
+        default="10/minute",
+        description=(
+            "Per-client-IP limit on requests with an invalid API key. Past it, "
+            "keys are not even checked (no database lookup or bcrypt) until "
+            "the window resets."
+        ),
     )
     # Empty by default: none of Grimoire's clients need CORS. The GUI, TUI and
     # MCP clients are not browsers, and Swagger UI at /docs is same-origin.
@@ -778,6 +789,42 @@ class AuthConfig(BaseModel):
             "must be the only entry."
         ),
     )
+
+    @field_validator("rate_limits")
+    @classmethod
+    def _validate_rate_limits(cls, v: dict[str, str]) -> dict[str, str]:
+        """Known tier codes only, each a limit string the limiter can parse."""
+        from limits import parse
+
+        known = {"agt", "dvl", "rdl"}
+        if unknown := set(v) - known:
+            raise ValueError(
+                f"auth.rate_limits: unknown tier code(s) {sorted(unknown)}; "
+                f"use {sorted(known)}"
+            )
+        for tier, limit in v.items():
+            try:
+                parse(limit)
+            except ValueError as e:
+                raise ValueError(
+                    f"auth.rate_limits[{tier!r}]: {limit!r} is not a rate limit "
+                    "(expected e.g. '600/minute')"
+                ) from e
+        return v
+
+    @field_validator("failed_auth_limit")
+    @classmethod
+    def _validate_failed_auth_limit(cls, v: str) -> str:
+        from limits import parse
+
+        try:
+            parse(v)
+        except ValueError as e:
+            raise ValueError(
+                f"auth.failed_auth_limit: {v!r} is not a rate limit "
+                "(expected e.g. '10/minute')"
+            ) from e
+        return v
 
     @field_validator("cors_origins")
     @classmethod
