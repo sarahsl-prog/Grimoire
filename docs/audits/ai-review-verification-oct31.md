@@ -88,7 +88,7 @@ marked *new* were found after the original review.
        Original text: Drop the `hasattr` guards, invalidate on
        REST ingest, document that the CLI watcher can't clear the API's
        cache.
-8. [ ] **C-8, C-9: observability and startup.** Replace `except: pass` in the
+8. [x] **C-8, C-9: observability and startup.** Done (OTLP provider, Redis instrumentation, watcher status in `/readyz`; `/readyz` also stopped leaking error details). Replace `except: pass` in the
        OTel blocks with warnings; configure a `TracerProvider` + OTLP
        exporter or drop the OTel deps; surface a failed `WatcherAgent` start
        in `/readyz`.
