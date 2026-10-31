@@ -100,19 +100,10 @@ async def status(ctx: click.Context, detailed: bool) -> None:
             # vector-store split footgun) -- a count mismatch is the fastest
             # signal something is out of sync.
             if settings.vector_store.type == VectorStoreType.CHROMADB:
-                from grimoire.vectorstore.chromadb import ChromaDBStore
+                from grimoire.vectorstore.factory import get_maintenance_store
 
-                vector_store = ChromaDBStore(
-                    persist_directory=settings.vector_store.chromadb.path,
-                    collection_name=settings.vector_store.chromadb.collection_name,
-                    host=settings.vector_store.host,
-                    port=settings.vector_store.port,
-                )
                 try:
-                    await vector_store.initialize(
-                        settings.vector_store.chromadb.collection_name,
-                        embedding_dim=1,
-                    )
+                    vector_store = await get_maintenance_store(settings)
                     vector_count = await vector_store.count()
                     click.echo(f"\n  Vector store: {vector_count} embeddings")
                     if vector_count != chunk_count:
@@ -149,9 +140,7 @@ async def status(ctx: click.Context, detailed: bool) -> None:
 
             # Cache stats
             try:
-                cache = CacheFactory.create(
-                    backend=settings.cache.storage, path=settings.cache.path
-                )
+                cache = CacheFactory.from_settings(settings)
                 if isinstance(cache, DiskCache):
                     stats = await cache.get_stats()
                     cache.close()
@@ -214,21 +203,16 @@ async def reindex(
     try:
         from sqlalchemy import select, update
 
-        from grimoire.core.cache import CacheFactory
+        from grimoire.core.cache import CacheFactory, CacheKeyPrefix
         from grimoire.core.embedder import Embedder, EmbeddingConfig
         from grimoire.db.models import Chunk as ChunkModel
-        from grimoire.vectorstore.chromadb import ChromaDBStore
+        from grimoire.vectorstore.factory import create_vector_store
 
-        vector_store = ChromaDBStore(
-            persist_directory=settings.vector_store.chromadb.path,
-            collection_name=settings.vector_store.chromadb.collection_name,
-            host=settings.vector_store.host,
-            port=settings.vector_store.port,
-        )
+        vector_store = create_vector_store(settings)
         try:
-            await vector_store.initialize(
-                settings.vector_store.chromadb.collection_name, embedding_dim=1
-            )
+            # connect(), not initialize(): finding the missing ids needs no
+            # embedding dimension. The real one is set below, before writing.
+            await vector_store.connect()
         except Exception as e:
             echo_error(f"Could not reach the vector store: {e}")
             raise SystemExit(1) from e
@@ -285,10 +269,14 @@ async def reindex(
             device=settings.embeddings.device,
             batch_size=settings.embeddings.batch_size,
         )
-        cache = CacheFactory.create(
-            backend=settings.cache.storage, path=settings.cache.path
-        )
+        cache = CacheFactory.from_settings(settings, CacheKeyPrefix.EMBEDDING)
         embedder = Embedder(config=embed_config, cache=cache)
+        # Writes are validated against this dimension. The command used to
+        # open the store with embedding_dim=1, so every add_documents call
+        # failed ("dimension 768, expected 1") and reindex repaired nothing.
+        await vector_store.initialize(
+            vector_store.collection_name, embedding_dim=embedder.embedding_dim
+        )
 
         repaired = 0
         async with get_db_context() as db:
@@ -356,9 +344,7 @@ async def cache_clear(ctx: click.Context, confirm: bool) -> None:
         return
 
     settings = get_settings()
-    cache = CacheFactory.create(
-        backend=settings.cache.storage, path=settings.cache.path
-    )
+    cache = CacheFactory.from_settings(settings)
     await cache.clear()
     if isinstance(cache, DiskCache):
         cache.close()
@@ -376,9 +362,7 @@ async def cache_stats(ctx: click.Context) -> None:
         grimoire cache stats
     """
     settings = get_settings()
-    cache = CacheFactory.create(
-        backend=settings.cache.storage, path=settings.cache.path
-    )
+    cache = CacheFactory.from_settings(settings)
 
     click.echo(click.style("Cache Statistics", bold=True))
     click.echo(f"  Backend: {settings.cache.storage}")

@@ -6,6 +6,22 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **`/readyz` no longer returns raw dependency errors.** It is
+  unauthenticated, and public once behind the Caddy proxy, yet it echoed
+  exception text such as connection errors naming internal hosts and ports.
+  Failed checks now read `"error"` and the cause is logged server-side.
+- **Deleted documents can no longer surface in search through orphaned
+  vectors.** Search results come from the vector store, which holds chunk
+  text; if vector cleanup failed after a delete, the deleted document's text
+  was still returned by search and fed to RAG answers. Hybrid search now drops
+  vector hits whose document no longer exists (one batched query), failing
+  closed if that check errors.
+- **One delete contract for REST, MCP and the watcher.** All three now delete
+  and commit the document's rows first, then remove its vectors via
+  `grimoire.vectorstore.cleanup.purge_document_vectors`, which never raises and
+  logs any orphaned vector ids. Previously the REST route deleted vectors first
+  and returned a raw 500 when ChromaDB was down; the MCP tool reported an error
+  for a delete that had succeeded (it now returns `vectors_removed: false`).
 - **`grimoire_pg_query` row limit can no longer be bypassed.** The tool wrapped
   the validated SQL as `SELECT * FROM (<sql>) AS _q LIMIT :n`, so a query
   ending in `) AS x --` closed the subquery and commented out the `LIMIT`,
@@ -57,6 +73,13 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **`grimoire.vectorstore.factory`**: `create_vector_store()` and
+  `get_maintenance_store()` replace seven hand-copied `ChromaDBStore(...)`
+  blocks. Maintenance callers (delete, `status`, `/readyz`) open the store with
+  the new `ChromaDBStore.connect()` instead of a fake `embedding_dim=1`, and
+  reuse one client instead of creating one per request. Setting
+  `vector_store.type: qdrant` now fails with a clear error instead of silently
+  using ChromaDB.
 - **CI on every pull request.** Three gating workflows run on each PR: lint and
   type check (the `pre-commit` gate), unit tests on Python 3.12 and 3.13, and
   integration tests that run `tests/integration/test_live_api.py` against a
@@ -131,6 +154,55 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **A watcher that fails to start is visible.** If `WatcherAgent` failed to
+  initialise, the API logged a warning and served `/watch` routes that always
+  returned 503. It now logs an error and `/readyz` reports
+  `"watcher": "error"` (or `ok` / `disabled`). Readiness itself is unaffected,
+  since the rest of the API works.
+- **Tracing exports spans.** `observability.tracing: true` instrumented
+  FastAPI and SQLAlchemy but never installed a tracer provider, so
+  OpenTelemetry's no-op default discarded every span. `grimoire.utils.tracing`
+  now installs one with an OTLP/gRPC exporter configured from
+  `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_SERVICE_NAME`, and instruments Redis
+  (the package was a dependency but unused).
+- **Cached answers are invalidated on every document change.** Only the REST
+  delete route and the watcher invalidated, through a `hasattr` guard that hid
+  wiring mistakes. REST and MCP ingest, tagging, category deletes and the CLI
+  never did, so `ask`/`search` could serve pre-change answers for up to the
+  result TTL (1 day by default). All of them now call
+  `grimoire.core.cache.invalidate_query_results()` after their commit. It
+  clears only the query namespace and works across processes, since the cache
+  is a shared Redis server or a shared cache directory.
+- **Query-cache invalidation no longer wipes embeddings and generated
+  content.** The query agent shared its cache with the embedder (and, on disk,
+  the same directory as content generation), and `invalidate_cache()` runs
+  after every watcher ingest and every delete. Each one cleared every cached
+  embedding and every generated summary, flashcard and outline (30-day TTL).
+  `DiskCache` now takes a `namespace`: keys are prefixed and entries tagged
+  with it, and `clear()` evicts only that namespace. Entries cached before
+  this change are untagged and simply age out.
+- **The Redis cache backend works.** With `cache.storage: redis`, every agent
+  builder crashed: they called `CacheFactory.create(backend="redis", path=...)`
+  and `RedisCache` takes no `path`. The Redis host, port, password and
+  `redis.db_cache` were never passed either. Caches are now built with
+  `CacheFactory.from_settings()`, and embeddings, query results and generated
+  content each get their own namespace.
+- **`grimoire reindex` can repair missing embeddings again.** It opened the
+  vector store with a placeholder `embedding_dim=1`, so every write failed the
+  store's own dimension check ("dimension 768, expected 1") and nothing was
+  re-embedded. It now opens the store with the embedder's real dimension.
+- **Watcher: renames, atomic saves and delete races.**
+  - A renamed file (`a.pdf` → `b.pdf`) now removes the old path's document and
+    ingests the new path. MOVED events used to be ignored entirely.
+  - Edits from editors that save atomically (write a temp file, rename it over
+    the original) are now re-ingested; they also arrived as MOVED.
+  - DELETED events use the same extension filter as creates, so deleting a
+    `.log` or swap file no longer triggers a document lookup.
+  - If a deleted local file is back on disk before the delete is processed
+    (delete-and-recreate saves), its document is kept.
+  - A crashed event processor is restarted by the next `watch()`, and events
+    arriving after `stop_all()` are dropped instead of touching the asyncio
+    queue from the observer thread.
 - **`grimoire cache stats` and `grimoire status --detailed` no longer crash on
   the disk cache.** `DiskCache.get_stats()` became async when its sqlite I/O
   moved off the event loop, but both commands still called it synchronously

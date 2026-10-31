@@ -12,6 +12,7 @@ Tests cover:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -1019,7 +1020,8 @@ class TestStatusCommand:
         mock_ctx.return_value = ctx
 
         mock_store = AsyncMock()
-        mock_store.initialize = AsyncMock(side_effect=ConnectionError("refused"))
+        # status opens the store for maintenance (connect, not initialize).
+        mock_store.connect = AsyncMock(side_effect=ConnectionError("refused"))
         mock_store_cls.return_value = mock_store
 
         result = runner.invoke(cli, ["status", "--detailed"])
@@ -1058,7 +1060,7 @@ class TestStatusCommand:
         mock_cache.client.info = AsyncMock(
             return_value={"redis_version": "7.2.0", "connected_clients": 3}
         )
-        mock_factory.create.return_value = mock_cache
+        mock_factory.from_settings.return_value = mock_cache
 
         result = runner.invoke(cli, ["status", "--detailed"])
         assert result.exit_code == 0
@@ -1096,7 +1098,7 @@ class TestStatusCommand:
 
         mock_cache = AsyncMock()
         mock_cache.client.info = AsyncMock(side_effect=ConnectionError("refused"))
-        mock_factory.create.return_value = mock_cache
+        mock_factory.from_settings.return_value = mock_cache
 
         result = runner.invoke(cli, ["status", "--detailed"])
         assert result.exit_code == 0
@@ -1419,6 +1421,63 @@ class TestReindexCommand:
         assert call_kwargs["embeddings"] == [[0.1, 0.2], [0.3, 0.4]]
 
 
+class TestReindexRealStore:
+    """Regression: reindex opened the store with embedding_dim=1.
+
+    Every add_documents call then failed ("dimension 768, expected 1"), so
+    reindex could not repair anything. The mocked-store tests above could
+    not see it; this one writes to a real embedded ChromaDB.
+    """
+
+    @patch("grimoire.core.embedder.Embedder")
+    @patch("grimoire.core.cache.CacheFactory")
+    @patch(f"{_STATUS}.get_settings")
+    @patch(f"{_STATUS}.teardown_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.setup_db", new_callable=AsyncMock)
+    @patch(f"{_STATUS}.get_db_context")
+    def test_reindex_writes_with_the_embedder_dimension(
+        self,
+        mock_ctx: MagicMock,
+        mock_setup: AsyncMock,
+        mock_teardown: AsyncMock,
+        mock_settings: MagicMock,
+        mock_cache_factory: MagicMock,
+        mock_embedder_cls: MagicMock,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        settings = _reindex_settings(tmp_path)
+        settings.vector_store.chromadb.path = str(tmp_path / "chroma")
+        mock_settings.return_value = settings
+
+        ctx = MagicMock()
+        session = AsyncMock()
+        exec_result = MagicMock()
+        exec_result.scalars.return_value.all.return_value = [_make_chunk("c1")]
+        session.execute = AsyncMock(return_value=exec_result)
+        ctx.__aenter__ = AsyncMock(return_value=session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.return_value = ctx
+
+        embedder = AsyncMock()
+        embedder.embedding_dim = 3
+        embedder.embed = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
+        mock_embedder_cls.return_value = embedder
+
+        result = runner.invoke(cli, ["reindex", "--no-confirm"])
+        assert result.exit_code == 0, result.output
+        assert "Re-embedded 1 chunk(s)" in result.output
+
+        async def _count() -> int:
+            from grimoire.vectorstore.chromadb import ChromaDBStore
+
+            store = ChromaDBStore(persist_directory=tmp_path / "chroma")
+            await store.connect("documents")
+            return await store.count()
+
+        assert asyncio.run(_count()) == 1
+
+
 class TestVectorStoreSummary:
     """Test the _vector_store_summary status helper."""
 
@@ -1469,7 +1528,7 @@ class TestVectorStoreSummary:
 
         mock_cache = MagicMock(spec=DiskCache)
         mock_cache.get_stats.return_value = {"size": 100, "volume": 1024}
-        mock_factory.create.return_value = mock_cache
+        mock_factory.from_settings.return_value = mock_cache
         mock_settings.return_value.cache.storage = "disk"
         mock_settings.return_value.cache.path = str(tmp_path / "cache")
 
@@ -1487,7 +1546,7 @@ class TestVectorStoreSummary:
         tmp_path: Path,
     ) -> None:
         mock_cache = AsyncMock()
-        mock_factory.create.return_value = mock_cache
+        mock_factory.from_settings.return_value = mock_cache
         mock_settings.return_value.cache.storage = "disk"
         mock_settings.return_value.cache.path = str(tmp_path / "cache")
 
@@ -2387,7 +2446,7 @@ class TestDiskCacheIsClosedByCommands:
         disk_cache: Any,
         runner: CliRunner,
     ) -> None:
-        mock_factory.create.return_value = disk_cache
+        mock_factory.from_settings.return_value = disk_cache
         mock_settings.return_value.cache.storage = "disk"
 
         result = runner.invoke(cli, ["cache", "stats"])
@@ -2404,7 +2463,7 @@ class TestDiskCacheIsClosedByCommands:
         disk_cache: Any,
         runner: CliRunner,
     ) -> None:
-        mock_factory.create.return_value = disk_cache
+        mock_factory.from_settings.return_value = disk_cache
         mock_settings.return_value.cache.storage = "disk"
 
         result = runner.invoke(cli, ["cache", "clear", "--no-confirm"])
@@ -2433,7 +2492,7 @@ class TestDiskCacheIsClosedByCommands:
         ctx.__aenter__ = AsyncMock(return_value=mock_session)
         ctx.__aexit__ = AsyncMock(return_value=False)
         mock_ctx.return_value = ctx
-        mock_factory.create.return_value = disk_cache
+        mock_factory.from_settings.return_value = disk_cache
 
         result = runner.invoke(cli, ["status", "--detailed"])
 

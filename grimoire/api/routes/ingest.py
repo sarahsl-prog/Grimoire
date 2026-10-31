@@ -26,6 +26,7 @@ from grimoire.api.schemas import (
     IngestFileRequest,
     IngestResultResponse,
 )
+from grimoire.core.cache import invalidate_query_results
 from grimoire.db.models import ApiKey, ApiKeyTier
 from grimoire.utils.path_guard import (
     PathNotAllowedError,
@@ -148,6 +149,16 @@ def _is_path_allowed(raw_path: str) -> Path:
         ) from None
 
 
+async def _commit_and_invalidate(db: AsyncSession) -> None:
+    """Commit now, then drop cached query results.
+
+    The session would commit when the request ends anyway, but invalidating
+    before that commit lets a concurrent query re-cache the old results.
+    """
+    await db.commit()
+    await invalidate_query_results()
+
+
 @router.post("/file", response_model=IngestResultResponse)
 async def ingest_file(
     request: Request,
@@ -167,6 +178,8 @@ async def ingest_file(
 
     agent = get_ingestion_agent()
     result = await agent.ingest_file(db, str(resolved), auto_tag=body.auto_tag)
+    if result.status == "completed":
+        await _commit_and_invalidate(db)
     return IngestResultResponse(**result.model_dump())
 
 
@@ -208,6 +221,8 @@ async def ingest_upload(
         # otherwise leak the staged copy on the (non-rebuildable) uploads
         # volume forever, every time the same file is re-dragged.
         _safe_unlink(destination)
+    elif result.status == "completed":
+        await _commit_and_invalidate(db)
     return IngestResultResponse(**result.model_dump())
 
 
@@ -237,4 +252,6 @@ async def ingest_directory(
         recursive=body.recursive,
         auto_tag=body.auto_tag,
     )
+    if result.succeeded:
+        await _commit_and_invalidate(db)
     return BatchIngestResponse(**result.model_dump())

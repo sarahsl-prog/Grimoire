@@ -51,7 +51,7 @@ marked *new* were found after the original review.
 
 ### Code
 
-1. [ ] **M-1: fix the 4 unit tests the audit commits broke**
+1. [x] **M-1: fix the 4 unit tests the audit commits broke**
        (`test_query_agent.py` `_cache_key` calls missing `top_k`;
        `test_watcher_agent.py::test_should_not_process_deleted`).
 2. [x] *New:* **CLI cache stats crash.** Fixed: both callers now await it. Phase 5 made
@@ -67,7 +67,7 @@ marked *new* were found after the original review.
        (documented 600/min) get throttled early. Check whether the key's tier
        is known when `SlowAPIMiddleware` evaluates limits (it runs before
        route dependencies). Keep `in_memory_fallback_enabled=True`.
-4. [ ] **C-3, C-4, C-5: shared vector-store factory** used by
+4. [x] **C-3, C-4, C-5: shared vector-store factory** Done, plus: search hides orphaned vectors, `grimoire reindex` dimension bug fixed. used by
        `documents.py`, `mcp/tools.py`, `watcher.py`, `api/main.py`,
        `cli/status.py`, with one delete contract (commit DB first, then
        delete vectors; log orphaned IDs on failure).
@@ -75,13 +75,20 @@ marked *new* were found after the original review.
        notes). Closes the `query_to_xml` bypass. *Partly done:* the LIMIT
        wrapper is gone; the cap is now `fetchmany(limit)` on a server-side
        cursor and `;` is rejected. The role is still needed.
-6. [ ] **C-6, C-10: watcher.** Extension filter on DELETED events; check
+6. [x] **C-6, C-10: watcher.** Done, plus MOVED events (renames and atomic saves) and processor restart. Extension filter on DELETED events; check
        the file is still gone before deleting (save-via-rename race); clear
        `_event_loop` on stop.
-7. [ ] **C-7: cache invalidation.** Drop the `hasattr` guards, invalidate on
+7. [x] **C-7: cache invalidation.** Done. Correction to the original
+       finding: invalidation *does* reach the API from the CLI watcher,
+       because both backends are shared stores. Also fixed: the Redis cache
+       backend crashed on construction, and every invalidation wiped cached
+       embeddings and generated content. Not covered: `CoordinatorAgent`
+       ingests through a caller-owned session, so its caller must invalidate
+       after committing.
+       Original text: Drop the `hasattr` guards, invalidate on
        REST ingest, document that the CLI watcher can't clear the API's
        cache.
-8. [ ] **C-8, C-9: observability and startup.** Replace `except: pass` in the
+8. [x] **C-8, C-9: observability and startup.** Done (OTLP provider, Redis instrumentation, watcher status in `/readyz`; `/readyz` also stopped leaking error details). Replace `except: pass` in the
        OTel blocks with warnings; configure a `TracerProvider` + OTLP
        exporter or drop the OTel deps; surface a failed `WatcherAgent` start
        in `/readyz`.

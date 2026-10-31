@@ -125,6 +125,26 @@ def make_hybrid_result(
     )
 
 
+@pytest.fixture(autouse=True)
+def _all_documents_exist(request: pytest.FixtureRequest) -> Any:
+    """Treat every vector hit's document as existing, unless a test opts out.
+
+    HybridSearch drops hits whose document is gone (orphaned vectors). These
+    tests' mock DB doesn't model documents, so stand in for that one query.
+    Tests that exercise the orphan filter itself use ``real_orphan_check``.
+    """
+    if "real_orphan_check" in request.keywords:
+        yield
+        return
+    from unittest.mock import patch as _patch
+
+    async def _exist(self: Any, db: Any, ids: set[str]) -> set[str]:
+        return set(ids)
+
+    with _patch("grimoire.search.hybrid.HybridSearch._existing_document_ids", _exist):
+        yield
+
+
 @pytest.fixture
 def mock_vector_store() -> MockVectorStore:
     return MockVectorStore()
@@ -256,6 +276,89 @@ class TestMergeResults:
 
         merged = hybrid._merge_results(vector_results, fts_results)
         assert merged[0].document_title == "My Doc"
+
+
+# =============================================================================
+# Test _drop_orphaned_results
+# =============================================================================
+
+
+def _doc_id_rows(mock_db: AsyncMock, ids: list[str]) -> None:
+    """Make ``db.execute(...).scalars().all()`` return existing document ids."""
+    rows = MagicMock()
+    rows.scalars.return_value.all.return_value = ids
+    mock_db.execute = AsyncMock(return_value=rows)
+
+
+@pytest.mark.real_orphan_check
+class TestDropOrphanedResults:
+    """Hits from deleted documents (orphaned vectors) are never served."""
+
+    async def test_drops_vector_hits_from_deleted_documents(
+        self, hybrid: HybridSearch
+    ) -> None:
+        mock_db = AsyncMock()
+        _doc_id_rows(mock_db, ["live"])
+        results = [
+            make_hybrid_result("c1", vector_score=0.9, doc_id="live"),
+            make_hybrid_result("c2", vector_score=0.8, doc_id="deleted"),
+        ]
+        kept = await hybrid._drop_orphaned_results(mock_db, results)
+        assert [r.chunk_id for r in kept] == ["c1"]
+
+    async def test_fts_hits_are_not_rechecked(self, hybrid: HybridSearch) -> None:
+        """FTS reads PostgreSQL, so its hits are known to exist."""
+        mock_db = AsyncMock()
+        results = [make_hybrid_result("c1", fts_score=0.5, doc_id="d")]
+        assert await hybrid._drop_orphaned_results(mock_db, results) == results
+        mock_db.execute.assert_not_called()
+
+    async def test_one_batched_query(self, hybrid: HybridSearch) -> None:
+        mock_db = AsyncMock()
+        _doc_id_rows(mock_db, ["a", "b"])
+        results = [
+            make_hybrid_result(f"c{i}", vector_score=0.5, doc_id=d)
+            for i, d in enumerate(["a", "a", "b", "b"])
+        ]
+        kept = await hybrid._drop_orphaned_results(mock_db, results)
+        assert len(kept) == 4
+        mock_db.execute.assert_awaited_once()
+
+    async def test_fails_closed_when_the_check_errors(
+        self, hybrid: HybridSearch
+    ) -> None:
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(side_effect=RuntimeError("db down"))
+        results = [
+            make_hybrid_result("v", vector_score=0.9, doc_id="unknown"),
+            make_hybrid_result("f", fts_score=0.4, doc_id="known"),
+        ]
+        kept = await hybrid._drop_orphaned_results(mock_db, results)
+        assert [r.chunk_id for r in kept] == ["f"]
+
+    async def test_search_never_returns_a_deleted_documents_chunk(
+        self, mock_embedder: MockEmbedder
+    ) -> None:
+        """End to end: an orphaned vector outranking everything is still dropped."""
+        hybrid = HybridSearch(
+            vector_store=MockVectorStore(
+                [
+                    make_vector_result("orphan", doc_id="deleted", distance=0.01),
+                    make_vector_result("live", doc_id="live", distance=0.5),
+                ]
+            ),
+            embedder=mock_embedder,
+        )
+        mock_db = AsyncMock()
+        with (
+            patch.object(hybrid, "_fts_search", AsyncMock(return_value=[])),
+            patch.object(
+                hybrid, "_existing_document_ids", AsyncMock(return_value={"live"})
+            ),
+            patch.object(hybrid, "_backfill_document_titles", AsyncMock()),
+        ):
+            results = await hybrid.search(mock_db, "query", rerank=False)
+        assert [r.chunk_id for r in results] == ["live"]
 
 
 # =============================================================================

@@ -29,7 +29,7 @@ from grimoire.api.dependencies import (
     get_query_agent,
 )
 from grimoire.cli.helpers import build_watcher
-from grimoire.config.settings import get_settings
+from grimoire.core.cache import invalidate_query_results
 from grimoire.db.models import ApiKeyTier, ProcessingStatus
 from grimoire.db.session import get_db_context
 from grimoire.utils.path_guard import (
@@ -762,6 +762,9 @@ async def grimoire_ingest_file(params: IngestFileInput, ctx: Context) -> str:
     agent = get_ingestion_agent()
     async with get_db_context() as db:
         result = await agent.ingest_file(db, str(path), auto_tag=params.auto_tag)
+    # After the context manager has committed.
+    if result.status == "completed":
+        await invalidate_query_results()
     return _ok(result.model_dump())
 
 
@@ -777,6 +780,8 @@ async def grimoire_ingest_directory(params: IngestDirectoryInput, ctx: Context) 
         result = await agent.ingest_directory(
             db, str(directory), recursive=params.recursive, auto_tag=params.auto_tag
         )
+    if result.succeeded:
+        await invalidate_query_results()
     return _ok(result.model_dump())
 
 
@@ -1109,33 +1114,15 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
             await db.rollback()
             return _err("Failed to delete document.")
 
-    # Vector cleanup after durable commit — no longer silently swallowed.
-    # We call ChromaDBStore directly because grimoire.services.vector_store
-    # does not exist (C-1).
-    if vector_ids:
-        from grimoire.vectorstore import ChromaDBStore
+    # Rows were committed above; vectors go after. A cleanup failure is not
+    # an error for the caller: the document is deleted (a retry would get
+    # "not found") and orphaned vectors are hidden from search. See
+    # grimoire.vectorstore.cleanup.
+    from grimoire.vectorstore.cleanup import purge_document_vectors
 
-        settings = get_settings()
-        vector_store = ChromaDBStore(
-            persist_directory=settings.vector_store.chromadb.path,
-            collection_name=settings.vector_store.chromadb.collection_name,
-            host=settings.vector_store.host,
-            port=settings.vector_store.port,
-        )
-        await vector_store.initialize(
-            collection_name=settings.vector_store.chromadb.collection_name,
-            embedding_dim=1,
-        )
-        try:
-            await vector_store.delete(vector_ids)
-            logger.info(
-                f"Deleted {len(vector_ids)} vectors for document {params.document_id}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to delete vectors for {params.document_id}: {e}")
-            return _err("Document deleted but vector cleanup failed.")
-
-    return _ok({"deleted": params.document_id})
+    vectors_removed = await purge_document_vectors(params.document_id, vector_ids)
+    await invalidate_query_results()
+    return _ok({"deleted": params.document_id, "vectors_removed": vectors_removed})
 
 
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:

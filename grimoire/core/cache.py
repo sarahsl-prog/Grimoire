@@ -8,15 +8,19 @@ This module provides:
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from enum import Enum
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from grimoire.config.settings import GrimoireSettings
 
 
 class CacheKeyPrefix(Enum):
@@ -553,15 +557,24 @@ class DiskCache(Cache):
         self,
         path: str | Path = ".cache",
         size_limit: int = 1024 * 1024 * 1024,  # 1GB
+        namespace: str | CacheKeyPrefix | None = None,
     ) -> None:
         """Initialize disk cache.
 
         Args:
             path: Directory path for cache files.
             size_limit: Maximum cache size in bytes.
+            namespace: Optional namespace sharing the directory with others.
+                Keys are prefixed with it and entries tagged with it, so
+                ``clear()`` evicts only this namespace (as RedisCache does),
+                not the embeddings and generated content stored alongside.
+                ``None`` addresses the whole directory.
         """
         self.path = Path(path)
         self.size_limit = size_limit
+        self._namespace: str | None = (
+            namespace.value if isinstance(namespace, CacheKeyPrefix) else namespace
+        )
         self._cache: Any | None = None
 
     def _get_cache(self) -> Any:
@@ -581,6 +594,9 @@ class DiskCache(Cache):
                 self._cache = diskcache.Cache(
                     str(self.path),
                     size_limit=self.size_limit,
+                    # Indexed tags keep a namespaced clear() (evict by tag)
+                    # an index lookup rather than a scan of every entry.
+                    tag_index=True,
                 )
                 logger.debug(f"DiskCache initialized: {self.path}")
             except Exception as e:
@@ -603,8 +619,9 @@ class DiskCache(Cache):
         # diskcache keys must be str and contain reasonable characters
         # Hash long or potentially problematic keys
         if len(key) > 200 or any(c in key for c in ["\n", "\r", "\x00"]):
-            return hashlib.sha256(key.encode()).hexdigest()
-        return key
+            key = hashlib.sha256(key.encode()).hexdigest()
+        # Prefixed so two namespaces sharing the directory never collide.
+        return f"{self._namespace}{key}" if self._namespace else key
 
     async def get(self, key: str) -> Any | None:
         """Get a value from disk cache.
@@ -656,7 +673,9 @@ class DiskCache(Cache):
                 # Fall back to storing as-is if not JSON-serializable
                 serialized = value
 
-            await asyncio.to_thread(cache.set, validated_key, serialized, ttl)
+            await asyncio.to_thread(
+                cache.set, validated_key, serialized, ttl, tag=self._namespace
+            )
             logger.debug(f"DiskCache set: {key} (ttl={ttl})")
         except Exception as e:
             logger.warning(f"DiskCache set failed for key '{key}': {e}")
@@ -677,15 +696,22 @@ class DiskCache(Cache):
             logger.warning(f"DiskCache delete failed for key '{key}': {e}")
 
     async def clear(self) -> None:
-        """Clear all cached values.
+        """Clear cached values: this namespace's, or everything if unset.
 
         Warning:
-            This removes ALL cached data from the disk cache.
+            Without a namespace this removes ALL cached data in the directory.
         """
         try:
             cache = self._get_cache()
-            await asyncio.to_thread(cache.clear)
-            logger.info(f"DiskCache cleared: {self.path}")
+            if self._namespace:
+                removed = await asyncio.to_thread(cache.evict, self._namespace)
+                logger.info(
+                    f"DiskCache cleared namespace {self._namespace!r}: "
+                    f"{removed} entries ({self.path})"
+                )
+            else:
+                await asyncio.to_thread(cache.clear)
+                logger.info(f"DiskCache cleared: {self.path}")
         except Exception as e:
             logger.error(f"DiskCache clear failed: {e}")
             raise RuntimeError(f"Failed to clear cache: {e}") from e
@@ -777,5 +803,92 @@ class CacheFactory:
                 f"Unknown cache backend: {backend}. Use 'redis' or 'disk'."
             )
 
+    @staticmethod
+    def from_settings(
+        settings: "GrimoireSettings | None" = None,
+        namespace: CacheKeyPrefix | None = None,
+    ) -> Cache:
+        """Create the configured cache for one component.
 
-__all__ = ["Cache", "RedisCache", "DiskCache", "CacheFactory", "CacheKeyPrefix"]
+        Use this rather than ``create()``: it passes each backend the options
+        it actually takes. ``create(backend="redis", path=...)`` raised
+        ``TypeError`` (RedisCache has no ``path``) and never passed the Redis
+        host or password, so the Redis backend could not be used at all.
+
+        Args:
+            settings: Settings to use; defaults to ``get_settings()``.
+            namespace: Which component's entries this cache holds
+                (EMBEDDING, QUERY, GENERATION). ``clear()`` only removes that
+                namespace, so invalidating query results no longer wipes
+                cached embeddings and generated content. ``None`` addresses
+                every Grimoire entry, for ``grimoire cache stats`` / ``clear``.
+
+        Returns:
+            A RedisCache or DiskCache.
+        """
+        from grimoire.config.settings import CacheStorage, get_settings
+
+        settings = settings or get_settings()
+        if settings.cache.storage == CacheStorage.REDIS:
+            redis = settings.redis
+            return RedisCache(
+                host=redis.host,
+                port=redis.port,
+                db=redis.db_cache,
+                password=redis.password,
+                # Every namespace starts with "grimoire:", so the bare prefix
+                # covers them all.
+                namespace=namespace if namespace is not None else _ALL_NAMESPACES,
+            )
+        return DiskCache(path=settings.cache.path, namespace=namespace)
+
+
+# Prefix shared by every CacheKeyPrefix value.
+_ALL_NAMESPACES = "grimoire:"
+
+
+async def invalidate_query_results(
+    settings: "GrimoireSettings | None" = None,
+) -> None:
+    """Drop cached query results after documents change. Never raises.
+
+    Call it **after** the change is committed. Invalidating first leaves a
+    window in which a concurrent query re-caches the pre-commit results for a
+    full TTL.
+
+    Works from any process (API, MCP server, watcher, CLI): both backends are
+    shared stores, a Redis server or a cache directory on a shared volume, so
+    clearing the QUERY namespace here clears it for every process using the
+    same settings. Only query results are dropped; embeddings and generated
+    content live in other namespaces.
+
+    Args:
+        settings: Settings to use; defaults to ``get_settings()``.
+    """
+    cache: Cache | None = None
+    try:
+        cache = CacheFactory.from_settings(settings, CacheKeyPrefix.QUERY)
+        await cache.clear()
+    except Exception as e:
+        # Stale answers for up to one TTL are better than failing the write
+        # that triggered this.
+        logger.warning(
+            f"Query cache invalidation failed ({type(e).__name__}: {e}); "
+            "cached answers may be stale until they expire"
+        )
+    finally:
+        if isinstance(cache, DiskCache):
+            cache.close()
+        elif isinstance(cache, RedisCache):
+            with contextlib.suppress(Exception):
+                await cache.disconnect()
+
+
+__all__ = [
+    "Cache",
+    "RedisCache",
+    "DiskCache",
+    "CacheFactory",
+    "CacheKeyPrefix",
+    "invalidate_query_results",
+]

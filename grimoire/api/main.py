@@ -135,9 +135,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             db_session_factory=db_manager.session,
         )
         watch_module.set_watcher(watcher_agent)
+        app.state.watcher_status = "ok"
         logger.info("WatcherAgent initialized for REST /watch endpoints")
     except Exception as e:
-        logger.warning(f"Failed to initialize WatcherAgent: {e}")
+        # The rest of the API still works, so this doesn't stop startup; but
+        # /watch returns 503 until a restart, so make it visible: an ERROR log
+        # and a "watcher" entry in /readyz.
+        app.state.watcher_status = "error"
+        logger.error(
+            f"Failed to initialize WatcherAgent; /watch endpoints will return "
+            f"503: {type(e).__name__}: {e}"
+        )
 
     try:
         yield
@@ -201,6 +209,10 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         if settings.observability.tracing:
             from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
+            from grimoire.utils.tracing import configure_tracing
+
+            configure_tracing()
+
             FastAPIInstrumentor.instrument_app(app)
             logger.info("OpenTelemetry FastAPI instrumentation enabled")
     except Exception as e:
@@ -249,73 +261,19 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     async def readyz_check(request: Request) -> dict[str, Any]:
         """Readiness probe: pings Postgres, ChromaDB, and Redis.
 
-        Returns 503 if any dependency is unreachable.
+        Returns 503 if any dependency is unreachable. Also reports whether the
+        filesystem watcher behind ``/watch`` started (``watcher``: ok, error or
+        disabled); that doesn't affect readiness.
         """
-        checks: dict[str, str] = {}
-        healthy = True
-
-        # Postgres
-        try:
-            from grimoire.db.session import get_db_manager
-
-            db_manager = get_db_manager()
-            if db_manager._engine is None:
-                checks["postgres"] = "not_initialized"
-                healthy = False
-            else:
-                from sqlalchemy import text
-
-                async with db_manager._engine.connect() as conn:
-                    await conn.execute(text("SELECT 1"))
-                checks["postgres"] = "ok"
-        except Exception as e:
-            checks["postgres"] = f"error: {e}"
-            healthy = False
-
-        # ChromaDB
-        try:
-            from grimoire.config.settings import get_settings
-            from grimoire.vectorstore.chromadb import ChromaDBStore
-
-            settings = get_settings()
-            store = ChromaDBStore(
-                persist_directory=settings.vector_store.chromadb.path,
-                collection_name=settings.vector_store.chromadb.collection_name,
-                host=settings.vector_store.host,
-                port=settings.vector_store.port,
-            )
-            await store.initialize(
-                collection_name=settings.vector_store.chromadb.collection_name,
-                embedding_dim=1,
-            )
-            await store.count()
-            checks["chromadb"] = "ok"
-        except Exception as e:
-            checks["chromadb"] = f"error: {e}"
-            healthy = False
-
-        # Redis
-        try:
-            from grimoire.config.settings import get_settings
-
-            settings = get_settings()
-            if settings.redis.host:
-                import redis.asyncio as aioredis
-
-                r = aioredis.from_url(
-                    f"redis://{settings.redis.host}:{settings.redis.port}",
-                    password=settings.redis.password or None,
-                )
-                # redis-py types commands as `Awaitable[T] | T` for both clients;
-                # the asyncio client always returns an awaitable.
-                await cast(Awaitable[bool], r.ping())
-                await r.aclose()
-                checks["redis"] = "ok"
-            else:
-                checks["redis"] = "disabled"
-        except Exception as e:
-            checks["redis"] = f"error: {e}"
-            healthy = False
+        checks = {
+            "postgres": await _check_postgres(),
+            "chromadb": await _check_chromadb(),
+            "redis": await _check_redis(),
+        }
+        healthy = all(v in ("ok", "disabled") for v in checks.values())
+        # Reported, but not part of readiness: without the watcher only the
+        # /watch endpoints are unavailable (they return 503).
+        checks["watcher"] = getattr(request.app.state, "watcher_status", "disabled")
 
         if not healthy:
             from fastapi import HTTPException
@@ -328,6 +286,74 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         return {"status": "ready", "checks": checks}
 
     return app
+
+
+# ---------------------------------------------------------------------------
+# /readyz dependency checks. Each returns "ok", "error", or a state such as
+# "not_initialized" / "disabled". The endpoint is unauthenticated (and public
+# behind the proxy), so causes (hostnames, ports, driver messages) go to the
+# log, never into the response.
+# ---------------------------------------------------------------------------
+
+
+def _log_readyz_failure(dependency: str, exc: Exception) -> None:
+    logger.warning(f"/readyz: {dependency} check failed: {type(exc).__name__}: {exc}")
+
+
+async def _check_postgres() -> str:
+    try:
+        from sqlalchemy import text
+
+        from grimoire.db.session import get_db_manager
+
+        db_manager = get_db_manager()
+        if db_manager._engine is None:
+            return "not_initialized"
+        async with db_manager._engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return "ok"
+    except Exception as e:
+        _log_readyz_failure("postgres", e)
+        return "error"
+
+
+async def _check_chromadb() -> str:
+    try:
+        from grimoire.vectorstore.factory import get_maintenance_store
+
+        # count() makes a real round trip, so a cached store still proves the
+        # server is reachable right now.
+        store = await get_maintenance_store()
+        await store.count()
+        return "ok"
+    except Exception as e:
+        _log_readyz_failure("chromadb", e)
+        return "error"
+
+
+async def _check_redis() -> str:
+    try:
+        from grimoire.config.settings import get_settings
+
+        settings = get_settings()
+        if not settings.redis.host:
+            return "disabled"
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(
+            f"redis://{settings.redis.host}:{settings.redis.port}",
+            password=settings.redis.password or None,
+        )
+        try:
+            # redis-py types commands as `Awaitable[T] | T` for both clients;
+            # the asyncio client always returns an awaitable.
+            await cast(Awaitable[bool], r.ping())
+        finally:
+            await r.aclose()
+        return "ok"
+    except Exception as e:
+        _log_readyz_failure("redis", e)
+        return "error"
 
 
 app = create_app()

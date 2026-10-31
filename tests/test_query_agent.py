@@ -27,6 +27,26 @@ from grimoire.search.hybrid import HybridResult, HybridSearch
 # =============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _all_documents_exist(request: pytest.FixtureRequest) -> Any:
+    """Treat every vector hit's document as existing, unless a test opts out.
+
+    HybridSearch drops hits whose document is gone (orphaned vectors). These
+    tests' mock DB doesn't model documents, so stand in for that one query.
+    Tests that exercise the orphan filter itself use ``real_orphan_check``.
+    """
+    if "real_orphan_check" in request.keywords:
+        yield
+        return
+    from unittest.mock import patch as _patch
+
+    async def _exist(self: Any, db: Any, ids: set[str]) -> set[str]:
+        return set(ids)
+
+    with _patch("grimoire.search.hybrid.HybridSearch._existing_document_ids", _exist):
+        yield
+
+
 @pytest.fixture
 def mock_embedder() -> MagicMock:
     """Create a mock Embedder."""
@@ -466,21 +486,49 @@ class TestQueryCaching:
 
     def test_cache_key_deterministic(self, query_agent: QueryAgent) -> None:
         """Same query produces same cache key."""
-        key1 = query_agent._cache_key("test query", None)
-        key2 = query_agent._cache_key("test query", None)
+        key1 = query_agent._cache_key("test query", None, 10)
+        key2 = query_agent._cache_key("test query", None, 10)
         assert key1 == key2
 
     def test_cache_key_different_filters(self, query_agent: QueryAgent) -> None:
         """Different filters produce different cache keys."""
-        key1 = query_agent._cache_key("test", {"tag": "a"})
-        key2 = query_agent._cache_key("test", {"tag": "b"})
+        key1 = query_agent._cache_key("test", {"tag": "a"}, 10)
+        key2 = query_agent._cache_key("test", {"tag": "b"}, 10)
         assert key1 != key2
 
     def test_cache_key_case_insensitive(self, query_agent: QueryAgent) -> None:
         """Cache key is case-insensitive for queries."""
-        key1 = query_agent._cache_key("Test Query", None)
-        key2 = query_agent._cache_key("test query", None)
+        key1 = query_agent._cache_key("Test Query", None, 10)
+        key2 = query_agent._cache_key("test query", None, 10)
         assert key1 == key2
+
+    def test_cache_key_differs_by_top_k(self, query_agent: QueryAgent) -> None:
+        """A top_k=3 answer must not be served for a top_k=20 request."""
+        assert query_agent._cache_key("q", None, 3) != query_agent._cache_key(
+            "q", None, 20
+        )
+
+    @pytest.mark.parametrize(
+        "override",
+        [{"llm_model": "other-model"}, {"temperature": 0.1}, {"max_context_chunks": 9}],
+    )
+    def test_cache_key_differs_by_generation_settings(
+        self,
+        hybrid_search: HybridSearch,
+        mock_cache: MagicMock,
+        query_agent: QueryAgent,
+        override: dict[str, Any],
+    ) -> None:
+        """Answers generated with different settings get different keys."""
+        kwargs: dict[str, Any] = {
+            "hybrid_search": hybrid_search,
+            "llm_url": "http://localhost:11434",
+            "llm_model": "test-model",
+            "cache": mock_cache,
+            "max_context_chunks": 5,
+        }
+        other = QueryAgent(**{**kwargs, **override})
+        assert other._cache_key("q", None, 10) != query_agent._cache_key("q", None, 10)
 
 
 # =============================================================================
