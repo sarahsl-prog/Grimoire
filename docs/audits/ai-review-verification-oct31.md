@@ -51,7 +51,7 @@ marked *new* were found after the original review.
 
 ### Code
 
-1. [ ] **M-1: fix the 4 unit tests the audit commits broke**
+1. [x] **M-1: fix the 4 unit tests the audit commits broke**
        (`test_query_agent.py` `_cache_key` calls missing `top_k`;
        `test_watcher_agent.py::test_should_not_process_deleted`).
 2. [x] *New:* **CLI cache stats crash.** Fixed: both callers now await it. Phase 5 made
@@ -75,7 +75,7 @@ marked *new* were found after the original review.
        notes). Closes the `query_to_xml` bypass. *Partly done:* the LIMIT
        wrapper is gone; the cap is now `fetchmany(limit)` on a server-side
        cursor and `;` is rejected. The role is still needed.
-6. [ ] **C-6, C-10: watcher.** Extension filter on DELETED events; check
+6. [x] **C-6, C-10: watcher.** Done, plus MOVED events (renames and atomic saves) and processor restart. Extension filter on DELETED events; check
        the file is still gone before deleting (save-via-rename race); clear
        `_event_loop` on stop.
 7. [ ] **C-7: cache invalidation.** Drop the `hasattr` guards, invalidate on

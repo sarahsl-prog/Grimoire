@@ -131,6 +131,18 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **Watcher: renames, atomic saves and delete races.**
+  - A renamed file (`a.pdf` → `b.pdf`) now removes the old path's document and
+    ingests the new path. MOVED events used to be ignored entirely.
+  - Edits from editors that save atomically (write a temp file, rename it over
+    the original) are now re-ingested; they also arrived as MOVED.
+  - DELETED events use the same extension filter as creates, so deleting a
+    `.log` or swap file no longer triggers a document lookup.
+  - If a deleted local file is back on disk before the delete is processed
+    (delete-and-recreate saves), its document is kept.
+  - A crashed event processor is restarted by the next `watch()`, and events
+    arriving after `stop_all()` are dropped instead of touching the asyncio
+    queue from the observer thread.
 - **`grimoire cache stats` and `grimoire status --detailed` no longer crash on
   the disk cache.** `DiskCache.get_stats()` became async when its sqlite I/O
   moved off the event loop, but both commands still called it synchronously
