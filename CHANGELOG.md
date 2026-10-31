@@ -6,6 +6,14 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **`grimoire_pg_query` runs as a read-only database role.** Its regex guards
+  could be bypassed: `query_to_xml('select * from api_' || 'keys', ...)`
+  builds the query at run time and read the `api_keys` table. Migration 0008
+  adds a `grimoire_readonly` role with SELECT on every table except
+  `api_keys` and no write privileges, and pg_query now connects only as that
+  role, through `database.readonly_url`. **Breaking:** pg_query is disabled
+  (it returns an error explaining why) until the role is set up; see
+  "pg_query and the read-only role" in `docs/deploy/docker.md`.
 - **The MCP server is rate limited.** The dedicated `mcp` service, which the
   Caddy proxy routes `/mcp/*` to, had no rate limiter at all. Even inside the
   API app, slowapi skips mounted apps, so `/mcp` was never limited. MCP

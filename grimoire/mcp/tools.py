@@ -1128,14 +1128,25 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     """Run a read-only SELECT query against the Postgres database.
 
-    The user-supplied SQL is validated by PgQueryInput to reject any
-    non-SELECT statements and data-modifying keywords. Execution is wrapped
-    in READ ONLY mode with a statement timeout.
+    Runs as the ``grimoire_readonly`` database role (no ``api_keys``, no
+    writes), in a READ ONLY transaction with a statement timeout. Disabled
+    until ``database.readonly_url`` is configured. PgQueryInput's checks
+    reject obvious non-SELECTs early with a clearer message.
     """
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
     from sqlalchemy import text
 
-    from grimoire.db.session import get_db_manager
+    from grimoire.db.readonly import readonly_session, readonly_url
+
+    # The user's SQL only ever runs as the grimoire_readonly role (migration
+    # 0008), which can't read api_keys or write anything. The regex checks
+    # below are early, friendlier rejections, not the security boundary.
+    if readonly_url() is None:
+        return _err(
+            "pg_query is disabled: it needs the read-only database role. Set "
+            "POSTGRES_READONLY_PASSWORD and redeploy (docs/deploy/docker.md, "
+            "'pg_query and the read-only role')."
+        )
 
     inner = params.sql.rstrip(";")
 
@@ -1160,8 +1171,7 @@ async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     # Postgres limits to a single command.
     sql = text(inner)
 
-    manager = get_db_manager()
-    async with manager.session() as db:
+    async with readonly_session() as db:
         try:
             await db.execute(text("SET TRANSACTION READ ONLY"))
             await db.execute(text("SET LOCAL statement_timeout = '30s'"))

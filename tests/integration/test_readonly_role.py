@@ -102,3 +102,46 @@ async def test_role_defaults(as_readonly: object) -> None:
     conn = as_readonly
     assert await conn.fetchval("show default_transaction_read_only") == "on"  # type: ignore[attr-defined]
     assert await conn.fetchval("show statement_timeout") == "30s"  # type: ignore[attr-defined]
+
+
+async def test_pg_query_tool_end_to_end(as_readonly: object) -> None:
+    """The MCP tool itself, connecting as grimoire_readonly."""
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock, patch
+
+    from grimoire.db.models import ApiKey, ApiKeyTier
+    from grimoire.db.readonly import close_readonly_engine
+    from grimoire.mcp.auth_stdio import set_current_api_key
+    from grimoire.mcp.tools import PgQueryInput, grimoire_pg_query
+
+    admin = await asyncpg.connect(_dsn(ADMIN_URL))
+    try:
+        host, port = admin._addr  # type: ignore[misc]
+        database = await admin.fetchval("select current_database()")
+    finally:
+        await admin.close()
+    url = f"postgresql+asyncpg://grimoire_readonly:{PASSWORD}@{host}:{port}/{database}"
+    set_current_api_key(
+        ApiKey(
+            id="k",
+            name="t",
+            tier=ApiKeyTier.DEV,
+            key_prefix="grim_dvl_tst",
+            key_hash="x",
+            created_at=datetime.now(UTC),
+        )
+    )
+
+    async def run(sql: str) -> str:
+        return await grimoire_pg_query(PgQueryInput(sql=sql, limit=5), MagicMock())
+
+    try:
+        with patch("grimoire.db.readonly.readonly_url", return_value=url):
+            ok = await run("SELECT count(*) AS n FROM documents")
+            bypass = await run(
+                "SELECT query_to_xml('select * from api_' || 'keys', true, true, '')"
+            )
+    finally:
+        await close_readonly_engine()
+    assert '"status": "ok"' in ok and '"row_count": 1' in ok
+    assert '"status": "error"' in bypass and "Query execution failed." in bypass

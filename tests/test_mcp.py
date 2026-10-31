@@ -10,7 +10,7 @@ Covers:
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -516,6 +516,19 @@ async def test_watch_stop_returns_error_when_not_found(mcp_server: Any) -> None:
     assert "not found" in result.content[0].text
 
 
+@contextmanager
+def _readonly_db(mock_manager: Any) -> Any:
+    """Configure pg_query's read-only role and route it to a mock session."""
+    with (
+        patch(
+            "grimoire.db.readonly.readonly_url",
+            return_value="postgresql+asyncpg://grimoire_readonly:x@db/grimoire",
+        ),
+        patch("grimoire.db.readonly.readonly_session", mock_manager.session),
+    ):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_pg_query_returns_error_on_failure(mcp_server: Any) -> None:
     """grimoire_pg_query returns a structured error when the DB query fails."""
@@ -533,7 +546,7 @@ async def test_pg_query_returns_error_on_failure(mcp_server: Any) -> None:
 
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
 
-    with patch("grimoire.db.session.get_db_manager", return_value=mock_manager):
+    with _readonly_db(mock_manager):
         result = await grimoire_pg_query(
             PgQueryInput(sql="SELECT id FROM documents", limit=10),
             ctx=MagicMock(),
@@ -640,7 +653,7 @@ async def test_pg_query_blocks_api_keys_table() -> None:
 
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
 
-    with patch("grimoire.db.session.get_db_manager", return_value=mock_manager):
+    with _readonly_db(mock_manager):
         result = await grimoire_pg_query(
             PgQueryInput(sql="SELECT * FROM api_keys", limit=10),
             ctx=MagicMock(),
@@ -677,7 +690,7 @@ async def _run_pg_query(mock_db: AsyncMock, sql: str, limit: int) -> str:
     mock_manager = MagicMock()
     mock_manager.session = _ctx
     set_current_api_key(_make_api_key(ApiKeyTier.DEV))
-    with patch("grimoire.db.session.get_db_manager", return_value=mock_manager):
+    with _readonly_db(mock_manager):
         return await grimoire_pg_query(
             PgQueryInput(sql=sql, limit=limit), ctx=MagicMock()
         )
@@ -1472,3 +1485,58 @@ async def test_watch_start_duplicate_is_a_tool_error(mcp_server: Any) -> None:
             "grimoire_watch_start", {"params": {"path": "/tmp"}}
         )
     assert '"status": "error"' in result.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_pg_query_refuses_without_the_readonly_role() -> None:
+    """Disabled until database.readonly_url is set; never touches the DB."""
+    from grimoire.mcp.tools import PgQueryInput, grimoire_pg_query
+
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+    session = MagicMock(side_effect=AssertionError("must not connect"))
+    with (
+        patch("grimoire.db.readonly.readonly_url", return_value=None),
+        patch("grimoire.db.readonly.readonly_session", session),
+    ):
+        result = await grimoire_pg_query(
+            PgQueryInput(sql="SELECT 1", limit=1), ctx=MagicMock()
+        )
+    assert '"status": "error"' in result
+    assert "pg_query is disabled" in result
+    assert "POSTGRES_READONLY_PASSWORD" in result
+
+
+class TestReadonlyUrlSetting:
+    def test_empty_means_unset(self) -> None:
+        from grimoire.config.settings import DatabaseConfig
+
+        assert DatabaseConfig(readonly_url="").readonly_url is None
+        assert DatabaseConfig().readonly_url is None
+
+    def test_accepts_asyncpg_url(self) -> None:
+        from grimoire.config.settings import DatabaseConfig
+
+        url = "postgresql+asyncpg://grimoire_readonly:pw@postgres:5432/grimoire"
+        assert DatabaseConfig(readonly_url=url).readonly_url == url
+
+    def test_rejects_other_schemes_without_echoing_the_password(self) -> None:
+        from pydantic import ValidationError
+
+        from grimoire.config.settings import DatabaseConfig
+
+        with pytest.raises(ValidationError) as exc:
+            DatabaseConfig(readonly_url="mysql://ro:s3cretpw@db/x")
+        assert "postgresql+asyncpg://" in str(exc.value)
+        assert "s3cretpw" not in str(exc.value).split("input_value")[0]
+
+
+@pytest.mark.asyncio
+async def test_readonly_session_raises_when_unconfigured() -> None:
+    from grimoire.db.readonly import readonly_session
+
+    with (
+        patch("grimoire.db.readonly.readonly_url", return_value=None),
+        pytest.raises(RuntimeError, match="not configured"),
+    ):
+        async with readonly_session():
+            pass

@@ -225,6 +225,30 @@ class DatabaseConfig(BaseModel):
     )
     echo: bool = Field(default=False, description="Log SQL statements")
     pool_size: int = Field(default=10, ge=1, le=100, description="Connection pool size")
+    readonly_url: str | None = Field(
+        default=None,
+        description=(
+            "Connection URL for the grimoire_readonly role (migration 0008), "
+            "used only by the MCP pg_query tool. Unset: pg_query is disabled. "
+            "docker-compose.yml builds it from POSTGRES_READONLY_PASSWORD."
+        ),
+    )
+
+    @field_validator("readonly_url", mode="before")
+    @classmethod
+    def _validate_readonly_url(cls, v: object) -> str | None:
+        """Empty means unset; otherwise it must be an asyncpg URL.
+
+        The message never echoes the value: it carries a password.
+        """
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        if not isinstance(v, str) or not v.startswith("postgresql+asyncpg://"):
+            raise ValueError(
+                "database.readonly_url must be a postgresql+asyncpg:// URL for "
+                "the grimoire_readonly role"
+            )
+        return v
 
     @field_validator("url", "dev_url")
     @classmethod
