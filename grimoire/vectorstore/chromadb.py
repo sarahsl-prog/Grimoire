@@ -129,7 +129,7 @@ class ChromaDBStore(VectorStore):
         try:
             if self.host is not None:
                 # Use HttpClient for remote ChromaDB server
-                self._client = await asyncio.to_thread(
+                client = await asyncio.to_thread(
                     chromadb.HttpClient, host=self.host, port=self.port or 8000
                 )
                 logger.info(
@@ -141,17 +141,21 @@ class ChromaDBStore(VectorStore):
                 logger.debug(
                     f"ChromaDB persistence directory: {self.persist_directory}"
                 )
-                self._client = await asyncio.to_thread(
+                client = await asyncio.to_thread(
                     chromadb.PersistentClient, path=str(self.persist_directory)
                 )
                 logger.info(f"ChromaDB client initialized at {self.persist_directory}")
+
+            # A local, not self._client, so the type checker knows it is set
+            # in the calls below (self._client is Optional until here).
+            self._client = client
 
             # Get or create collection with metadata schema
             # metadata is only used when creating a new collection
             metadata = {"hnsw:space": self.distance_metric}
             try:
                 self._collection = await asyncio.to_thread(
-                    self._client.get_or_create_collection,
+                    client.get_or_create_collection,
                     name=collection_name,
                     metadata=metadata,
                     embedding_function=None,  # We provide embeddings explicitly
@@ -159,7 +163,7 @@ class ChromaDBStore(VectorStore):
             except Exception:
                 # If collection exists with different settings, just get it
                 self._collection = await asyncio.to_thread(
-                    self._client.get_collection,
+                    client.get_collection,
                     name=collection_name,
                 )
             logger.info(
