@@ -185,9 +185,8 @@ class WatcherAgent:
         if isinstance(backend, str):
             backend = StorageBackend(backend)
 
-        # Start the background processor if not running
-        if not self._running:
-            self._start_processor()
+        # Start (or restart) the background processor
+        self._start_processor()
 
         callback = self._create_callback(path)
 
@@ -228,12 +227,15 @@ class WatcherAgent:
         await self._watch_manager.stop_all()
         self._trackers.clear()
 
+        self._running = False
+        # Cleared first so observer-thread callbacks stop scheduling onto a
+        # loop that may be about to close.
+        self._event_loop = None
         if self._processor_task and not self._processor_task.done():
-            self._running = False
             self._processor_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._processor_task
-            self._processor_task = None
+        self._processor_task = None
 
         logger.info("WatcherAgent: all watches stopped")
 
@@ -386,7 +388,9 @@ class WatcherAgent:
 
     def _start_processor(self) -> None:
         """Start the background event processor."""
-        if self._running:
+        # Restart if the previous task died (an unexpected error ends
+        # _process_events), not just when it was never started.
+        if self._running and self._processor_task and not self._processor_task.done():
             return
 
         self._running = True

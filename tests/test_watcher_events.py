@@ -106,3 +106,26 @@ class TestCallbackQueueing:
         watcher._create_callback("/w")(
             FileChange(change_type=FileChangeType.CREATED, path="/w/a.pdf")
         )
+
+
+class TestProcessorLifecycle:
+    async def test_dead_processor_is_restarted(self, watcher: WatcherAgent) -> None:
+        watcher._start_processor()
+        first = watcher._processor_task
+        assert first is not None
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        # _running is still True, as after an unexpected processor crash.
+        assert watcher._running
+        watcher._start_processor()
+        assert watcher._processor_task is not first
+        assert not watcher._processor_task.done()  # type: ignore[union-attr]
+        await watcher.stop_all()
+
+    async def test_stop_all_clears_loop_and_task(self, watcher: WatcherAgent) -> None:
+        watcher._start_processor()
+        await watcher.stop_all()
+        assert watcher._event_loop is None
+        assert watcher._processor_task is None
+        assert not watcher._running
