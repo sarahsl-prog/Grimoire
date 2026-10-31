@@ -104,7 +104,12 @@ class BatchIngestResponse(BaseModel):
 class QueryRequest(BaseModel):
     """Request to ask a question (RAG pipeline)."""
 
-    query: str = Field(..., description="The question to answer.")
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description="The question to answer.",
+    )
     top_k: int = Field(default=5, ge=1, le=100, description="Number of source chunks.")
     filter_dict: dict[str, Any] | None = Field(
         default=None, description="Metadata filters."
@@ -138,7 +143,12 @@ class QueryResponse(BaseModel):
 class SearchRequest(BaseModel):
     """Request to search without answer generation."""
 
-    query: str = Field(..., description="Search query.")
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description="Search query.",
+    )
     top_k: int = Field(default=10, ge=1, le=100, description="Number of results.")
     filter_dict: dict[str, Any] | None = Field(
         default=None, description="Metadata filters."

@@ -7,6 +7,7 @@ This module provides:
 - CacheFactory: Factory for creating cache instances
 """
 
+import asyncio
 import hashlib
 import json
 from abc import ABC, abstractmethod
@@ -614,7 +615,7 @@ class DiskCache(Cache):
         try:
             cache = self._get_cache()
             validated_key = self._validate_key(key)
-            value = cache.get(validated_key)
+            value = await asyncio.to_thread(cache.get, validated_key)
 
             if value is not None and isinstance(value, str):
                 # Try to deserialize JSON
@@ -652,7 +653,7 @@ class DiskCache(Cache):
                 # Fall back to storing as-is if not JSON-serializable
                 serialized = value
 
-            cache.set(validated_key, serialized, expire=ttl)
+            await asyncio.to_thread(cache.set, validated_key, serialized, ttl)
             logger.debug(f"DiskCache set: {key} (ttl={ttl})")
         except Exception as e:
             logger.warning(f"DiskCache set failed for key '{key}': {e}")
@@ -667,7 +668,7 @@ class DiskCache(Cache):
         try:
             cache = self._get_cache()
             validated_key = self._validate_key(key)
-            cache.delete(validated_key)
+            await asyncio.to_thread(cache.delete, validated_key)
             logger.debug(f"DiskCache deleted: {key}")
         except Exception as e:
             logger.warning(f"DiskCache delete failed for key '{key}': {e}")
@@ -680,7 +681,7 @@ class DiskCache(Cache):
         """
         try:
             cache = self._get_cache()
-            cache.clear()
+            await asyncio.to_thread(cache.clear)
             logger.info(f"DiskCache cleared: {self.path}")
         except Exception as e:
             logger.error(f"DiskCache clear failed: {e}")
@@ -703,7 +704,7 @@ class DiskCache(Cache):
             # Closing is cleanup; never turn it into a user-facing failure.
             logger.warning(f"DiskCache close failed: {e}")
 
-    def get_stats(self) -> dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Get cache statistics.
 
         Returns:
@@ -711,9 +712,11 @@ class DiskCache(Cache):
         """
         try:
             cache = self._get_cache()
+            size = await asyncio.to_thread(len, cache)
+            volume = await asyncio.to_thread(cache.volume)
             return {
-                "size": len(cache),
-                "volume": cache.volume(),
+                "size": size,
+                "volume": volume,
                 "path": str(self.path),
             }
         except Exception as e:

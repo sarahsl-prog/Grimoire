@@ -767,8 +767,8 @@ class AuthConfig(BaseModel):
         description="Rate limits per tier code (slowapi format)",
     )
     cors_origins: list[str] = Field(
-        default_factory=lambda: ["*"],
-        description="Allowed CORS origins",
+        default_factory=lambda: ["http://localhost:8001"],
+        description="Allowed CORS origins. Use [\"*\"] only as an explicit opt-in.",
     )
 
 

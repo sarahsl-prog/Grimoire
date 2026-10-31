@@ -466,8 +466,10 @@ class ChromaDBStore(VectorStore):
                     if "_empty" in metadata:
                         del metadata["_empty"]
                     for mkey, mval in metadata.items():
-                        if isinstance(mval, str) and "," in mval:
-                            # Potential comma-separated list
+                        if isinstance(mval, str) and "," in mval and mkey == "tags":
+                            # Only split the 'tags' key, which is known to
+                            # originate as a list. Other string fields may
+                            # legitimately contain commas and must stay intact.
                             metadata[mkey] = [v.strip() for v in mval.split(",")]
                 result["metadata"] = metadata
 
@@ -568,7 +570,10 @@ class ChromaDBStore(VectorStore):
                         if "_empty" in metadata:
                             del metadata["_empty"]
                         for mkey, mval in metadata.items():
-                            if isinstance(mval, str) and "," in mval:
+                            if isinstance(mval, str) and "," in mval and mkey == "tags":
+                                # Only split the 'tags' key, which is known to
+                                # originate as a list. Other string fields may
+                                # legitimately contain commas and must stay intact.
                                 metadata[mkey] = [v.strip() for v in mval.split(",")]
                     record["metadata"] = metadata
 

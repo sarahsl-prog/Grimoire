@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -239,6 +240,86 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     # decorator it would make `health_check` untyped.  It only records the route
     # name, so the Redis-backed limiter's default limit skips /health.
     limiter.exempt(health_check)  # type: ignore[no-untyped-call]
+
+    @app.get("/readyz")
+    async def readyz_check(request: Request) -> dict[str, Any]:
+        """Readiness probe: pings Postgres, ChromaDB, and Redis.
+
+        Returns 503 if any dependency is unreachable.
+        """
+        checks: dict[str, str] = {}
+        healthy = True
+
+        # Postgres
+        try:
+            from grimoire.db.session import get_db_manager
+
+            db_manager = get_db_manager()
+            if db_manager._engine is None:
+                checks["postgres"] = "not_initialized"
+                healthy = False
+            else:
+                from sqlalchemy import text
+
+                async with db_manager._engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
+                checks["postgres"] = "ok"
+        except Exception as e:
+            checks["postgres"] = f"error: {e}"
+            healthy = False
+
+        # ChromaDB
+        try:
+            from grimoire.config.settings import get_settings
+            from grimoire.vectorstore.chromadb import ChromaDBStore
+
+            settings = get_settings()
+            store = ChromaDBStore(
+                persist_directory=settings.vector_store.chromadb.path,
+                collection_name=settings.vector_store.chromadb.collection_name,
+                host=settings.vector_store.host,
+                port=settings.vector_store.port,
+            )
+            await store.initialize(
+                collection_name=settings.vector_store.chromadb.collection_name,
+                embedding_dim=1,
+            )
+            await store.count()
+            checks["chromadb"] = "ok"
+        except Exception as e:
+            checks["chromadb"] = f"error: {e}"
+            healthy = False
+
+        # Redis
+        try:
+            from grimoire.config.settings import get_settings
+
+            settings = get_settings()
+            if settings.redis.host:
+                import redis.asyncio as aioredis
+
+                r = aioredis.from_url(
+                    f"redis://{settings.redis.host}:{settings.redis.port}",
+                    password=settings.redis.password or None,
+                )
+                await r.ping()
+                await r.aclose()
+                checks["redis"] = "ok"
+            else:
+                checks["redis"] = "disabled"
+        except Exception as e:
+            checks["redis"] = f"error: {e}"
+            healthy = False
+
+        if not healthy:
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=503,
+                detail={"status": "not_ready", "checks": checks},
+            )
+
+        return {"status": "ready", "checks": checks}
 
     return app
 
