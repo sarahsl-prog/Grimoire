@@ -33,8 +33,19 @@ class Config:
         return f"https://api.github.com/repos/{self.repo}"
 
 
+REQUIRED_ENV = ("REPO", "PR_NUMBER", "OLLAMA_MODEL", "GH_TOKEN", "OLLAMA_API_KEY")
+
+
 def load_config(env=None) -> Config:
     env = os.environ if env is None else env
+    # An unset repo secret arrives as an empty string, not a missing key, and
+    # would otherwise surface as a 401 from Ollama on every single commit.
+    missing = [name for name in REQUIRED_ENV if not env.get(name)]
+    if missing:
+        raise SystemExit(
+            f"missing or empty: {', '.join(missing)} "
+            "(set OLLAMA_API_KEY under Settings > Secrets and variables > Actions)"
+        )
     return Config(
         repo=env["REPO"],
         pr=env["PR_NUMBER"],
