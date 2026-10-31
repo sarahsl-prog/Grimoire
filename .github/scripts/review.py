@@ -3,6 +3,7 @@
 Importing this module has no side effects: configuration is read in
 load_config() and all work happens in main().
 """
+
 import os
 import re
 import sys
@@ -11,8 +12,8 @@ from dataclasses import dataclass
 import requests
 
 BOT_LOGIN = "github-actions[bot]"
-MAX_COMMITS = 15       # safety cap per run
-MAX_DIFF = 40_000      # chars per commit
+MAX_COMMITS = 15  # safety cap per run
+MAX_DIFF = 40_000  # chars per commit
 
 MARKER_RE = re.compile(r"\A<!-- ai-review:([0-9a-f]{40}) -->")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -48,6 +49,7 @@ def load_config(env=None) -> Config:
 
 
 # --- pure helpers -----------------------------------------------------------
+
 
 def marker(sha: str) -> str:
     return f"<!-- ai-review:{sha} -->"
@@ -105,8 +107,9 @@ def build_prompt(msg: str, diff: str) -> str:
     )
 
 
-def build_body(sha: str, model: str, msg: str, review: str,
-               truncated: bool, limit: int = MAX_DIFF) -> str:
+def build_body(
+    sha: str, model: str, msg: str, review: str, truncated: bool, limit: int = MAX_DIFF
+) -> str:
     body = (
         f"{marker(sha)}\n### AI review of `{sha[:7]}` ({model})\n"
         f"_{first_line(msg)}_\n\n{review}"
@@ -117,6 +120,7 @@ def build_body(sha: str, model: str, msg: str, review: str,
 
 
 # --- network ----------------------------------------------------------------
+
 
 def get_all(url: str, headers: dict) -> list:
     """Fetch every page of a list endpoint, following Link headers."""
@@ -145,8 +149,11 @@ def review_commit(cfg: Config, commit: dict) -> None:
     r = requests.post(
         f"{cfg.host}/api/chat",
         headers=cfg.ollama_headers,
-        json={"model": cfg.model, "stream": False,
-              "messages": [{"role": "user", "content": build_prompt(msg, diff)}]},
+        json={
+            "model": cfg.model,
+            "stream": False,
+            "messages": [{"role": "user", "content": build_prompt(msg, diff)}],
+        },
         timeout=300,
     )
     r.raise_for_status()
@@ -173,12 +180,15 @@ def write_summary(path, failures: list) -> None:
 
 # --- entry point ------------------------------------------------------------
 
+
 def main(env=None) -> int:
     env = os.environ if env is None else env
     cfg = load_config(env)
 
     commits = get_all(f"{cfg.api}/pulls/{cfg.pr}/commits?per_page=100", cfg.gh_headers)
-    comments = get_all(f"{cfg.api}/issues/{cfg.pr}/comments?per_page=100", cfg.gh_headers)
+    comments = get_all(
+        f"{cfg.api}/issues/{cfg.pr}/comments?per_page=100", cfg.gh_headers
+    )
     todo = select_todo(commits, reviewed_shas(comments))
 
     failures = []
