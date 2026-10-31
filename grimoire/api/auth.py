@@ -17,6 +17,7 @@ a measurable bottleneck.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import secrets
 from collections.abc import Awaitable, Callable
@@ -30,17 +31,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grimoire.api.dependencies import get_db_session
+from grimoire.api.rate_limit import (
+    check_failed_auth,
+    enforce_tier_limit,
+    record_failed_auth,
+)
 from grimoire.db.models import ApiKey, ApiKeyTier
 
 # FastAPI security scheme — reads X-API-Key header
 api_key_header_scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# Default rate limits per tier (can be overridden via settings)
-DEFAULT_TIER_RATE_LIMITS: dict[str, str] = {
-    "agt": "600/minute",
-    "dvl": "120/minute",
-    "rdl": "30/minute",
-}
 
 # Prefix for all API keys
 KEY_PREFIX = "grim_"
@@ -86,9 +86,14 @@ async def authenticate_api_key(raw_key: str, db: AsyncSession) -> ApiKey | None:
     if api_key is None:
         return None
 
-    # Verify bcrypt hash
+    # Verify bcrypt hash. bcrypt is deliberately slow (tens to hundreds of
+    # ms), so it runs in a worker thread: on the event loop it stalled every
+    # other request, SSE streams included, once per authenticated call.
     try:
-        if not bcrypt.checkpw(raw_key.encode(), api_key.key_hash.encode()):
+        matches = await asyncio.to_thread(
+            bcrypt.checkpw, raw_key.encode(), api_key.key_hash.encode()
+        )
+        if not matches:
             return None
     except (ValueError, TypeError):
         return None
@@ -122,13 +127,19 @@ async def get_api_key(
             detail="API key required. Pass X-API-Key header.",
         )
 
+    # Stage 3 of grimoire.api.rate_limit: an IP over its failed-auth allowance
+    # is refused before any lookup, so key guessing stops costing bcrypt time.
+    check_failed_auth(request)
     api_key = await authenticate_api_key(raw_key, db)
     if api_key is None:
+        record_failed_auth(request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired API key.",
         )
 
+    # Stage 2: the key's own tier limit, now that the tier is known.
+    enforce_tier_limit(request, api_key)
     request.state.api_key = api_key
     return api_key
 

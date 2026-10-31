@@ -24,14 +24,22 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _textual_requirements() -> dict[str, Requirement]:
-    """The ``textual`` requirement from each extra that declares one."""
+    """The ``textual`` requirement from each extra or dependency group.
+
+    The ``tui`` extra and the ``dev`` dependency group each declare it.
+    Groups are keyed ``group:<name>`` so they can't shadow an extra.
+    """
     data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    sources: dict[str, list[str]] = dict(data["project"]["optional-dependencies"])
+    for group, entries in data.get("dependency-groups", {}).items():
+        # Groups may contain {include-group = ...} tables; keep requirements.
+        sources[f"group:{group}"] = [e for e in entries if isinstance(e, str)]
     found: dict[str, Requirement] = {}
-    for extra, requirements in data["project"]["optional-dependencies"].items():
+    for source, requirements in sources.items():
         for text in requirements:
             requirement = Requirement(text)
             if requirement.name == "textual":
-                found[extra] = requirement
+                found[source] = requirement
     return found
 
 
@@ -44,10 +52,10 @@ def _tested_versions() -> list[Version]:
 
 
 def test_every_extra_declares_the_same_textual_range() -> None:
-    """``tui`` and ``dev`` each carry their own copy; they must agree."""
+    """The ``tui`` extra and ``dev`` group each carry a copy; they must agree."""
     requirements = _textual_requirements()
 
-    assert set(requirements) >= {"tui", "dev"}
+    assert set(requirements) >= {"tui", "group:dev"}
     specifiers = {str(r.specifier) for r in requirements.values()}
     assert len(specifiers) == 1, requirements
 

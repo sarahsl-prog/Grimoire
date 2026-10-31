@@ -1,12 +1,13 @@
 """Vector store abstraction for Grimoire.
 
-This module provides vector store implementations for Grimoire, including
-ChromaDB and Qdrant backends. All implementations conform to the VectorStore
-abstract base class for easy swapping.
+This module provides Grimoire's vector store. ChromaDB is the only
+implementation (Qdrant has settings models but no store yet); it conforms to
+the VectorStore abstract base class. Build stores with
+:mod:`grimoire.vectorstore.factory` rather than constructing them by hand.
 
 Example:
-    >>> from grimoire.vectorstore import ChromaDBStore
-    >>> store = ChromaDBStore("./chroma_db")
+    >>> from grimoire.vectorstore.factory import create_vector_store
+    >>> store = create_vector_store()
     >>> await store.initialize("documents", embedding_dim=768)
     >>> await store.add_documents(...)
 

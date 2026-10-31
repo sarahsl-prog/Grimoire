@@ -29,7 +29,7 @@ from grimoire.api.dependencies import (
     get_query_agent,
 )
 from grimoire.cli.helpers import build_watcher
-from grimoire.config.settings import get_settings
+from grimoire.core.cache import invalidate_query_results
 from grimoire.db.models import ApiKeyTier, ProcessingStatus
 from grimoire.db.session import get_db_context
 from grimoire.utils.path_guard import (
@@ -762,6 +762,9 @@ async def grimoire_ingest_file(params: IngestFileInput, ctx: Context) -> str:
     agent = get_ingestion_agent()
     async with get_db_context() as db:
         result = await agent.ingest_file(db, str(path), auto_tag=params.auto_tag)
+    # After the context manager has committed.
+    if result.status == "completed":
+        await invalidate_query_results()
     return _ok(result.model_dump())
 
 
@@ -777,6 +780,8 @@ async def grimoire_ingest_directory(params: IngestDirectoryInput, ctx: Context) 
         result = await agent.ingest_directory(
             db, str(directory), recursive=params.recursive, auto_tag=params.auto_tag
         )
+    if result.succeeded:
+        await invalidate_query_results()
     return _ok(result.model_dump())
 
 
@@ -1109,46 +1114,39 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
             await db.rollback()
             return _err("Failed to delete document.")
 
-    # Vector cleanup after durable commit — no longer silently swallowed.
-    # We call ChromaDBStore directly because grimoire.services.vector_store
-    # does not exist (C-1).
-    if vector_ids:
-        from grimoire.vectorstore import ChromaDBStore
+    # Rows were committed above; vectors go after. A cleanup failure is not
+    # an error for the caller: the document is deleted (a retry would get
+    # "not found") and orphaned vectors are hidden from search. See
+    # grimoire.vectorstore.cleanup.
+    from grimoire.vectorstore.cleanup import purge_document_vectors
 
-        settings = get_settings()
-        vector_store = ChromaDBStore(
-            persist_directory=settings.vector_store.chromadb.path,
-            collection_name=settings.vector_store.chromadb.collection_name,
-            host=settings.vector_store.host,
-            port=settings.vector_store.port,
-        )
-        await vector_store.initialize(
-            collection_name=settings.vector_store.chromadb.collection_name,
-            embedding_dim=1,
-        )
-        try:
-            await vector_store.delete(vector_ids)
-            logger.info(
-                f"Deleted {len(vector_ids)} vectors for document {params.document_id}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to delete vectors for {params.document_id}: {e}")
-            return _err("Document deleted but vector cleanup failed.")
-
-    return _ok({"deleted": params.document_id})
+    vectors_removed = await purge_document_vectors(params.document_id, vector_ids)
+    await invalidate_query_results()
+    return _ok({"deleted": params.document_id, "vectors_removed": vectors_removed})
 
 
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     """Run a read-only SELECT query against the Postgres database.
 
-    The user-supplied SQL is validated by PgQueryInput to reject any
-    non-SELECT statements and data-modifying keywords. Execution is wrapped
-    in READ ONLY mode with a statement timeout.
+    Runs as the ``grimoire_readonly`` database role (no ``api_keys``, no
+    writes), in a READ ONLY transaction with a statement timeout. Disabled
+    until ``database.readonly_url`` is configured. PgQueryInput's checks
+    reject obvious non-SELECTs early with a clearer message.
     """
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
     from sqlalchemy import text
 
-    from grimoire.db.session import get_db_manager
+    from grimoire.db.readonly import readonly_session, readonly_url
+
+    # The user's SQL only ever runs as the grimoire_readonly role (migration
+    # 0008), which can't read api_keys or write anything. The regex checks
+    # below are early, friendlier rejections, not the security boundary.
+    if readonly_url() is None:
+        return _err(
+            "pg_query is disabled: it needs the read-only database role. Set "
+            "POSTGRES_READONLY_PASSWORD and redeploy (docs/deploy/docker.md, "
+            "'pg_query and the read-only role')."
+        )
 
     inner = params.sql.rstrip(";")
 
@@ -1173,8 +1171,7 @@ async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     # Postgres limits to a single command.
     sql = text(inner)
 
-    manager = get_db_manager()
-    async with manager.session() as db:
+    async with readonly_session() as db:
         try:
             await db.execute(text("SET TRANSACTION READ ONLY"))
             await db.execute(text("SET LOCAL statement_timeout = '30s'"))

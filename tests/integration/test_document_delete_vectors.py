@@ -87,7 +87,8 @@ async def test_delete_document_removes_vectors(
     chroma_store: ChromaDBStore,
 ):
     """Ingest vectors, delete the document via API, assert ChromaDB is empty."""
-    doc_id = "doc-test-1234"
+    # Must be a UUID: the route 404s anything else (get_by_uuid).
+    doc_id = "7d3c1f0e-8a2b-4c5d-9e6f-0123456789ab"
     vector_ids = ["vec-1", "vec-2", "vec-3"]
     embeddings = [[0.1] * 384, [0.2] * 384, [0.3] * 384]
     metadatas = [

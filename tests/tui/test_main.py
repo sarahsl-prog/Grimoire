@@ -284,8 +284,10 @@ class TestPackaging:
             for dep in data["project"]["optional-dependencies"]["tui"]
         )
 
-    def test_dev_extra_includes_textual_so_ci_runs_the_tui_tests(self) -> None:
+    def test_dev_group_includes_textual_so_ci_runs_the_tui_tests(self) -> None:
+        # `dev` is a [dependency-groups] entry (uv installs it by default),
+        # not an optional extra; it moved there in the audit's phase 3.
         data = tomllib.loads(PYPROJECT.read_text())
 
-        dev = data["project"]["optional-dependencies"]["dev"]
+        dev = data["dependency-groups"]["dev"]
         assert any(dep.startswith("textual") for dep in dev)

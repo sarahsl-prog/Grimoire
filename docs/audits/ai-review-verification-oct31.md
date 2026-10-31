@@ -51,7 +51,7 @@ marked *new* were found after the original review.
 
 ### Code
 
-1. [ ] **M-1: fix the 4 unit tests the audit commits broke**
+1. [x] **M-1: fix the 4 unit tests the audit commits broke**
        (`test_query_agent.py` `_cache_key` calls missing `top_k`;
        `test_watcher_agent.py::test_should_not_process_deleted`).
 2. [x] *New:* **CLI cache stats crash.** Fixed: both callers now await it. Phase 5 made
@@ -59,7 +59,7 @@ marked *new* were found after the original review.
        synchronously (`'coroutine' object has no attribute 'get'`). 4 failing
        tests: `test_cache.py::TestDiskCacheClose` (2) and
        `test_cli.py` cache-stats tests (2).
-3. [ ] *New:* **Per-tier rate limits are never applied.**
+3. [x] *New:* **Per-tier rate limits are never applied.** Done: two-stage limiter (per-IP pre-auth, per-key tier after auth) plus a per-IP invalid-key cap, on REST and MCP; the MCP service previously had no limiter at all. *Worse than first described:* `SlowAPIMiddleware` checks limits before routing, so `request.state.api_key` is never set and **every request is limited by client IP at 30/minute**, whatever its key. Needs a design decision (pre-auth vs post-auth limiting); see PR notes.
        `DEFAULT_TIER_RATE_LIMITS` (`grimoire/api/auth.py`),
        `AuthConfig.rate_limits` / `GRIMOIRE_AUTH__RATE_LIMITS`, and
        `get_tier_rate_limit()` (`grimoire/api/rate_limit.py`) exist but
@@ -67,39 +67,58 @@ marked *new* were found after the original review.
        (documented 600/min) get throttled early. Check whether the key's tier
        is known when `SlowAPIMiddleware` evaluates limits (it runs before
        route dependencies). Keep `in_memory_fallback_enabled=True`.
-4. [ ] **C-3, C-4, C-5: shared vector-store factory** used by
+4. [x] **C-3, C-4, C-5: shared vector-store factory** Done, plus: search hides orphaned vectors, `grimoire reindex` dimension bug fixed. used by
        `documents.py`, `mcp/tools.py`, `watcher.py`, `api/main.py`,
        `cli/status.py`, with one delete contract (commit DB first, then
        delete vectors; log orphaned IDs on failure).
-5. [ ] **C-1, M-2: read-only Postgres role for `pg_query`** (see effort
+5. [x] **C-1, M-2: read-only Postgres role for `pg_query`** Done: migration 0008, `grimoire db readonly-role` run by db-migrate, pg_query refuses until `POSTGRES_READONLY_PASSWORD` is set. Verified against a real PostgreSQL 16 (`tests/integration/test_readonly_role.py`). Was: (see effort
        notes). Closes the `query_to_xml` bypass. *Partly done:* the LIMIT
        wrapper is gone; the cap is now `fetchmany(limit)` on a server-side
        cursor and `;` is rejected. The role is still needed.
-6. [ ] **C-6, C-10: watcher.** Extension filter on DELETED events; check
+6. [x] **C-6, C-10: watcher.** Done, plus MOVED events (renames and atomic saves) and processor restart. Extension filter on DELETED events; check
        the file is still gone before deleting (save-via-rename race); clear
        `_event_loop` on stop.
-7. [ ] **C-7: cache invalidation.** Drop the `hasattr` guards, invalidate on
+7. [x] **C-7: cache invalidation.** Done. Correction to the original
+       finding: invalidation *does* reach the API from the CLI watcher,
+       because both backends are shared stores. Also fixed: the Redis cache
+       backend crashed on construction, and every invalidation wiped cached
+       embeddings and generated content. Not covered: `CoordinatorAgent`
+       ingests through a caller-owned session, so its caller must invalidate
+       after committing.
+       Original text: Drop the `hasattr` guards, invalidate on
        REST ingest, document that the CLI watcher can't clear the API's
        cache.
-8. [ ] **C-8, C-9: observability and startup.** Replace `except: pass` in the
+8. [x] **C-8, C-9: observability and startup.** Done (OTLP provider, Redis instrumentation, watcher status in `/readyz`; `/readyz` also stopped leaking error details). Replace `except: pass` in the
        OTel blocks with warnings; configure a `TracerProvider` + OTLP
        exporter or drop the OTel deps; surface a failed `WatcherAgent` start
        in `/readyz`.
-9. [ ] **C-12: test gaps** not covered by the items above (pagination
+9. [x] **C-12: test gaps** Done: pagination bounds, ChromaDB error mapping across `to_thread`, `/readyz` (had no tests). not covered by the items above (pagination
        bounds, `to_thread` exception mapping, a non-mocked delete
        integration test).
-10. [ ] **Compose `${VAR:?}` guards for `POSTGRES_PASSWORD` /
+10. [x] **Compose `${VAR:?}` guards** Decided: start-time check instead (Redis exits with a clear message; Postgres already does). Was: for `POSTGRES_PASSWORD` /
         `REDIS_PASSWORD`.** Note: Compose interpolates every service, so a
         guard makes all `docker compose` commands fail when the variable is
         unset, including in CI and the deploy tests. Decide whether that's
         wanted, or validate at container start instead (as the caddy
         service does).
-11. [ ] **C-11:** delete or clearly quarantine `examples/rag_pipeline.py`
+11. [x] **C-11:** Done: `examples/` deleted. delete or clearly quarantine `examples/rag_pipeline.py`
         (pickle deserialization via `allow_dangerous_deserialization=True`).
-12. [ ] *New, low:* **stale Celery config.** Celery was removed in phase 3,
+12. [x] *New, low:* **stale Celery config.** Removed from `.env.example`, `grimoire.yaml.example` and the deploy docs. Celery was removed in phase 3,
         but `.env.example` still has a `GRIMOIRE_CELERY__*` block and
         `docs/deploy/docker.md` still lists Redis as the Celery broker. The
         variables are ignored at load time, so this is cleanup, not a bug.
+
+### Also fixed on `audit-followups` (found while working the backlog)
+
+- `grimoire reindex` could never write (opened the store with `embedding_dim=1`).
+- The Redis cache backend crashed every agent builder (`RedisCache` got `path=`).
+- Query-cache invalidation wiped all cached embeddings and generated content.
+- Search could return chunks of deleted documents via orphaned vectors.
+- Watcher ignored MOVED events (renames, atomic saves) and never restarted a
+  dead processor.
+- `/readyz` echoed raw dependency errors publicly.
+- `bcrypt.checkpw` blocked the event loop on every authenticated request.
+- Delete-vectors integration test used a non-UUID id (always 404).
 
 ## Missed by the AI review
 

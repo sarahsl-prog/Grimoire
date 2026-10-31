@@ -16,6 +16,7 @@ from grimoire.api.schemas import (
     CategoryListResponse,
     CategoryResponse,
 )
+from grimoire.core.cache import invalidate_query_results
 from grimoire.db.models import ApiKey, ApiKeyTier, Category, DocumentTag
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -153,3 +154,5 @@ async def delete_category(
 
     await db.delete(cat)
     await db.commit()
+    # Removes the category's tags, which cached tag-filtered queries used.
+    await invalidate_query_results()

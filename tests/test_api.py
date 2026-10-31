@@ -801,6 +801,17 @@ class TestQueryAPI:
 
 
 class TestDocumentsAPI:
+    @pytest.mark.parametrize(
+        "query",
+        ["limit=0", "limit=251", "limit=-5", "offset=-1", "limit=abc"],
+    )
+    def test_list_documents_rejects_out_of_range_pagination(
+        self, client, query: str
+    ) -> None:
+        """Bounds added in audit phase 4a: limit 1-250, offset >= 0."""
+        resp = client.get(f"/api/v1/documents?{query}")
+        assert resp.status_code == 422, resp.text
+
     def test_list_documents(self, app):
         """Test listing documents with mocked DB."""
         mock_session = AsyncMock()
@@ -1046,6 +1057,24 @@ class TestWatchAPI:
         with patch(f"{_ROUTES_WATCH}._get_watcher", return_value=mock_watcher_inst):
             resp = client.delete("/api/v1/watch/nonexistent")
         assert resp.status_code == 404
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/api/v1/watch/local:/data/watch",
+            # What grimoire.client sends: quote(watch_id, safe="").
+            "/api/v1/watch/local%3A%2Fdata%2Fwatch",
+        ],
+    )
+    def test_stop_watch_with_a_real_watch_id(self, client, url: str) -> None:
+        """Regression: ids are "<backend>:<path>", so they contain slashes,
+        and the plain "{watch_id}" route 404'd every one of them."""
+        inst = MagicMock()
+        inst.unwatch = AsyncMock(return_value=True)
+        with patch(f"{_ROUTES_WATCH}._get_watcher", return_value=inst):
+            resp = client.delete(url)
+        assert resp.status_code == 204, resp.text
+        inst.unwatch.assert_awaited_once_with("local:/data/watch")
 
     def _watcher(self, **kw):
         inst = MagicMock()

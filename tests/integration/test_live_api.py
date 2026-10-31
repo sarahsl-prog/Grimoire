@@ -292,12 +292,31 @@ class TestGenerate:
 
 
 class TestWatch:
-    def test_watch_not_initialized(self, client: httpx.Client):
+    def test_watch_start_status_and_stop(self, client: httpx.Client):
+        """The API now runs a WatcherAgent, so /watch works end to end.
+
+        This used to assert a 503 ("watcher not initialized"). Against a
+        server whose watcher is running, that start request succeeded and left
+        a recursive watch on /tmp behind, so this version is non-recursive and
+        always stops what it starts.
+        """
         resp = client.post(
             "/api/v1/watch/start",
-            json={"path": "/tmp", "backend": "local"},
+            json={"path": "/tmp", "backend": "local", "recursive": False},
         )
-        assert resp.status_code == 503
+        if resp.status_code == 503:
+            pytest.skip("watcher not running on this server")
+        assert resp.status_code == 201, resp.text
+        watch_id = resp.json()["watch_id"]
+        try:
+            status = client.get("/api/v1/watch/status")
+            assert status.status_code == 200
+            assert watch_id in {w["watch_id"] for w in status.json()["watches"]}
+        finally:
+            stop = client.delete(f"/api/v1/watch/{watch_id}")
+            assert stop.status_code == 204, stop.text
+        after = client.get("/api/v1/watch/status").json()["watches"]
+        assert watch_id not in {w["watch_id"] for w in after}
 
     def test_watch_status(self, client: httpx.Client):
         resp = client.get("/api/v1/watch/status")

@@ -39,7 +39,7 @@ sequence (embedding model load can take a minute on a cold `model_cache`).
 | Service | Port | Purpose |
 |---|---|---|
 | `postgres` | 127.0.0.1:5434→5432 | Primary metadata database (Postgres 16) |
-| `redis` | 127.0.0.1:6379 | Cache, rate limiting, Celery broker/result backend |
+| `redis` | 127.0.0.1:6379 | Cache and rate-limit counters |
 | `chromadb` | 127.0.0.1:8060→8000 | Vector database |
 | `db-migrate` | — | One-shot Alembic migration; every app container gates on its success and does not start until it completes |
 | `api` | 127.0.0.1:8001 | REST API (Swagger UI at `/docs`); also mounts authenticated MCP at `/mcp/sse` |
@@ -76,9 +76,9 @@ compose `environment:` block — see the warning below.
 
 The full set of `GRIMOIRE_*` variables the compose file sets for every app
 container lives in the `x-grimoire-env` anchor at the top of
-`docker-compose.yml`: database URL, vector store host/port, Redis host/port,
-Celery broker/result URLs, log directory, cache path, upload directory, and
-the Ollama URL. `.env.example` documents the complete list of variables the
+`docker-compose.yml`: database URL, vector store host/port, Redis
+host/port/password, log directory, cache path, upload directory, trusted proxy
+range, and the Ollama URL. `.env.example` documents the complete list of variables the
 application understands, most of which you'd only override for non-default
 behavior (embeddings, chunking, auth, wiki, etc.) — see that file for the
 full reference table.
@@ -212,6 +212,55 @@ malformed entries and on `"*"` mixed with other origins.
 Clients (`grimoire-gui`, `grimoire-tui`, MCP clients) then use
 `GRIMOIRE_API_URL=https://<domain>`, and MCP clients connect to
 `https://<domain>/mcp/sse`.
+
+## pg_query and the read-only role
+
+The MCP tool `grimoire_pg_query` runs ad-hoc SQL for DEV and AGENT keys. It
+only ever connects as `grimoire_readonly`, a database role created by
+migration 0008 with SELECT on every table **except `api_keys`**, no write
+privileges, and a 30s statement timeout. Until that role has a password,
+pg_query is disabled and says so.
+
+To enable it:
+
+1. Set a password in `.env` (24+ characters of letters, digits, `-` or `_`;
+   it goes into a URL unescaped):
+
+   ```bash
+   echo "POSTGRES_READONLY_PASSWORD=$(openssl rand -hex 24)" >> .env
+   ```
+
+2. Redeploy (`docker compose up -d`). The `db-migrate` container runs
+   `alembic upgrade head` and then `grimoire db readonly-role`, which gives
+   the role a login with that password. The app containers receive
+   `GRIMOIRE_DATABASE__READONLY_URL`, built from it.
+
+To rotate the password, change it in `.env` and redeploy. To disable pg_query
+again, clear the variable and redeploy: the URL becomes empty. The role keeps
+its login until you run `ALTER ROLE grimoire_readonly NOLOGIN`.
+
+Bare-metal (no compose): run `alembic upgrade head`, then
+`POSTGRES_READONLY_PASSWORD=... grimoire db readonly-role`, and set
+`GRIMOIRE_DATABASE__READONLY_URL=postgresql+asyncpg://grimoire_readonly:<password>@<host>:<port>/<db>`.
+
+> **New tables are readable by default.** The role gets SELECT on tables that
+> later migrations create. A migration adding a table that holds secrets must
+> also run `REVOKE ALL ON <table> FROM grimoire_readonly`, as 0008 does for
+> `api_keys`.
+
+## Tracing (OpenTelemetry)
+
+Set `GRIMOIRE_OBSERVABILITY__TRACING=true` and point
+`OTEL_EXPORTER_OTLP_ENDPOINT` at an OTLP/gRPC collector (Jaeger, Grafana
+Tempo/Alloy, Honeycomb, an OpenTelemetry Collector, ...), e.g.
+`http://otel-collector:4317`. Each process (api, mcp, watcher) then exports
+spans for incoming HTTP requests, SQL statements and Redis calls, tagged with
+`OTEL_SERVICE_NAME` (default `grimoire`). Other standard `OTEL_EXPORTER_OTLP_*`
+variables (headers, TLS) are honoured.
+
+With tracing on but no endpoint, startup logs a warning and nothing is
+exported. MLflow tracing for MCP tool calls is configured separately
+(`GRIMOIRE_OBSERVABILITY__MLFLOW_*`).
 
 ## ChromaDB access control
 

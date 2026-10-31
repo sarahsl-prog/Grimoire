@@ -941,3 +941,92 @@ class TestChromaDBIntegration:
         # Search still works
         results = await store.search([0.5, 0.4, 0.3, 0.2, 0.1], top_k=5)
         assert len(results) == 1
+
+
+class TestConnectForMaintenance:
+    """connect() opens a collection without inventing an embedding dimension."""
+
+    async def test_connect_opens_but_is_not_initialized(
+        self, chroma_store: ChromaDBStore
+    ) -> None:
+        await chroma_store.connect()
+        assert chroma_store.is_connected
+        assert not chroma_store.is_initialized  # dimension unknown
+
+    async def test_maintenance_ops_work_after_connect(self, temp_db_path: Path) -> None:
+        writer = ChromaDBStore(persist_directory=temp_db_path)
+        await writer.initialize("documents", embedding_dim=3)
+        await writer.add_documents(
+            ids=["a", "b"],
+            embeddings=[[0.1, 0.2, 0.3], [0.3, 0.2, 0.1]],
+            metadatas=[{"k": 1}, {"k": 2}],
+            documents=["x", "y"],
+        )
+
+        maint = ChromaDBStore(persist_directory=temp_db_path)
+        await maint.connect("documents")
+        assert await maint.count() == 2
+        await maint.delete(["a"])
+        assert await maint.count() == 1
+        # The existing collection is reused, not recreated, by connect().
+        assert await writer.count() == 1
+
+    async def test_add_and_search_refuse_without_dimension(
+        self, chroma_store: ChromaDBStore
+    ) -> None:
+        await chroma_store.connect()
+        with pytest.raises(RuntimeError, match="connect"):
+            await chroma_store.add_documents(
+                ids=["a"], embeddings=[[0.1]], metadatas=[{"k": 1}], documents=["x"]
+            )
+        with pytest.raises(RuntimeError, match="connect"):
+            await chroma_store.search(query_embedding=[0.1], top_k=1)
+
+    async def test_initialize_after_connect_enables_writes(
+        self, chroma_store: ChromaDBStore
+    ) -> None:
+        await chroma_store.connect()
+        await chroma_store.initialize(chroma_store.collection_name, embedding_dim=2)
+        assert chroma_store.is_initialized
+        await chroma_store.add_documents(
+            ids=["a"], embeddings=[[0.1, 0.2]], metadatas=[{"k": 1}], documents=["x"]
+        )
+        assert await chroma_store.count() == 1
+
+
+class TestErrorMappingAcrossThreads:
+    """ChromaDB calls run in worker threads (asyncio.to_thread, audit 4a).
+
+    Exceptions must still cross back into the coroutine so the store maps
+    them to its documented RuntimeError instead of leaking ChromaDB types.
+    """
+
+    async def test_delete_maps_chroma_errors(self, chroma_store: ChromaDBStore) -> None:
+        from unittest.mock import patch
+
+        from chromadb.errors import ChromaError
+
+        await chroma_store.connect()
+        assert chroma_store._collection is not None
+        with (
+            patch.object(
+                chroma_store._collection, "delete", side_effect=ChromaError("boom")
+            ),
+            pytest.raises(RuntimeError, match="Failed to delete documents"),
+        ):
+            await chroma_store.delete(["a"])
+
+    async def test_count_maps_chroma_errors(self, chroma_store: ChromaDBStore) -> None:
+        from unittest.mock import patch
+
+        from chromadb.errors import ChromaError
+
+        await chroma_store.connect()
+        assert chroma_store._collection is not None
+        with (
+            patch.object(
+                chroma_store._collection, "count", side_effect=ChromaError("boom")
+            ),
+            pytest.raises(RuntimeError, match="Failed to get document count"),
+        ):
+            await chroma_store.count()

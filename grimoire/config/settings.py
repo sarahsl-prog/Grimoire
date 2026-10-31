@@ -225,15 +225,38 @@ class DatabaseConfig(BaseModel):
     )
     echo: bool = Field(default=False, description="Log SQL statements")
     pool_size: int = Field(default=10, ge=1, le=100, description="Connection pool size")
+    readonly_url: str | None = Field(
+        default=None,
+        description=(
+            "Connection URL for the grimoire_readonly role (migration 0008), "
+            "used only by the MCP pg_query tool. Unset: pg_query is disabled. "
+            "docker-compose.yml builds it from POSTGRES_READONLY_PASSWORD."
+        ),
+    )
+
+    @field_validator("readonly_url", mode="before")
+    @classmethod
+    def _validate_readonly_url(cls, v: object) -> str | None:
+        """Empty means unset; otherwise it must be an asyncpg URL.
+
+        The message never echoes the value: it carries a password.
+        """
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        if not isinstance(v, str) or not v.startswith("postgresql+asyncpg://"):
+            raise ValueError(
+                "database.readonly_url must be a postgresql+asyncpg:// URL for "
+                "the grimoire_readonly role"
+            )
+        return v
 
     @field_validator("url", "dev_url")
     @classmethod
     def validate_db_url(cls, v: str) -> str:
         """Validate database URL format."""
         if not v.startswith(("postgresql://", "postgresql+asyncpg://", "sqlite://")):
-            raise ValueError(
-                f"Database URL must start with postgresql:// or sqlite://: {v}"
-            )
+            # The URL itself is never echoed: it usually carries a password.
+            raise ValueError("Database URL must start with postgresql:// or sqlite://")
         return v
 
     @field_validator("url")
@@ -243,7 +266,7 @@ class DatabaseConfig(BaseModel):
         # Basic validation - should have user:pass@host:port/dbname
         if v.startswith(("postgresql://", "postgresql+asyncpg://")) and "@" not in v:
             raise ValueError(
-                f"PostgreSQL URL should contain credentials (user:pass@host): {v}"
+                "PostgreSQL URL should contain credentials (user:pass@host)"
             )
         return v
 
@@ -765,7 +788,18 @@ class AuthConfig(BaseModel):
             "dvl": "120/minute",
             "rdl": "30/minute",
         },
-        description="Rate limits per tier code (slowapi format)",
+        description=(
+            "Per-API-key rate limit for each tier code (agt, dvl, rdl), in "
+            "limits format, e.g. '600/minute'. Applied after authentication."
+        ),
+    )
+    failed_auth_limit: str = Field(
+        default="10/minute",
+        description=(
+            "Per-client-IP limit on requests with an invalid API key. Past it, "
+            "keys are not even checked (no database lookup or bcrypt) until "
+            "the window resets."
+        ),
     )
     # Empty by default: none of Grimoire's clients need CORS. The GUI, TUI and
     # MCP clients are not browsers, and Swagger UI at /docs is same-origin.
@@ -778,6 +812,42 @@ class AuthConfig(BaseModel):
             "must be the only entry."
         ),
     )
+
+    @field_validator("rate_limits")
+    @classmethod
+    def _validate_rate_limits(cls, v: dict[str, str]) -> dict[str, str]:
+        """Known tier codes only, each a limit string the limiter can parse."""
+        from limits import parse
+
+        known = {"agt", "dvl", "rdl"}
+        if unknown := set(v) - known:
+            raise ValueError(
+                f"auth.rate_limits: unknown tier code(s) {sorted(unknown)}; "
+                f"use {sorted(known)}"
+            )
+        for tier, limit in v.items():
+            try:
+                parse(limit)
+            except ValueError as e:
+                raise ValueError(
+                    f"auth.rate_limits[{tier!r}]: {limit!r} is not a rate limit "
+                    "(expected e.g. '600/minute')"
+                ) from e
+        return v
+
+    @field_validator("failed_auth_limit")
+    @classmethod
+    def _validate_failed_auth_limit(cls, v: str) -> str:
+        from limits import parse
+
+        try:
+            parse(v)
+        except ValueError as e:
+            raise ValueError(
+                f"auth.failed_auth_limit: {v!r} is not a rate limit "
+                "(expected e.g. '10/minute')"
+            ) from e
+        return v
 
     @field_validator("cors_origins")
     @classmethod
@@ -1093,6 +1163,10 @@ class GrimoireSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",  # Ignore extra fields for forward compatibility
         validate_default=True,
+        # Keep rejected values out of error messages: many settings are
+        # secrets (database URLs with passwords, API keys, tokens), and a
+        # startup validation error is printed to the logs.
+        hide_input_in_errors=True,
     )
 
     # Nested configuration sections

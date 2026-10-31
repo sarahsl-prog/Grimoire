@@ -49,6 +49,10 @@ class DatabaseSessionManager:
                     SQLAlchemyInstrumentor,
                 )
 
+                from grimoire.utils.tracing import configure_tracing
+
+                configure_tracing()
+
                 SQLAlchemyInstrumentor().instrument(
                     engine=self._engine.sync_engine,
                 )
@@ -151,6 +155,10 @@ async def close_db() -> None:
     if _db_manager:
         await _db_manager.close()
         _db_manager = None
+    # pg_query's separate read-only pool, if it was ever used.
+    from grimoire.db.readonly import close_readonly_engine
+
+    await close_readonly_engine()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

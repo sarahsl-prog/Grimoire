@@ -6,6 +6,62 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **Settings errors no longer print secrets.** A rejected setting was echoed
+  in the startup error (both by pydantic's `input_value` and by the database
+  URL validators' own messages), so a mistyped `GRIMOIRE_DATABASE__URL` put
+  its password in the logs. `GrimoireSettings` now hides input values, and
+  the validators no longer include the URL.
+- **`grimoire_pg_query` runs as a read-only database role.** Its regex guards
+  could be bypassed: `query_to_xml('select * from api_' || 'keys', ...)`
+  builds the query at run time and read the `api_keys` table. Migration 0008
+  adds a `grimoire_readonly` role with SELECT on every table except
+  `api_keys` and no write privileges, and pg_query now connects only as that
+  role, through `database.readonly_url`. **Breaking:** pg_query is disabled
+  (it returns an error explaining why) until the role is set up; see
+  "pg_query and the read-only role" in `docs/deploy/docker.md`.
+- **The MCP server is rate limited.** The dedicated `mcp` service, which the
+  Caddy proxy routes `/mcp/*` to, had no rate limiter at all. Even inside the
+  API app, slowapi skips mounted apps, so `/mcp` was never limited. MCP
+  requests now get the per-key tier limit and the invalid-key cap in the MCP
+  auth middleware, and the MCP app has the same limiter as the API, with
+  `/health` exempt.
+- **Per-key tier rate limits, and a cap on invalid API keys.** slowapi's
+  middleware runs before authentication, so it never knew the key: every
+  request, keyed or not, shared one per-client-IP bucket of 30/minute, and
+  agent keys (documented at 600/minute) were throttled at 30. Rate limiting
+  now has three stages: a per-IP ceiling before auth (30/minute without a key,
+  the highest tier limit with one); each key's own `auth.rate_limits` tier
+  limit after auth; and a per-IP `auth.failed_auth_limit` (default
+  10/minute) on invalid keys, past which keys aren't looked up at all, so
+  guessing can't burn database or bcrypt time. 429 responses carry
+  `Retry-After`.
+- **Redis refuses to start without a password, and keeps it off the command
+  line.** An unset `REDIS_PASSWORD` used to crash Redis with "FATAL CONFIG
+  FILE ERROR ... 'requirepass' wrong number of arguments". It now exits with
+  "set REDIS_PASSWORD in .env". The password is written to a private config
+  file instead of a `--requirepass` argument visible in the process list, and
+  the image entrypoint still drops Redis to the `redis` user. The healthcheck
+  now authenticates; an unauthenticated ping only gets a NOAUTH reply.
+- **Removed the `examples/` prototypes.** `examples/rag_pipeline.py` loaded
+  FAISS indexes with `allow_dangerous_deserialization=True` (pickle), so
+  loading an untrusted index file meant arbitrary code execution, and
+  `examples/app.py` depended on it. Neither was used by Grimoire or its tests.
+- **`/readyz` no longer returns raw dependency errors.** It is
+  unauthenticated, and public once behind the Caddy proxy, yet it echoed
+  exception text such as connection errors naming internal hosts and ports.
+  Failed checks now read `"error"` and the cause is logged server-side.
+- **Deleted documents can no longer surface in search through orphaned
+  vectors.** Search results come from the vector store, which holds chunk
+  text; if vector cleanup failed after a delete, the deleted document's text
+  was still returned by search and fed to RAG answers. Hybrid search now drops
+  vector hits whose document no longer exists (one batched query), failing
+  closed if that check errors.
+- **One delete contract for REST, MCP and the watcher.** All three now delete
+  and commit the document's rows first, then remove its vectors via
+  `grimoire.vectorstore.cleanup.purge_document_vectors`, which never raises and
+  logs any orphaned vector ids. Previously the REST route deleted vectors first
+  and returned a raw 500 when ChromaDB was down; the MCP tool reported an error
+  for a delete that had succeeded (it now returns `vectors_removed: false`).
 - **`grimoire_pg_query` row limit can no longer be bypassed.** The tool wrapped
   the validated SQL as `SELECT * FROM (<sql>) AS _q LIMIT :n`, so a query
   ending in `) AS x --` closed the subquery and commented out the `LIMIT`,
@@ -57,6 +113,13 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **`grimoire.vectorstore.factory`**: `create_vector_store()` and
+  `get_maintenance_store()` replace seven hand-copied `ChromaDBStore(...)`
+  blocks. Maintenance callers (delete, `status`, `/readyz`) open the store with
+  the new `ChromaDBStore.connect()` instead of a fake `embedding_dim=1`, and
+  reuse one client instead of creating one per request. Setting
+  `vector_store.type: qdrant` now fails with a clear error instead of silently
+  using ChromaDB.
 - **CI on every pull request.** Three gating workflows run on each PR: lint and
   type check (the `pre-commit` gate), unit tests on Python 3.12 and 3.13, and
   integration tests that run `tests/integration/test_live_api.py` against a
@@ -131,6 +194,64 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **Watches can be stopped over REST.** Watch ids are `<backend>:<path>`
+  (e.g. `local:/data/watch`) and so contain slashes, which the
+  `DELETE /api/v1/watch/{watch_id}` route never matched, even
+  percent-encoded: every stop returned 404, including from the TUI's watch
+  tab. The route now takes the id as a path parameter.
+- **API key checks no longer block the event loop.** `bcrypt.checkpw`
+  (deliberately slow) ran synchronously in the async auth path, stalling every
+  other request, including MCP SSE streams, on each authenticated call. It now
+  runs in a worker thread.
+- **A watcher that fails to start is visible.** If `WatcherAgent` failed to
+  initialise, the API logged a warning and served `/watch` routes that always
+  returned 503. It now logs an error and `/readyz` reports
+  `"watcher": "error"` (or `ok` / `disabled`). Readiness itself is unaffected,
+  since the rest of the API works.
+- **Tracing exports spans.** `observability.tracing: true` instrumented
+  FastAPI and SQLAlchemy but never installed a tracer provider, so
+  OpenTelemetry's no-op default discarded every span. `grimoire.utils.tracing`
+  now installs one with an OTLP/gRPC exporter configured from
+  `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_SERVICE_NAME`, and instruments Redis
+  (the package was a dependency but unused).
+- **Cached answers are invalidated on every document change.** Only the REST
+  delete route and the watcher invalidated, through a `hasattr` guard that hid
+  wiring mistakes. REST and MCP ingest, tagging, category deletes and the CLI
+  never did, so `ask`/`search` could serve pre-change answers for up to the
+  result TTL (1 day by default). All of them now call
+  `grimoire.core.cache.invalidate_query_results()` after their commit. It
+  clears only the query namespace and works across processes, since the cache
+  is a shared Redis server or a shared cache directory.
+- **Query-cache invalidation no longer wipes embeddings and generated
+  content.** The query agent shared its cache with the embedder (and, on disk,
+  the same directory as content generation), and `invalidate_cache()` runs
+  after every watcher ingest and every delete. Each one cleared every cached
+  embedding and every generated summary, flashcard and outline (30-day TTL).
+  `DiskCache` now takes a `namespace`: keys are prefixed and entries tagged
+  with it, and `clear()` evicts only that namespace. Entries cached before
+  this change are untagged and simply age out.
+- **The Redis cache backend works.** With `cache.storage: redis`, every agent
+  builder crashed: they called `CacheFactory.create(backend="redis", path=...)`
+  and `RedisCache` takes no `path`. The Redis host, port, password and
+  `redis.db_cache` were never passed either. Caches are now built with
+  `CacheFactory.from_settings()`, and embeddings, query results and generated
+  content each get their own namespace.
+- **`grimoire reindex` can repair missing embeddings again.** It opened the
+  vector store with a placeholder `embedding_dim=1`, so every write failed the
+  store's own dimension check ("dimension 768, expected 1") and nothing was
+  re-embedded. It now opens the store with the embedder's real dimension.
+- **Watcher: renames, atomic saves and delete races.**
+  - A renamed file (`a.pdf` → `b.pdf`) now removes the old path's document and
+    ingests the new path. MOVED events used to be ignored entirely.
+  - Edits from editors that save atomically (write a temp file, rename it over
+    the original) are now re-ingested; they also arrived as MOVED.
+  - DELETED events use the same extension filter as creates, so deleting a
+    `.log` or swap file no longer triggers a document lookup.
+  - If a deleted local file is back on disk before the delete is processed
+    (delete-and-recreate saves), its document is kept.
+  - A crashed event processor is restarted by the next `watch()`, and events
+    arriving after `stop_all()` are dropped instead of touching the asyncio
+    queue from the observer thread.
 - **`grimoire cache stats` and `grimoire status --detailed` no longer crash on
   the disk cache.** `DiskCache.get_stats()` became async when its sqlite I/O
   moved off the event loop, but both commands still called it synchronously

@@ -16,6 +16,7 @@ from grimoire.api.schemas import (
     DocumentListResponse,
     DocumentResponse,
 )
+from grimoire.core.cache import invalidate_query_results
 from grimoire.db.models import (
     ApiKey,
     ApiKeyTier,
@@ -301,6 +302,8 @@ async def tag_document(
 
         logger.error(f"Failed to tag document {document_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to tag document") from exc
+    # Tag filters are part of cached queries' keys and results.
+    await invalidate_query_results()
 
 
 @router.delete("/{document_id}/tags/{category_id}", status_code=204)
@@ -324,6 +327,8 @@ async def untag_document(
 
         logger.error(f"Failed to untag document {document_id}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to untag document") from exc
+    # Tag filters are part of cached queries' keys and results.
+    await invalidate_query_results()
 
 
 @router.delete("/{document_id}", status_code=204)
@@ -338,29 +343,10 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
 
-    # Clean up vector store entries before deleting document.
-    # Failure here is logged as an error and surfaced to the caller; we do not
-    # silently swallow ImportError or broad Exceptions anymore (C-1).
-    from grimoire.config.settings import get_settings
-    from grimoire.vectorstore import ChromaDBStore
-
-    settings = get_settings()
+    # Collect vector ids while the chunks are still loaded; they can't be
+    # read after the delete. Rows go first, vectors after the commit; see
+    # grimoire.vectorstore.cleanup for the contract.
     vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
-    if vector_ids:
-        vector_store = ChromaDBStore(
-            persist_directory=settings.vector_store.chromadb.path,
-            collection_name=settings.vector_store.chromadb.collection_name,
-            host=settings.vector_store.host,
-            port=settings.vector_store.port,
-        )
-        # embedding_dim is only validated during init; we pass 1 because deletion
-        # does not add documents and the collection is expected to exist already.
-        await vector_store.initialize(
-            collection_name=settings.vector_store.chromadb.collection_name,
-            embedding_dim=1,
-        )
-        await vector_store.delete(vector_ids)
-        logger.info(f"Deleted {len(vector_ids)} vectors for document {document_id}")
 
     await db.delete(doc)
     try:
@@ -373,14 +359,10 @@ async def delete_document(
             status_code=500, detail="Failed to delete document"
         ) from commit_error
 
-    # Invalidate query cache so stale results are not served.
-    try:
-        from grimoire.api.dependencies import get_query_agent
+    # The document is gone once the commit lands, so this is a 204 even if
+    # vector cleanup fails: the orphans are logged and hidden from search.
+    from grimoire.vectorstore.cleanup import purge_document_vectors
 
-        agent = get_query_agent()
-        if hasattr(agent, "invalidate_cache"):
-            await agent.invalidate_cache()
-            logger.debug(f"Query cache invalidated after deleting {document_id}")
-    except Exception as cache_err:
-        # Cache invalidation is best-effort; do not fail the request.
-        logger.warning(f"Failed to invalidate query cache: {cache_err}")
+    await purge_document_vectors(document_id, vector_ids)
+
+    await invalidate_query_results()
