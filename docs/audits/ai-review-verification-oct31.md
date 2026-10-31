@@ -71,7 +71,7 @@ marked *new* were found after the original review.
        `documents.py`, `mcp/tools.py`, `watcher.py`, `api/main.py`,
        `cli/status.py`, with one delete contract (commit DB first, then
        delete vectors; log orphaned IDs on failure).
-5. [ ] **C-1, M-2: read-only Postgres role for `pg_query`** (see effort
+5. [x] **C-1, M-2: read-only Postgres role for `pg_query`** Done: migration 0008, `grimoire db readonly-role` run by db-migrate, pg_query refuses until `POSTGRES_READONLY_PASSWORD` is set. Verified against a real PostgreSQL 16 (`tests/integration/test_readonly_role.py`). Was: (see effort
        notes). Closes the `query_to_xml` bypass. *Partly done:* the LIMIT
        wrapper is gone; the cap is now `fetchmany(limit)` on a server-side
        cursor and `;` is rejected. The role is still needed.
