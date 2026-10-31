@@ -288,28 +288,55 @@ class WatcherAgent:
         """
 
         def on_change(change: FileChange) -> None:
-            if not self._should_process(change):
-                return
-
-            # Find the tracker by matching path prefix
+            # Called from the watchdog observer thread for local watches, so it
+            # must never touch the asyncio.Queue directly: hand each event to
+            # the loop with call_soon_threadsafe.
             watch_id = self._find_watch_id(watch_path)
-            if watch_id:
+            if not watch_id:
+                return
+            for event in self._expand_change(change):
+                if not self._should_process(event):
+                    continue
                 loop = self._event_loop
-                if loop is not None:
+                if loop is None:
+                    # Watcher stopped; late events from the observer are moot.
+                    logger.debug(f"WatcherAgent stopped, dropping event: {event.path}")
+                    continue
+                try:
                     loop.call_soon_threadsafe(
-                        self._processing_queue.put_nowait, (watch_id, change)
+                        self._processing_queue.put_nowait, (watch_id, event)
                     )
-                else:
-                    # Fallback: event loop not captured yet (should not happen
-                    # after _start_processor runs, but defensively handle).
-                    try:
-                        self._processing_queue.put_nowait((watch_id, change))
-                    except asyncio.QueueFull:
-                        logger.warning(
-                            f"Processing queue full, dropping event: {change.path}"
-                        )
+                except RuntimeError:
+                    # The loop closed between the check and the call (shutdown).
+                    logger.debug(f"Event loop closed, dropping event: {event.path}")
 
         return on_change
+
+    @staticmethod
+    def _expand_change(change: FileChange) -> list[FileChange]:
+        """Split a MOVED event into DELETED (old path) + CREATED (new path).
+
+        Both a rename (``a.pdf`` -> ``b.pdf``) and an editor's atomic save
+        (write a temp file, rename it over the original) arrive as MOVED.
+        Treated as a delete plus a create, the old path's document is removed
+        and the new path is ingested; each half is filtered on its own, so a
+        temp file (``.swp``, ``~``) contributes nothing.
+        """
+        if change.change_type != FileChangeType.MOVED or not change.previous_path:
+            return [change]
+        return [
+            FileChange(
+                change_type=FileChangeType.DELETED,
+                path=change.previous_path,
+                timestamp=change.timestamp,
+            ),
+            FileChange(
+                change_type=FileChangeType.CREATED,
+                path=change.path,
+                timestamp=change.timestamp,
+                file_info=change.file_info,
+            ),
+        ]
 
     def _should_process(self, change: FileChange) -> bool:
         """Determine if a file change should trigger ingestion.
