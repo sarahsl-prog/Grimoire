@@ -28,8 +28,76 @@ Every finding below was checked against the code at `6a6d9d6`.
 | Security overlay port tests | Done: two deploy tests broken by phase 2 updated to the env-driven port design. |
 | CORS (`["*"]` in env templates) | Done: default `[]` in code and templates, origins validated. |
 | Redis outage → API-wide 500s (found while checking `test_security.py`) | Done: slowapi in-memory fallback enabled. |
-| DiskCache `get_stats()` made async in phase 5, CLI still calls it synchronously (4 failing tests in `test_cache.py` / `test_cli.py`) | Open. |
-| M-1, M-2, C-1, C-3–C-12 | Open. |
+| Everything else | Open; see the follow-up backlog below. |
+
+## Follow-up backlog
+
+Open work, in recommended order. Tick items off here as they land (per
+CLAUDE.md, one fix per commit). IDs refer to the sections below; items
+marked *new* were found after the original review.
+
+### Before the first VPS deploy (manual steps)
+
+- [ ] Copy `.env` fresh from `.env.example`, or edit an existing one: set
+      `GRIMOIRE_AUTH__CORS_ORIGINS=[]` (an old `.env` still has `["*"]`,
+      which overrides the new default).
+- [ ] Set `GRIMOIRE_DOMAIN` and `ACME_EMAIL`; point DNS at the server.
+- [ ] Hetzner Cloud Firewall: inbound 22 (your IP), 80/tcp, 443/tcp,
+      443/udp only.
+- [ ] Validate the Caddyfile (never run against a real Caddy binary yet):
+      `docker compose --profile proxy run --rm caddy caddy validate --config /etc/caddy/Caddyfile`
+- [ ] After `up`, from outside the VPS: `nmap -Pn -p 1-10000 <vps-ip>`
+      shows only 22, 80, 443; `curl https://<domain>/health` returns ok.
+
+### Code
+
+1. [ ] **M-1: fix the 4 unit tests the audit commits broke**
+       (`test_query_agent.py` `_cache_key` calls missing `top_k`;
+       `test_watcher_agent.py::test_should_not_process_deleted`).
+2. [ ] *New:* **CLI cache stats crash.** Phase 5 made
+       `DiskCache.get_stats()` async; `grimoire/cli/status.py` still calls it
+       synchronously (`'coroutine' object has no attribute 'get'`). 4 failing
+       tests: `test_cache.py::TestDiskCacheClose` (2) and
+       `test_cli.py` cache-stats tests (2).
+3. [ ] *New:* **Per-tier rate limits are never applied.**
+       `DEFAULT_TIER_RATE_LIMITS` (`grimoire/api/auth.py`),
+       `AuthConfig.rate_limits` / `GRIMOIRE_AUTH__RATE_LIMITS`, and
+       `get_tier_rate_limit()` (`grimoire/api/rate_limit.py`) exist but
+       nothing uses them. Every key gets the 30/minute default, so agent keys
+       (documented 600/min) get throttled early. Check whether the key's tier
+       is known when `SlowAPIMiddleware` evaluates limits (it runs before
+       route dependencies). Keep `in_memory_fallback_enabled=True`.
+4. [ ] **C-3, C-4, C-5: shared vector-store factory** used by
+       `documents.py`, `mcp/tools.py`, `watcher.py`, `api/main.py`,
+       `cli/status.py`, with one delete contract (commit DB first, then
+       delete vectors; log orphaned IDs on failure).
+5. [ ] **C-1, M-2: read-only Postgres role for `pg_query`** (see effort
+       notes) plus `fetchmany(limit)`. Closes the `query_to_xml` bypass.
+6. [ ] **C-6, C-10: watcher.** Extension filter on DELETED events; check
+       the file is still gone before deleting (save-via-rename race); clear
+       `_event_loop` on stop.
+7. [ ] **C-7: cache invalidation.** Drop the `hasattr` guards, invalidate on
+       REST ingest, document that the CLI watcher can't clear the API's
+       cache.
+8. [ ] **C-8, C-9: observability and startup.** Replace `except: pass` in the
+       OTel blocks with warnings; configure a `TracerProvider` + OTLP
+       exporter or drop the OTel deps; surface a failed `WatcherAgent` start
+       in `/readyz`.
+9. [ ] **C-12: test gaps** not covered by the items above (pagination
+       bounds, `to_thread` exception mapping, a non-mocked delete
+       integration test).
+10. [ ] **Compose `${VAR:?}` guards for `POSTGRES_PASSWORD` /
+        `REDIS_PASSWORD`.** Note: Compose interpolates every service, so a
+        guard makes all `docker compose` commands fail when the variable is
+        unset, including in CI and the deploy tests. Decide whether that's
+        wanted, or validate at container start instead (as the caddy
+        service does).
+11. [ ] **C-11:** delete or clearly quarantine `examples/rag_pipeline.py`
+        (pickle deserialization via `allow_dangerous_deserialization=True`).
+12. [ ] *New, low:* **stale Celery config.** Celery was removed in phase 3,
+        but `.env.example` still has a `GRIMOIRE_CELERY__*` block and
+        `docs/deploy/docker.md` still lists Redis as the Celery broker. The
+        variables are ignored at load time, so this is cleanup, not a bug.
 
 ## Missed by the AI review
 
