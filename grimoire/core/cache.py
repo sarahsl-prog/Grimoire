@@ -11,9 +11,10 @@ import asyncio
 import hashlib
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 
@@ -298,8 +299,10 @@ class RedisCache(Cache):
             )
             self._client = redis.Redis(connection_pool=self._pool)
 
-            # Test connection
-            await self._client.ping()
+            # Test connection.
+            # redis-py types commands as `Awaitable[T] | T` for both clients; the
+            # asyncio client always returns an awaitable.
+            await cast(Awaitable[bool], self._client.ping())
             logger.info(f"RedisCache connected to {self._host}:{self._port}/{self._db}")
         except ImportError:
             logger.error("redis package not installed")

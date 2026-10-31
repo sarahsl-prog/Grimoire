@@ -317,7 +317,8 @@ dev = [
     "black>=24.2",
     "pre-commit>=3.6",
     "bandit>=1.7",
-    "types-redis>=4.6",
+    # No types-redis: redis>=5 ships its own type hints (py.typed), and the
+    # 4.x stubs shadow them, e.g. hiding redis.asyncio.Redis.aclose().
     "types-pyyaml>=6.0",
     "types-requests>=2.31",
     "types-aiofiles>=23.2",

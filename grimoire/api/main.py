@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -306,7 +306,9 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
                     f"redis://{settings.redis.host}:{settings.redis.port}",
                     password=settings.redis.password or None,
                 )
-                await r.ping()
+                # redis-py types commands as `Awaitable[T] | T` for both clients;
+                # the asyncio client always returns an awaitable.
+                await cast(Awaitable[bool], r.ping())
                 await r.aclose()
                 checks["redis"] = "ok"
             else:
