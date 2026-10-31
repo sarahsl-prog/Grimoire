@@ -59,7 +59,7 @@ marked *new* were found after the original review.
        synchronously (`'coroutine' object has no attribute 'get'`). 4 failing
        tests: `test_cache.py::TestDiskCacheClose` (2) and
        `test_cli.py` cache-stats tests (2).
-3. [ ] *New:* **Per-tier rate limits are never applied.** *Worse than first described:* `SlowAPIMiddleware` checks limits before routing, so `request.state.api_key` is never set and **every request is limited by client IP at 30/minute**, whatever its key. Needs a design decision (pre-auth vs post-auth limiting); see PR notes.
+3. [x] *New:* **Per-tier rate limits are never applied.** Done: two-stage limiter (per-IP pre-auth, per-key tier after auth) plus a per-IP invalid-key cap, on REST and MCP; the MCP service previously had no limiter at all. *Worse than first described:* `SlowAPIMiddleware` checks limits before routing, so `request.state.api_key` is never set and **every request is limited by client IP at 30/minute**, whatever its key. Needs a design decision (pre-auth vs post-auth limiting); see PR notes.
        `DEFAULT_TIER_RATE_LIMITS` (`grimoire/api/auth.py`),
        `AuthConfig.rate_limits` / `GRIMOIRE_AUTH__RATE_LIMITS`, and
        `get_tier_rate_limit()` (`grimoire/api/rate_limit.py`) exist but
