@@ -191,11 +191,32 @@ def _active_limiter(request: Request) -> Any | None:
     return limiter
 
 
+def _call(limiter: Any, op: str, item: RateLimitItem, *keys: str) -> Any:
+    """Run ``hit``/``test``/``get_window_stats`` with slowapi's memory fallback.
+
+    slowapi only switches to its in-memory fallback when its own middleware
+    check fails, and that never runs for ``/mcp`` (a mounted app has no
+    endpoint, so slowapi skips it). Without this, a Redis outage would make
+    these stages fail open, including the invalid-key cap.
+    """
+    try:
+        return getattr(limiter.limiter, op)(item, *keys)
+    except Exception as e:
+        fallback = getattr(limiter, "_fallback_limiter", None)
+        if fallback is None:
+            raise
+        logger.warning(
+            f"Rate limit storage unavailable ({type(e).__name__}); "
+            "using in-memory counters"
+        )
+        return getattr(fallback, op)(item, *keys)
+
+
 def _too_many(item: RateLimitItem, what: str, limiter: Any, *keys: str) -> None:
     """Raise a 429 for ``item`` with a Retry-After from the window stats."""
     headers: dict[str, str] = {}
     try:
-        reset_at, _ = limiter.limiter.get_window_stats(item, *keys)
+        reset_at, _ = _call(limiter, "get_window_stats", item, *keys)
         headers["Retry-After"] = str(max(1, int(reset_at - time.time())))
     except Exception as e:
         # Retry-After is a courtesy; the 429 stands without it.
@@ -208,9 +229,9 @@ def _too_many(item: RateLimitItem, what: str, limiter: Any, *keys: str) -> None:
 def enforce_tier_limit(request: Request, api_key: ApiKey) -> None:
     """Count this request against the key's tier limit; 429 when exceeded.
 
-    Fails open if the limiter's storage errors: stage 1 still caps the
-    client's IP, and refusing every authenticated request over a Redis blip
-    would be worse.
+    Uses in-memory counters if Redis is down (see :func:`_call`); fails open
+    only if those error too, since refusing every authenticated request would
+    be worse.
     """
     limiter = _active_limiter(request)
     if limiter is None:
@@ -219,7 +240,7 @@ def enforce_tier_limit(request: Request, api_key: ApiKey) -> None:
     item = parse(_auth_config().rate_limits.get(tier, DEFAULT_LIMIT))
     keys = ("tier", api_key.key_prefix)
     try:
-        allowed = limiter.limiter.hit(item, *keys)
+        allowed = _call(limiter, "hit", item, *keys)
     except Exception as e:
         logger.warning(f"Tier rate limit check failed ({type(e).__name__}); allowing")
         return
@@ -243,7 +264,7 @@ def check_failed_auth(request: Request) -> None:
     item = _failed_auth_item()
     keys = ("authfail", _get_client_ip(request))
     try:
-        within = limiter.limiter.test(item, *keys)
+        within = _call(limiter, "test", item, *keys)
     except Exception as e:
         logger.warning(f"Failed-auth limit check failed ({type(e).__name__})")
         return
@@ -257,6 +278,6 @@ def record_failed_auth(request: Request) -> None:
     if limiter is None:
         return
     try:
-        limiter.limiter.hit(_failed_auth_item(), "authfail", _get_client_ip(request))
+        _call(limiter, "hit", _failed_auth_item(), "authfail", _get_client_ip(request))
     except Exception as e:
         logger.warning(f"Failed-auth limit update failed ({type(e).__name__})")

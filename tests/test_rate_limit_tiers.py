@@ -17,7 +17,7 @@ import socket
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -167,3 +167,34 @@ def test_preauth_ceiling_is_the_highest_tier_limit() -> None:
     assert _highest_limit(SMALL_LIMITS) == "8/minute"
     # Compared per second, not by raw count.
     assert _highest_limit({"agt": "100/hour", "rdl": "5/second"}) == "5/second"
+
+
+def test_stages_use_memory_counters_when_storage_is_down() -> None:
+    """Regression: the per-key and invalid-key stages failed open on a Redis
+    outage whenever slowapi's own middleware hadn't already switched to its
+    in-memory fallback (it never runs for the mounted /mcp app)."""
+    from fastapi import HTTPException
+    from limits.storage import MemoryStorage
+    from limits.strategies import FixedWindowRateLimiter
+
+    from grimoire.api.rate_limit import check_failed_auth, record_failed_auth
+
+    broken = MagicMock()
+    broken.hit.side_effect = ConnectionError("redis down")
+    broken.test.side_effect = ConnectionError("redis down")
+    limiter = MagicMock(enabled=True, limiter=broken)
+    limiter._fallback_limiter = FixedWindowRateLimiter(MemoryStorage())
+    request = MagicMock()
+    request.app.state.limiter = limiter
+    request.client.host = "203.0.113.9"
+
+    with patch(
+        "grimoire.api.rate_limit._auth_config",
+        return_value=MagicMock(failed_auth_limit="2/minute"),
+    ):
+        for _ in range(2):
+            check_failed_auth(request)
+            record_failed_auth(request)
+        with pytest.raises(HTTPException) as exc:
+            check_failed_auth(request)
+    assert exc.value.status_code == 429
