@@ -23,7 +23,7 @@ from grimoire.db.models import StorageBackend
 from grimoire.db.repositories import DocumentRepository
 from grimoire.storage.base import FileChange, FileChangeType
 from grimoire.storage.watch_manager import WatchManager
-from grimoire.vectorstore import ChromaDBStore
+from grimoire.vectorstore.cleanup import purge_document_vectors
 
 # =============================================================================
 # Data Models
@@ -475,32 +475,18 @@ class WatcherAgent:
                         )
                         return
 
+                    # Rows first, vectors after the commit (one contract for
+                    # every delete path; see grimoire.vectorstore.cleanup).
                     vector_ids = [
                         chunk.vector_id for chunk in doc.chunks if chunk.vector_id
                     ]
-                    if vector_ids:
-                        from grimoire.config.settings import get_settings
-
-                        settings = get_settings()
-                        vector_store = ChromaDBStore(
-                            persist_directory=settings.vector_store.chromadb.path,
-                            collection_name=settings.vector_store.chromadb.collection_name,
-                            host=settings.vector_store.host,
-                            port=settings.vector_store.port,
-                        )
-                        await vector_store.initialize(
-                            collection_name=settings.vector_store.chromadb.collection_name,
-                            embedding_dim=1,
-                        )
-                        await vector_store.delete(vector_ids)
-                        logger.info(
-                            f"Deleted {len(vector_ids)} vectors for {file_path}"
-                        )
-
+                    document_id = str(doc.id)
                     await db.delete(doc)
                     await db.commit()
                     tracker.files_processed += 1
                     logger.info(f"WatcherAgent: deleted document for {file_path}")
+
+                    await purge_document_vectors(document_id, vector_ids)
 
                     # Invalidate query cache so stale results are not served.
                     await self._invalidate_query_cache()
