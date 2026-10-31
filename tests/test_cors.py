@@ -9,7 +9,7 @@ path or trailing slash (never matches) and ``*`` mixed with real origins
 
 from __future__ import annotations
 
-import sys
+import importlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -22,7 +22,7 @@ from grimoire.config.settings import AuthConfig
 
 # `grimoire.config` exports a `settings` object that shadows the submodule
 # name, so `import grimoire.config.settings as m` binds the object instead.
-settings_mod = sys.modules["grimoire.config.settings"]
+settings_mod = importlib.import_module("grimoire.config.settings")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIL = "https://evil.example.com"
