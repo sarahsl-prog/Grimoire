@@ -6,6 +6,13 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **Redis refuses to start without a password, and keeps it off the command
+  line.** An unset `REDIS_PASSWORD` used to crash Redis with "FATAL CONFIG
+  FILE ERROR ... 'requirepass' wrong number of arguments". It now exits with
+  "set REDIS_PASSWORD in .env". The password is written to a private config
+  file instead of a `--requirepass` argument visible in the process list, and
+  the image entrypoint still drops Redis to the `redis` user. The healthcheck
+  now authenticates; an unauthenticated ping only gets a NOAUTH reply.
 - **Removed the `examples/` prototypes.** `examples/rag_pipeline.py` loaded
   FAISS indexes with `allow_dangerous_deserialization=True` (pickle), so
   loading an untrusted index file meant arbitrary code execution, and

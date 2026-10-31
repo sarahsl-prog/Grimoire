@@ -216,3 +216,69 @@ class TestProxyHeaders:
         assert ipaddress.ip_network(subnet).subnet_of(
             ipaddress.ip_network("172.16.0.0/12")
         )
+
+
+class TestRedisStartup:
+    """Redis refuses to start without a password and keeps it off argv."""
+
+    @pytest.fixture(scope="class")
+    def redis(self) -> dict:
+        return _load(REPO_ROOT / "docker-compose.yml")["services"]["redis"]
+
+    def _run(
+        self, redis: dict, tmp_path: Path, password: str | None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run the start script with stubbed chown and image entrypoint."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "chown").write_text("#!/bin/sh\nexit 0\n")
+        # Stand-in for the image's entrypoint: report what it was given.
+        (bin_dir / "docker-entrypoint.sh").write_text(
+            '#!/bin/sh\necho "ARGS: $*"\necho "CONF: $(cat "$2")"\n'
+        )
+        for f in bin_dir.iterdir():
+            f.chmod(0o755)
+        conf = tmp_path / "redis-auth.conf"
+        script = (
+            redis["command"][0]
+            .replace("$$", "$")
+            .replace("/tmp/redis-auth.conf", str(conf))
+        )
+        env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
+        if password is not None:
+            env["REDIS_PASSWORD"] = password
+        sh = shutil.which("sh")
+        assert sh is not None
+        return subprocess.run(  # noqa: S603 — sh path resolved via shutil.which
+            [sh, "-c", script], env=env, capture_output=True, text=True, check=False
+        )
+
+    @pytest.mark.skipif(shutil.which("sh") is None, reason="sh not installed")
+    @pytest.mark.parametrize("password", [None, ""])
+    def test_refuses_to_start_without_a_password(
+        self, redis: dict, tmp_path: Path, password: str | None
+    ) -> None:
+        result = self._run(redis, tmp_path, password)
+        assert result.returncode == 1
+        assert "set REDIS_PASSWORD" in result.stderr
+
+    @pytest.mark.skipif(shutil.which("sh") is None, reason="sh not installed")
+    def test_password_goes_in_a_config_file_not_argv(
+        self, redis: dict, tmp_path: Path
+    ) -> None:
+        result = self._run(redis, tmp_path, "s3cret pass")
+        assert result.returncode == 0, result.stderr
+        args = next(ln for ln in result.stdout.splitlines() if ln.startswith("ARGS:"))
+        assert "s3cret" not in args
+        # The image entrypoint is used, so Redis still drops to the redis user.
+        assert args.startswith("ARGS: redis-server ")
+        assert "CONF: requirepass s3cret pass" in result.stdout
+        conf = tmp_path / "redis-auth.conf"
+        assert conf.stat().st_mode & 0o077 == 0  # not group/world readable
+
+    def test_healthcheck_authenticates(self, redis: dict) -> None:
+        test = " ".join(redis["healthcheck"]["test"])
+        assert "REDISCLI_AUTH" in test and "PONG" in test
+
+    def test_no_password_on_any_command_line(self, redis: dict) -> None:
+        assert "--requirepass" not in str(redis["command"])

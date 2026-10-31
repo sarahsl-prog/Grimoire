@@ -94,15 +94,34 @@ services:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # Authenticated, and matched on PONG: an unauthenticated ping gets a
+      # NOAUTH error reply, which redis-cli doesn't treat as a failure.
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     networks:
       - grimoire-network
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
+    # Refuse to start without a password, with a clear message (a ${VAR:?}
+    # guard would break every compose command, even with Redis unused). The
+    # password goes into a private config file rather than a --requirepass
+    # argument, which anyone can read in the process list. The image's own
+    # docker-entrypoint.sh is exec'd so Redis still drops from root to the
+    # redis user and runs as PID 1 (clean shutdown on docker stop).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        [ -n "$$REDIS_PASSWORD" ] ||
+        { echo "redis: set REDIS_PASSWORD in .env" >&2; exit 1; };
+        umask 077;
+        printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /tmp/redis-auth.conf;
+        chown redis:redis /tmp/redis-auth.conf;
+        exec docker-entrypoint.sh redis-server /tmp/redis-auth.conf
+        --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
 
   # ChromaDB - Vector database
   chromadb:

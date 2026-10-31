@@ -95,7 +95,7 @@ marked *new* were found after the original review.
 9. [x] **C-12: test gaps** Done: pagination bounds, ChromaDB error mapping across `to_thread`, `/readyz` (had no tests). not covered by the items above (pagination
        bounds, `to_thread` exception mapping, a non-mocked delete
        integration test).
-10. [ ] **Compose `${VAR:?}` guards for `POSTGRES_PASSWORD` /
+10. [x] **Compose `${VAR:?}` guards** Decided: start-time check instead (Redis exits with a clear message; Postgres already does). Was: for `POSTGRES_PASSWORD` /
         `REDIS_PASSWORD`.** Note: Compose interpolates every service, so a
         guard makes all `docker compose` commands fail when the variable is
         unset, including in CI and the deploy tests. Decide whether that's
