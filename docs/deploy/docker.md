@@ -213,6 +213,41 @@ Clients (`grimoire-gui`, `grimoire-tui`, MCP clients) then use
 `GRIMOIRE_API_URL=https://<domain>`, and MCP clients connect to
 `https://<domain>/mcp/sse`.
 
+## pg_query and the read-only role
+
+The MCP tool `grimoire_pg_query` runs ad-hoc SQL for DEV and AGENT keys. It
+only ever connects as `grimoire_readonly`, a database role created by
+migration 0008 with SELECT on every table **except `api_keys`**, no write
+privileges, and a 30s statement timeout. Until that role has a password,
+pg_query is disabled and says so.
+
+To enable it:
+
+1. Set a password in `.env` (24+ characters of letters, digits, `-` or `_`;
+   it goes into a URL unescaped):
+
+   ```bash
+   echo "POSTGRES_READONLY_PASSWORD=$(openssl rand -hex 24)" >> .env
+   ```
+
+2. Redeploy (`docker compose up -d`). The `db-migrate` container runs
+   `alembic upgrade head` and then `grimoire db readonly-role`, which gives
+   the role a login with that password. The app containers receive
+   `GRIMOIRE_DATABASE__READONLY_URL`, built from it.
+
+To rotate the password, change it in `.env` and redeploy. To disable pg_query
+again, clear the variable and redeploy: the URL becomes empty. The role keeps
+its login until you run `ALTER ROLE grimoire_readonly NOLOGIN`.
+
+Bare-metal (no compose): run `alembic upgrade head`, then
+`POSTGRES_READONLY_PASSWORD=... grimoire db readonly-role`, and set
+`GRIMOIRE_DATABASE__READONLY_URL=postgresql+asyncpg://grimoire_readonly:<password>@<host>:<port>/<db>`.
+
+> **New tables are readable by default.** The role gets SELECT on tables that
+> later migrations create. A migration adding a table that holds secrets must
+> also run `REVOKE ALL ON <table> FROM grimoire_readonly`, as 0008 does for
+> `api_keys`.
+
 ## Tracing (OpenTelemetry)
 
 Set `GRIMOIRE_OBSERVABILITY__TRACING=true` and point

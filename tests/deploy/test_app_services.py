@@ -48,10 +48,29 @@ class TestStartupOrdering:
         assert str(services["db-migrate"]["restart"]) == "no"
 
     def test_db_migrate_runs_alembic(self, services: dict) -> None:
-        command = services["db-migrate"]["command"]
-        assert "alembic" in command
-        assert "upgrade" in command
-        assert "head" in command
+        command = " ".join(services["db-migrate"]["command"])
+        assert "alembic upgrade head" in command
+
+    def test_db_migrate_enables_the_readonly_role_after_migrating(
+        self, services: dict
+    ) -> None:
+        command = " ".join(services["db-migrate"]["command"])
+        assert "alembic upgrade head && grimoire db readonly-role" in command
+
+    def test_only_db_migrate_gets_the_raw_readonly_password(
+        self, services: dict
+    ) -> None:
+        for name, service in services.items():
+            env = service.get("environment") or {}
+            has_password = "POSTGRES_READONLY_PASSWORD" in env
+            assert has_password == (name == "db-migrate"), name
+
+    def test_readonly_url_is_empty_unless_the_password_is_set(
+        self, services: dict
+    ) -> None:
+        url = services["api"]["environment"]["GRIMOIRE_DATABASE__READONLY_URL"]
+        assert url.startswith("${POSTGRES_READONLY_PASSWORD:+postgresql+asyncpg://")
+        assert "grimoire_readonly:" in url
 
     def test_db_migrate_waits_for_postgres(self, services: dict) -> None:
         depends = services["db-migrate"]["depends_on"]

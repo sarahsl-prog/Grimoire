@@ -5,6 +5,9 @@
 x-grimoire-env: &grimoire-env
   GRIMOIRE_CONFIG: /app/grimoire.yaml
   GRIMOIRE_DATABASE__URL: postgresql+asyncpg://${POSTGRES_USER:-grimoire}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-grimoire}
+  # The MCP pg_query tool's grimoire_readonly role (migration 0008). Empty, and
+  # pg_query disabled, unless POSTGRES_READONLY_PASSWORD is set.
+  GRIMOIRE_DATABASE__READONLY_URL: ${POSTGRES_READONLY_PASSWORD:+postgresql+asyncpg://grimoire_readonly:${POSTGRES_READONLY_PASSWORD}@postgres:5432/${POSTGRES_DB:-grimoire}}
   GRIMOIRE_VECTOR_STORE__HOST: chromadb
   GRIMOIRE_VECTOR_STORE__PORT: "8000"
   GRIMOIRE_REDIS__HOST: redis
@@ -173,7 +176,13 @@ services:
     <<: *grimoire-app
     container_name: grimoire-db-migrate
     restart: "no"
-    command: ["alembic", "upgrade", "head"]
+    # After migrating, give the pg_query role its password (a no-op when
+    # POSTGRES_READONLY_PASSWORD is unset). Only this container gets the raw
+    # password; the app containers get the URL built from it above.
+    command: ["sh", "-c", "alembic upgrade head && grimoire db readonly-role"]
+    environment:
+      <<: *grimoire-env
+      POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy

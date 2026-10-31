@@ -60,7 +60,9 @@ jobs:
       # so nothing needs to know them beyond the compose interpolation.
       - name: Generate throwaway datastore passwords
         run: |
-          for var in POSTGRES_PASSWORD REDIS_PASSWORD; do
+          # POSTGRES_READONLY_PASSWORD also exercises db-migrate's
+          # `grimoire db readonly-role` step on every run.
+          for var in POSTGRES_PASSWORD REDIS_PASSWORD POSTGRES_READONLY_PASSWORD; do
             value="$(openssl rand -hex 24)"
             echo "::add-mask::$value"
             echo "$var=$value" >> "$GITHUB_ENV"

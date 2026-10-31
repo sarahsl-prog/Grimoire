@@ -101,6 +101,7 @@ def cli(ctx: click.Context, config: Path | None, verbose: bool) -> None:
 # Register subcommands
 from grimoire.cli.categories import categories, tag, untag
 from grimoire.cli.config import config as config_cmd
+from grimoire.cli.db import db_group
 from grimoire.cli.docs import docs
 from grimoire.cli.generate import generate
 from grimoire.cli.ingest import ingest
@@ -128,6 +129,7 @@ cli.add_command(cache_group)
 cli.add_command(docs)
 cli.add_command(wiki)
 cli.add_command(keys)
+cli.add_command(db_group)
 cli.add_command(migrate)
 cli.add_command(mcp)
 cli.add_command(tui)
