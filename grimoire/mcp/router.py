@@ -6,9 +6,12 @@ the main FastAPI app at ``/mcp``.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from starlette.requests import Request
 from starlette.types import Receive, Scope, Send
 
 from .server import create_mcp_server
@@ -25,6 +28,25 @@ def get_mcp_app() -> Any:
         mcp_server = create_mcp_server()
         _mcp_asgi_app = mcp_server.sse_app()
     return _mcp_asgi_app
+
+
+async def _send_json(
+    send: Send,
+    status: int,
+    detail: str,
+    headers: Mapping[str, str] | None = None,
+) -> None:
+    """Send a complete JSON error response from raw ASGI."""
+    raw_headers = [[b"content-type", b"application/json"]]
+    raw_headers += [
+        [k.lower().encode(), v.encode()] for k, v in (headers or {}).items()
+    ]
+    await send(
+        {"type": "http.response.start", "status": status, "headers": raw_headers}
+    )
+    await send(
+        {"type": "http.response.body", "body": json.dumps({"detail": detail}).encode()}
+    )
 
 
 def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
@@ -58,19 +80,22 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
         )
 
         if not raw_key:
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 401,
-                    "headers": [[b"content-type", b"application/json"]],
-                }
-            )
-            await send(
-                {
-                    "type": "http.response.body",
-                    "body": b'{"detail": "API key required. Pass X-API-Key header."}',
-                }
-            )
+            await _send_json(send, 401, "API key required. Pass X-API-Key header.")
+            return
+
+        # The same rate-limit stages as REST (grimoire.api.rate_limit): a
+        # Request over this scope finds the app's limiter via scope["app"].
+        from grimoire.api.rate_limit import (
+            check_failed_auth,
+            enforce_tier_limit,
+            record_failed_auth,
+        )
+
+        request = Request(scope)
+        try:
+            check_failed_auth(request)
+        except HTTPException as exc:
+            await _send_json(send, exc.status_code, str(exc.detail), exc.headers)
             return
 
         # Validate key via existing auth logic
@@ -80,37 +105,20 @@ def mount_mcp(app: FastAPI, path: str = "/mcp") -> None:
         try:
             db_mgr = get_db_manager()
         except RuntimeError:
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 503,
-                    "headers": [[b"content-type", b"application/json"]],
-                }
-            )
-            await send(
-                {
-                    "type": "http.response.body",
-                    "body": b'{"detail": "Database not initialized."}',
-                }
-            )
+            await _send_json(send, 503, "Database not initialized.")
             return
 
         async with db_mgr.session() as db:
             api_key = await authenticate_api_key(raw_key, db)
             if api_key is None:
-                await send(
-                    {
-                        "type": "http.response.start",
-                        "status": 401,
-                        "headers": [[b"content-type", b"application/json"]],
-                    }
-                )
-                await send(
-                    {
-                        "type": "http.response.body",
-                        "body": b'{"detail": "Invalid or expired API key."}',
-                    }
-                )
+                record_failed_auth(request)
+                await _send_json(send, 401, "Invalid or expired API key.")
+                return
+
+            try:
+                enforce_tier_limit(request, api_key)
+            except HTTPException as exc:
+                await _send_json(send, exc.status_code, str(exc.detail), exc.headers)
                 return
 
             # Store in scope state for downstream tools

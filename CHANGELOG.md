@@ -6,6 +6,12 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **The MCP server is rate limited.** The dedicated `mcp` service, which the
+  Caddy proxy routes `/mcp/*` to, had no rate limiter at all. Even inside the
+  API app, slowapi skips mounted apps, so `/mcp` was never limited. MCP
+  requests now get the per-key tier limit and the invalid-key cap in the MCP
+  auth middleware, and the MCP app has the same limiter as the API, with
+  `/health` exempt.
 - **Per-key tier rate limits, and a cap on invalid API keys.** slowapi's
   middleware runs before authentication, so it never knew the key: every
   request, keyed or not, shared one per-client-IP bucket of 30/minute, and

@@ -60,9 +60,18 @@ def create_mcp_app(use_lifespan: bool = True) -> FastAPI:
         lifespan=lifespan if use_lifespan else None,
     )
 
+    # Same limiter as the REST API. Caddy routes /mcp/* here, so without it
+    # MCP traffic from the internet had no rate limit at all.
+    from grimoire.api.rate_limit import setup_rate_limiting
+
+    limiter = setup_rate_limiting(app)
+
     @app.get("/health")
     async def health_check() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Container healthcheck; never rate limited.
+    limiter.exempt(health_check)  # type: ignore[no-untyped-call]
 
     mount_mcp(app, path="/mcp")
 
