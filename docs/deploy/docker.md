@@ -39,7 +39,7 @@ sequence (embedding model load can take a minute on a cold `model_cache`).
 | Service | Port | Purpose |
 |---|---|---|
 | `postgres` | 127.0.0.1:5434→5432 | Primary metadata database (Postgres 16) |
-| `redis` | 127.0.0.1:6379 | Cache, rate limiting, Celery broker/result backend |
+| `redis` | 127.0.0.1:6379 | Cache and rate-limit counters |
 | `chromadb` | 127.0.0.1:8060→8000 | Vector database |
 | `db-migrate` | — | One-shot Alembic migration; every app container gates on its success and does not start until it completes |
 | `api` | 127.0.0.1:8001 | REST API (Swagger UI at `/docs`); also mounts authenticated MCP at `/mcp/sse` |
@@ -76,9 +76,9 @@ compose `environment:` block — see the warning below.
 
 The full set of `GRIMOIRE_*` variables the compose file sets for every app
 container lives in the `x-grimoire-env` anchor at the top of
-`docker-compose.yml`: database URL, vector store host/port, Redis host/port,
-Celery broker/result URLs, log directory, cache path, upload directory, and
-the Ollama URL. `.env.example` documents the complete list of variables the
+`docker-compose.yml`: database URL, vector store host/port, Redis
+host/port/password, log directory, cache path, upload directory, trusted proxy
+range, and the Ollama URL. `.env.example` documents the complete list of variables the
 application understands, most of which you'd only override for non-default
 behavior (embeddings, chunking, auth, wiki, etc.) — see that file for the
 full reference table.
