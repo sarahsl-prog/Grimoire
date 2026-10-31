@@ -160,6 +160,63 @@ header; a 200 means auth is off. The options:
 | B. Token-checking reverse proxy | ~half a day | Small Caddy or nginx sidecar in front of ChromaDB that rejects requests without the right `Authorization: Bearer` header, plus the client-side change above. Adds a container and a health check. |
 | C. Downgrade to a pre-1.0 image with built-in token auth | Not recommended | Gives up the 1.x fixes and conflicts with the locked `chromadb` 1.5.5 client. |
 
+#### Decision for the Hetzner VPS deployment
+
+**Use Option A (network isolation), tightened for a public host.** Nothing
+off the VPS needs to reach ChromaDB: the `api`, `mcp` and `watcher`
+containers talk to it over `grimoire-network`. A token proxy would only
+protect a port that shouldn't be reachable in the first place.
+
+One VPS-specific trap: **Docker's published ports bypass UFW/iptables
+rules.** Docker writes its own NAT rules ahead of UFW's, so `ufw deny 8060`
+does nothing for a container port. The only reliable controls are how a
+port is published and the Hetzner Cloud Firewall, which sits outside the
+VM.
+
+Steps:
+
+1. Remove the `ports:` mapping from `chromadb` in `docker-compose.yml`.
+   Loopback binding (`127.0.0.1:8060`) is safe on a single-user VPS, but
+   with no mapping there's nothing to misconfigure later.
+2. Delete `CHROMA_SERVER_AUTHN_TOKEN` from both compose files and
+   `.env.example`, and add a comment explaining that ChromaDB 1.x has no
+   built-in auth and is reachable only on the internal network.
+3. For debugging from a laptop, use an SSH tunnel to the container IP
+   instead of publishing a port:
+   `ssh -L 8060:<chromadb-container-ip>:8000 user@vps`. Get the IP with
+   `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' grimoire-chromadb`.
+   A fixed IP can be pinned in `grimoire-network` (subnet `172.28.0.0/16`)
+   if you do this often.
+4. Hetzner Cloud Firewall: inbound allow only 22 (ideally limited to your
+   IP) and 80/443. Default-deny everything else. This is the backstop if a
+   compose change ever publishes a port by accident.
+5. Verify from outside the VPS: `nmap -Pn -p 1-10000 <vps-ip>` should show
+   only 22, 80 and 443.
+
+Revisit Option B only if ChromaDB ever has to be reached from another
+machine (a second VPS or a hosted worker). Even then, a private network
+(Hetzner vSwitch/private network or Tailscale) is simpler than a token
+proxy.
+
+#### Related VPS exposure found while checking this (V-1, High)
+
+These services publish on **all interfaces** (`0.0.0.0`), so on a VPS
+they are reachable from the internet:
+
+| Service | Port | Risk |
+|---------|------|------|
+| `api` | 8001 | Plain HTTP, so API keys travel unencrypted. |
+| `mcp` | 8100 | Same. |
+| `pgadmin` (`tools` profile) | 5050 | Defaults to `admin@grimoire.local` / `admin`. Full database admin. |
+| `redis-commander` (`tools` profile) | 8081 | No HTTP auth configured. |
+
+Fix: bind `api` and `mcp` to `127.0.0.1` and put a TLS reverse proxy
+(Caddy is the least work: automatic Let's Encrypt) in front of them on
+443. Never run the `tools` profile on the VPS. If you need pgAdmin, bind
+it to `127.0.0.1` and use an SSH tunnel. Remove the `:-admin` default
+password so it fails closed. Effort: about 2–3 hours including a Caddy
+service and `Caddyfile`.
+
 Also watch [CVE-2026-8828][cve] (authorization bypass across tenants in the
 1.x Rust server) if multi-tenant ChromaDB is ever used.
 
