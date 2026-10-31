@@ -203,8 +203,12 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
             FastAPIInstrumentor.instrument_app(app)
             logger.info("OpenTelemetry FastAPI instrumentation enabled")
-    except Exception:
-        pass  # OTEL is optional; failure must not prevent startup
+    except Exception as e:
+        # OTel is optional, so failure must not prevent startup, but it must
+        # not be silent either: tracing that quietly stops is worse than none.
+        logger.warning(
+            f"OpenTelemetry FastAPI instrumentation failed: {type(e).__name__}: {e}"
+        )
 
     # API routes
     app.include_router(ingest.router, prefix="/api/v1")
