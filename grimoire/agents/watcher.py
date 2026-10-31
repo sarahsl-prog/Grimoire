@@ -320,26 +320,23 @@ class WatcherAgent:
         Returns:
             True if the file should be processed.
         """
-        # DELETED events are always processed (file is already gone, so we
-        # cannot check its extension).
-        if change.change_type == FileChangeType.DELETED:
-            path = Path(change.path)
-            return not any(part.startswith(".") for part in path.parts)
-
-        # Only process created and modified events
+        # CREATED/MODIFIED trigger ingestion; DELETED removes the document.
+        # Everything else (MOVED, etc.) is ignored.
         if change.change_type not in (
             FileChangeType.CREATED,
             FileChangeType.MODIFIED,
+            FileChangeType.DELETED,
         ):
             return False
 
-        # Check if it's a supported file type
-        suffix = Path(change.path).suffix.lower()
-        if suffix not in self._supported_extensions:
+        # The same filter applies to deletes. Path.suffix works on a path that
+        # no longer exists, and a file the watcher would never have ingested
+        # (.log, .png, editor swap files) has no document to remove.
+        path = Path(change.path)
+        if path.suffix.lower() not in self._supported_extensions:
             return False
 
         # Skip hidden files and directories
-        path = Path(change.path)
         return not any(part.startswith(".") for part in path.parts)
 
     def _find_watch_id(self, watch_path: str) -> str | None:

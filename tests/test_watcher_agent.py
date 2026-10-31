@@ -186,9 +186,26 @@ class TestWatcherFiltering:
         change = make_change("/tmp/test/doc.pdf", FileChangeType.MODIFIED)
         assert watcher._should_process(change) is True
 
-    def test_should_not_process_deleted(self, watcher: WatcherAgent) -> None:
-        """Deleted files should not be processed."""
+    def test_should_process_deleted_supported_file(self, watcher: WatcherAgent) -> None:
+        """Deleting a tracked file type removes its document."""
         change = make_change("/tmp/test/file.txt", FileChangeType.DELETED)
+        assert watcher._should_process(change) is True
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/tmp/test/debug.log", "/tmp/test/archive.zip", "/tmp/test/notes.txt.swp"],
+    )
+    def test_should_not_process_deleted_unsupported_extension(
+        self, watcher: WatcherAgent, path: str
+    ) -> None:
+        """Files the watcher never ingests have nothing to delete."""
+        change = make_change(path, FileChangeType.DELETED)
+        assert watcher._should_process(change) is False
+
+    def test_should_not_process_deleted_hidden_file(
+        self, watcher: WatcherAgent
+    ) -> None:
+        change = make_change("/tmp/test/.cache/file.txt", FileChangeType.DELETED)
         assert watcher._should_process(change) is False
 
     def test_should_not_process_moved(self, watcher: WatcherAgent) -> None:
