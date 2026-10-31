@@ -26,6 +26,7 @@ Every finding below was checked against the code at `6a6d9d6`.
 | C-2 ChromaDB auth | Done: token removed, network isolation documented (`docs/deploy/docker.md`). |
 | V-1 public ports | Done: api/mcp/pgadmin/redis-commander bound to loopback; Caddy proxy added (profile `proxy`). |
 | Security overlay port tests | Done: two deploy tests broken by phase 2 updated to the env-driven port design. |
+| CORS (`["*"]` in env templates) | Done: default `[]` in code and templates, origins validated. |
 | M-1, M-2, C-1, C-3–C-12 | Open. |
 
 ## Missed by the AI review

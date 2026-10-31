@@ -6,6 +6,16 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **CORS is off by default, in code and in the env templates.** Phase 5
+  changed the code default from `["*"]`, but `.env.example` and
+  `.env.security.example` still set `["*"]`, so a fresh `cp .env.example .env`
+  re-enabled it. The default is now `[]` everywhere (no Grimoire client needs
+  CORS), and `auth.cors_origins` is validated: entries must be
+  `scheme://host[:port]` with no path, since a trailing slash silently never
+  matches, and `"*"` must be the only entry, since Starlette otherwise allows
+  every origin. `["*"]` on its own still works but logs a warning.
+  **Breaking** only if you serve a browser app from another origin; list it
+  explicitly.
 - **Nothing is published beyond loopback except the TLS proxy.** On a VPS,
   Docker's published ports bypass UFW, so `api` (8001), `mcp` (8100),
   `pgadmin` (5050, which has no login in desktop mode) and `redis-commander`

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import enum
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -766,10 +767,48 @@ class AuthConfig(BaseModel):
         },
         description="Rate limits per tier code (slowapi format)",
     )
+    # Empty by default: none of Grimoire's clients need CORS. The GUI, TUI and
+    # MCP clients are not browsers, and Swagger UI at /docs is same-origin.
+    # CORS only matters for a browser app served from a *different* origin.
     cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:8001"],
-        description="Allowed CORS origins. Use [\"*\"] only as an explicit opt-in.",
+        default_factory=list,
+        description=(
+            "Origins (scheme://host[:port]) of browser apps allowed to call the "
+            'API cross-origin. Empty disables CORS. ["*"] allows any site and '
+            "must be the only entry."
+        ),
     )
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _validate_cors_origins(cls, v: list[str]) -> list[str]:
+        """Reject origin lists that silently do something other than intended.
+
+        Two mistakes are easy to make and fail quietly in Starlette:
+        a trailing slash or path (browsers send ``Origin`` without one, so the
+        entry never matches) and ``*`` mixed with real origins (Starlette then
+        allows every site, ignoring the rest of the list).
+        """
+        if "*" in v:
+            if len(v) > 1:
+                raise ValueError(
+                    'cors_origins: "*" allows every origin and must be the only '
+                    "entry; list specific origins instead"
+                )
+            logger.warning(
+                "CORS allows any origin (cors_origins=['*']); any website can "
+                "call the API from a visitor's browser"
+            )
+            return v
+        origin_re = re.compile(r"^https?://[A-Za-z0-9.\-]+(:\d{1,5})?$")
+        for origin in v:
+            if not origin_re.fullmatch(origin):
+                raise ValueError(
+                    f"cors_origins: {origin!r} is not an origin; use "
+                    "scheme://host[:port] with no path or trailing slash, e.g. "
+                    "https://app.example.com"
+                )
+        return v
 
 
 class WikiConfig(BaseModel):

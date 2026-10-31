@@ -201,6 +201,14 @@ client addresses. Without it, all unauthenticated traffic, including failed
 API-key attempts, would share one rate-limit bucket. Only containers on the
 Docker network and the host itself can send from that range.
 
+**CORS.** `GRIMOIRE_AUTH__CORS_ORIGINS` defaults to `[]` (no cross-origin
+access), which is correct for this setup: the GUI, TUI and MCP clients aren't
+browsers, and Swagger UI at `https://<domain>/docs` is same-origin. Only add
+an entry if you build a browser frontend on a *different* origin, as
+`scheme://host[:port]` with no trailing slash, e.g.
+`GRIMOIRE_AUTH__CORS_ORIGINS=["https://app.example.com"]`. Startup fails on
+malformed entries and on `"*"` mixed with other origins.
+
 Clients (`grimoire-gui`, `grimoire-tui`, MCP clients) then use
 `GRIMOIRE_API_URL=https://<domain>`, and MCP clients connect to
 `https://<domain>/mcp/sse`.
