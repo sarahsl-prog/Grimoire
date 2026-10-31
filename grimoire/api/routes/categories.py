@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload
 
 from grimoire.api.auth import get_api_key, require_min_tier
-from grimoire.api.dependencies import get_db_session
+from grimoire.api.dependencies import get_by_uuid, get_db_session
 from grimoire.api.schemas import (
     CategoryCreateRequest,
     CategoryListResponse,
@@ -147,7 +147,7 @@ async def delete_category(
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """Delete a category."""
-    cat = await db.get(Category, category_id)
+    cat = await get_by_uuid(db, Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail=f"Category {category_id} not found")
 

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload
 
 from grimoire.api.auth import get_api_key, require_min_tier
-from grimoire.api.dependencies import get_db_session
+from grimoire.api.dependencies import get_by_uuid, get_db_session
 from grimoire.api.schemas import (
     CategoryResponse,
     DocumentDetailResponse,
@@ -188,7 +188,7 @@ async def get_document(
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentDetailResponse:
     """Get detailed information about a document."""
-    doc = await db.get(Document, document_id)
+    doc = await get_by_uuid(db, Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
 
@@ -264,9 +264,9 @@ async def _tag_target(
         HTTPException: 404 naming whichever of the document or category is
             unknown, so a typo is not mistaken for "already untagged".
     """
-    if await db.get(Document, document_id) is None:
+    if await get_by_uuid(db, Document, document_id) is None:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
-    if await db.get(Category, category_id) is None:
+    if await get_by_uuid(db, Category, category_id) is None:
         raise HTTPException(status_code=404, detail=f"Category {category_id} not found")
     return await db.get(DocumentTag, (document_id, category_id))
 
@@ -334,7 +334,7 @@ async def delete_document(
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """Delete a document and its associated data."""
-    doc = await db.get(Document, document_id)
+    doc = await get_by_uuid(db, Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
 

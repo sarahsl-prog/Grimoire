@@ -127,6 +127,34 @@ uv run mypy --strict grimoire
 uv run pytest --cov=grimoire --cov-report=html
 ```
 
+### Continuous integration
+
+Every pull request runs these workflows from `.github/workflows/`:
+
+| Workflow | Job | What it does | Required? |
+|---|---|---|---|
+| `ci.yml` | Lint & type check | `uv run pre-commit run --all-files` (ruff, black, mypy, bandit) with the `dev` extra | Yes |
+| `ci.yml` | Unit tests (py3.12, py3.13) | `pytest` with coverage, the `all` extra and a Redis service (the rate limiter needs it) (needed because `pytest-qt` requires PySide6), Qt in offscreen mode | Yes |
+| `integration.yml` | Integration tests (compose stack) | Builds the image, starts Postgres/Redis/ChromaDB/API with docker compose, mints a key, and runs `tests/integration/test_live_api.py -m "not slow"` against `localhost`. It never touches the deployed server. | Yes |
+| `ollama-review.yml` | Ollama code review | Sends the PR diff to an Ollama model and posts the review as one sticky comment | **No (advisory)** |
+
+To make the first three block merging, add them as required status checks in
+**Settings → Branches → Branch protection rules** for `main`. Leave the Ollama
+review optional: it is a small model's opinion, and its script exits 0 even when
+Ollama is down.
+
+The Ollama review runs `qwen2.5-coder:7b` on the runner's CPU by default (the
+model is cached after the first run). To use your own server instead, add a
+repository **secret** `OLLAMA_HOST` (e.g. `https://ollama.example.com`). Two
+optional repository **variables** tune it: `OLLAMA_REVIEW_MODEL` and
+`OLLAMA_REVIEW_MAX_DIFF_CHARS` (default 48000; larger diffs are cut on a file
+boundary). You can run the review locally too:
+
+```bash
+git diff main... > pr.diff
+OLLAMA_HOST=http://localhost:11434 python scripts/ci/ollama_review.py --diff pr.diff --out review.md
+```
+
 ## Upgrading an existing install
 
 Already running Grimoire? Do **not** re-run the Quick Start — it assumes an
