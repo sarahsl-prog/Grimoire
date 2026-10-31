@@ -992,3 +992,41 @@ class TestConnectForMaintenance:
             ids=["a"], embeddings=[[0.1, 0.2]], metadatas=[{"k": 1}], documents=["x"]
         )
         assert await chroma_store.count() == 1
+
+
+class TestErrorMappingAcrossThreads:
+    """ChromaDB calls run in worker threads (asyncio.to_thread, audit 4a).
+
+    Exceptions must still cross back into the coroutine so the store maps
+    them to its documented RuntimeError instead of leaking ChromaDB types.
+    """
+
+    async def test_delete_maps_chroma_errors(self, chroma_store: ChromaDBStore) -> None:
+        from unittest.mock import patch
+
+        from chromadb.errors import ChromaError
+
+        await chroma_store.connect()
+        assert chroma_store._collection is not None
+        with (
+            patch.object(
+                chroma_store._collection, "delete", side_effect=ChromaError("boom")
+            ),
+            pytest.raises(RuntimeError, match="Failed to delete documents"),
+        ):
+            await chroma_store.delete(["a"])
+
+    async def test_count_maps_chroma_errors(self, chroma_store: ChromaDBStore) -> None:
+        from unittest.mock import patch
+
+        from chromadb.errors import ChromaError
+
+        await chroma_store.connect()
+        assert chroma_store._collection is not None
+        with (
+            patch.object(
+                chroma_store._collection, "count", side_effect=ChromaError("boom")
+            ),
+            pytest.raises(RuntimeError, match="Failed to get document count"),
+        ):
+            await chroma_store.count()
