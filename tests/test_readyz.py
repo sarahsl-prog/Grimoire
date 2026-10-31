@@ -82,3 +82,14 @@ async def test_lifespan_records_watcher_startup_failure() -> None:
     ):
         async with lifespan(app):
             assert app.state.watcher_status == "error"
+
+
+def test_failure_details_are_not_returned(deps: dict[str, Any]) -> None:
+    """/readyz is unauthenticated (and public behind Caddy): no raw errors."""
+    deps["store"].count = AsyncMock(
+        side_effect=ConnectionError("chromadb.internal:8000 refused")
+    )
+    resp = _client().get("/readyz")
+    assert resp.status_code == 503
+    assert resp.json()["detail"]["checks"]["chromadb"] == "error"
+    assert "chromadb.internal" not in resp.text

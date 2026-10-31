@@ -6,6 +6,10 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **`/readyz` no longer returns raw dependency errors.** It is
+  unauthenticated, and public once behind the Caddy proxy, yet it echoed
+  exception text such as connection errors naming internal hosts and ports.
+  Failed checks now read `"error"` and the cause is logged server-side.
 - **Deleted documents can no longer surface in search through orphaned
   vectors.** Search results come from the vector store, which holds chunk
   text; if vector cleanup failed after a delete, the deleted document's text
