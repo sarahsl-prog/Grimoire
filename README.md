@@ -98,16 +98,17 @@ troubleshooting. Both paths — bare-metal and Docker — are fully supported.
 # Run tests
 uv run pytest
 
-# Install every optional extra (mlflow, gui, tui, dev) in one go
-uv sync --extra all
+# Install every optional extra (mlflow, gui, tui) plus the dev tools in one go.
+# dev is a dependency group (uv installs it by default), not an extra.
+uv sync --extra all --group dev
 
 # ...or pick them individually, e.g. the GUI as well
-uv sync --extra dev --extra gui
+uv sync --group dev --extra gui
 
 # Run the GUI tests headless
 QT_QPA_PLATFORM=offscreen uv run pytest tests/test_gui_*.py -v
 
-# Run the TUI tests (Textual is in the dev extra; no display needed)
+# Run the TUI tests (Textual is in the dev group; no display needed)
 uv run pytest tests/tui -v
 
 # ...or in parallel: every test starts its own app, so this is about 3.5x
