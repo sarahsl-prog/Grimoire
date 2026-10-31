@@ -140,6 +140,10 @@ class HybridSearch:
         # Merge and deduplicate
         merged = self._merge_results(vector_results, fts_results)
 
+        # Before reranking and truncation, so dead hits neither cost reranker
+        # time nor push live results out of the top_k.
+        merged = await self._drop_orphaned_results(db, merged)
+
         if not merged:
             return []
 
@@ -358,6 +362,67 @@ class HybridSearch:
             f"= {len(merged)} unique results"
         )
         return list(merged.values())
+
+    async def _drop_orphaned_results(
+        self, db: AsyncSession, results: list[HybridResult]
+    ) -> list[HybridResult]:
+        """Drop vector hits whose document no longer exists in PostgreSQL.
+
+        Document deletion commits the rows first and removes vectors after
+        (grimoire.vectorstore.cleanup). If that second step fails, the chunk
+        text is still in the vector store; without this filter a deleted
+        document could still appear in search results and RAG answers.
+
+        Hits that full-text search also found (``fts_score`` set) came from
+        PostgreSQL, so they are known to exist and are not re-checked. One
+        batched ``SELECT`` covers the rest.
+
+        Fails closed: if the check itself errors, unverified vector-only hits
+        are dropped and FTS hits kept. A security corpus may have deleted a
+        document precisely because it should no longer be served.
+
+        Args:
+            db: Database session.
+            results: Merged results.
+
+        Returns:
+            The results whose documents exist, in their original order.
+        """
+        unverified = {
+            r.document_id for r in results if r.fts_score is None and r.document_id
+        }
+        if not unverified:
+            return results
+
+        try:
+            existing = await self._existing_document_ids(db, unverified)
+        except Exception as e:
+            logger.warning(
+                f"Orphan check failed ({type(e).__name__}); dropping "
+                f"{sum(1 for r in results if r.fts_score is None)} unverified "
+                "vector-only result(s)"
+            )
+            return [r for r in results if r.fts_score is not None]
+
+        kept = [
+            r for r in results if r.fts_score is not None or r.document_id in existing
+        ]
+        if dropped := len(results) - len(kept):
+            orphan_docs = sorted(unverified - existing)
+            logger.warning(
+                f"Dropped {dropped} search hit(s) from {len(orphan_docs)} deleted "
+                f"document(s) {orphan_docs[:5]}: their vectors are orphaned"
+            )
+        return kept
+
+    async def _existing_document_ids(
+        self, db: AsyncSession, document_ids: set[str]
+    ) -> set[str]:
+        """Return which of ``document_ids`` still exist (one batched SELECT)."""
+        rows = await db.execute(
+            select(Document.id).where(Document.id.in_(document_ids))
+        )
+        return {str(doc_id) for doc_id in rows.scalars().all()}
 
     async def _backfill_document_titles(
         self,

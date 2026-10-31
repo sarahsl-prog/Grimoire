@@ -259,6 +259,7 @@ markers = [
     "integration: Integration tests",
     "slow: Slow running tests",
     "requires_db: Tests requiring database",
+    "real_orphan_check: HybridSearch tests that run the real deleted-document filter",
     "requires_redis: Tests requiring Redis",
 ]
 filterwarnings = [

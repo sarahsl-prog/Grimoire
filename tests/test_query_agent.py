@@ -27,6 +27,26 @@ from grimoire.search.hybrid import HybridResult, HybridSearch
 # =============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _all_documents_exist(request: pytest.FixtureRequest) -> Any:
+    """Treat every vector hit's document as existing, unless a test opts out.
+
+    HybridSearch drops hits whose document is gone (orphaned vectors). These
+    tests' mock DB doesn't model documents, so stand in for that one query.
+    Tests that exercise the orphan filter itself use ``real_orphan_check``.
+    """
+    if "real_orphan_check" in request.keywords:
+        yield
+        return
+    from unittest.mock import patch as _patch
+
+    async def _exist(self: Any, db: Any, ids: set[str]) -> set[str]:
+        return set(ids)
+
+    with _patch("grimoire.search.hybrid.HybridSearch._existing_document_ids", _exist):
+        yield
+
+
 @pytest.fixture
 def mock_embedder() -> MagicMock:
     """Create a mock Embedder."""
