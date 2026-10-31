@@ -160,7 +160,10 @@ services:
     command:
       ["uvicorn", "grimoire.api.main:app", "--host", "0.0.0.0", "--port", "8001"]
     ports:
-      - "${GRIMOIRE_API_PORT:-8001}:8001"
+      # Loopback only: on a public VPS, Docker's published ports bypass UFW,
+      # so the bind address is the firewall. Remote clients go through the
+      # caddy service (profile "proxy") on 443.
+      - "127.0.0.1:${GRIMOIRE_API_PORT:-8001}:8001"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -183,7 +186,8 @@ services:
     command:
       ["uvicorn", "grimoire.mcp.app:app", "--host", "0.0.0.0", "--port", "8100"]
     ports:
-      - "${GRIMOIRE_MCP_PORT:-8100}:8100"
+      # Loopback only; see the api service.
+      - "127.0.0.1:${GRIMOIRE_MCP_PORT:-8100}:8100"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -230,7 +234,10 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
-      - "${PGADMIN_PORT:-5050}:80"
+      # Loopback only. SERVER_MODE False means pgAdmin has no login screen
+      # at all, so anyone who can reach this port is a database admin. Use
+      # an SSH tunnel to reach it from another machine.
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     networks:
@@ -248,7 +255,8 @@ services:
     environment:
       - REDIS_HOSTS=local:redis:${REDIS_PORT:-6379}
     ports:
-      - "${REDIS_COMMANDER_PORT:-8081}:8081"
+      # Loopback only: redis-commander has no HTTP auth configured.
+      - "127.0.0.1:${REDIS_COMMANDER_PORT:-8081}:8081"
     networks:
       - grimoire-network
     depends_on:

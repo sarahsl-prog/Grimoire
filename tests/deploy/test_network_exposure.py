@@ -56,3 +56,43 @@ class TestChromaAuth:
     def test_env_examples_have_no_chroma_token(self, path: Path) -> None:
         for line in path.read_text(encoding="utf-8").splitlines():
             assert not line.strip().startswith("CHROMA_SERVER_AUTH"), line
+
+
+# Services allowed to publish on every interface. Only the TLS reverse proxy
+# should ever be here; everything else is reached through it or over SSH.
+PUBLIC_SERVICES: frozenset[str] = frozenset()
+
+
+def _published_ports(path: Path) -> list[tuple[str, str]]:
+    """Return ``(service, port spec)`` for every published port in a file."""
+    out: list[tuple[str, str]] = []
+    for name, service in (_load(path).get("services") or {}).items():
+        for port in service.get("ports") or []:
+            if isinstance(port, dict):
+                # Long syntax: host_ip is the bind address.
+                spec = f"{port.get('host_ip', '')}:{port.get('published')}"
+            else:
+                spec = str(port)
+            out.append((name, spec))
+    return out
+
+
+class TestLoopbackOnly:
+    @pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda p: p.name)
+    def test_non_proxy_ports_bind_to_loopback(self, path: Path) -> None:
+        for name, spec in _published_ports(path):
+            if name in PUBLIC_SERVICES:
+                continue
+            assert spec.startswith("127.0.0.1:"), (
+                f"{path.name}:{name} publishes {spec!r} on every interface; "
+                "on a VPS that is reachable from the internet (Docker "
+                "bypasses UFW). Bind it to 127.0.0.1."
+            )
+
+    @pytest.mark.parametrize(
+        "name", ["api", "mcp", "pgadmin", "redis-commander", "chromadb"]
+    )
+    def test_sensitive_service_has_a_loopback_port(self, name: str) -> None:
+        """Guard the specific services audit V-1 found exposed."""
+        ports = _load(REPO_ROOT / "docker-compose.yml")["services"][name]["ports"]
+        assert ports and all(str(p).startswith("127.0.0.1:") for p in ports)

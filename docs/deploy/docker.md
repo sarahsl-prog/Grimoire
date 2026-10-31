@@ -38,15 +38,24 @@ sequence (embedding model load can take a minute on a cold `model_cache`).
 
 | Service | Port | Purpose |
 |---|---|---|
-| `postgres` | 5434→5432 | Primary metadata database (Postgres 16) |
-| `redis` | 6379 | Cache, rate limiting, Celery broker/result backend |
-| `chromadb` | 8060→8000 | Vector database |
+| `postgres` | 127.0.0.1:5434→5432 | Primary metadata database (Postgres 16) |
+| `redis` | 127.0.0.1:6379 | Cache, rate limiting, Celery broker/result backend |
+| `chromadb` | 127.0.0.1:8060→8000 | Vector database |
 | `db-migrate` | — | One-shot Alembic migration; every app container gates on its success and does not start until it completes |
-| `api` | 8001 | REST API (Swagger UI at `/docs`); also mounts authenticated MCP at `/mcp/sse` |
-| `mcp` | 8100 | Dedicated MCP server, restartable independently of the REST API |
+| `api` | 127.0.0.1:8001 | REST API (Swagger UI at `/docs`); also mounts authenticated MCP at `/mcp/sse` |
+| `mcp` | 127.0.0.1:8100 | Dedicated MCP server, restartable independently of the REST API |
 | `watcher` | — | Filesystem watcher; ingests from the host directory mounted at `/data/watch` |
-| `pgadmin` (profile `tools`) | 5050 | Optional Postgres management UI |
-| `redis-commander` (profile `tools`) | 8081 | Optional Redis management UI |
+| `pgadmin` (profile `tools`) | 127.0.0.1:5050 | Optional Postgres management UI |
+| `redis-commander` (profile `tools`) | 127.0.0.1:8081 | Optional Redis management UI |
+
+Every published port is bound to `127.0.0.1`, so nothing is reachable from
+another machine by default. That is deliberate for VPS deployments: Docker
+inserts its own iptables rules ahead of UFW's, so `ufw deny` does **not**
+protect a published container port, and the bind address is the only
+firewall that reliably applies. To reach the stack remotely, use an SSH
+tunnel (`ssh -L 8001:127.0.0.1:8001 user@host`) or a TLS reverse proxy.
+`tests/deploy/test_network_exposure.py` fails if a service publishes on all
+interfaces.
 
 > **Server paths.** The REST API and MCP server only ingest from, or watch,
 > directories under `api.allowed_roots` (default `["/tmp"]`). To let API clients
