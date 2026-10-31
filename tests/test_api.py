@@ -1058,6 +1058,24 @@ class TestWatchAPI:
             resp = client.delete("/api/v1/watch/nonexistent")
         assert resp.status_code == 404
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/api/v1/watch/local:/data/watch",
+            # What grimoire.client sends: quote(watch_id, safe="").
+            "/api/v1/watch/local%3A%2Fdata%2Fwatch",
+        ],
+    )
+    def test_stop_watch_with_a_real_watch_id(self, client, url: str) -> None:
+        """Regression: ids are "<backend>:<path>", so they contain slashes,
+        and the plain "{watch_id}" route 404'd every one of them."""
+        inst = MagicMock()
+        inst.unwatch = AsyncMock(return_value=True)
+        with patch(f"{_ROUTES_WATCH}._get_watcher", return_value=inst):
+            resp = client.delete(url)
+        assert resp.status_code == 204, resp.text
+        inst.unwatch.assert_awaited_once_with("local:/data/watch")
+
     def _watcher(self, **kw):
         inst = MagicMock()
         inst.watch = AsyncMock(**({"return_value": "w1"} | kw))

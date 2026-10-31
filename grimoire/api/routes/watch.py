@@ -82,7 +82,11 @@ async def start_watch(
     )
 
 
-@router.delete("/{watch_id}", status_code=204)
+# `:path` because watch ids are "<backend>:<path>" (e.g. "local:/data/watch")
+# and so contain slashes. A plain "{watch_id}" segment never matched one, even
+# percent-encoded (Starlette decodes %2F before routing), so no watch could be
+# stopped over REST.
+@router.delete("/{watch_id:path}", status_code=204)
 async def stop_watch(
     watch_id: str,
     request: Request,

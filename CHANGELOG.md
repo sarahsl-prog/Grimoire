@@ -194,6 +194,11 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **Watches can be stopped over REST.** Watch ids are `<backend>:<path>`
+  (e.g. `local:/data/watch`) and so contain slashes, which the
+  `DELETE /api/v1/watch/{watch_id}` route never matched, even
+  percent-encoded: every stop returned 404, including from the TUI's watch
+  tab. The route now takes the id as a path parameter.
 - **API key checks no longer block the event loop.** `bcrypt.checkpw`
   (deliberately slow) ran synchronously in the async auth path, stalling every
   other request, including MCP SSE streams, on each authenticated call. It now
