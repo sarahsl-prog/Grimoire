@@ -49,6 +49,10 @@ class DatabaseSessionManager:
                     SQLAlchemyInstrumentor,
                 )
 
+                from grimoire.utils.tracing import configure_tracing
+
+                configure_tracing()
+
                 SQLAlchemyInstrumentor().instrument(
                     engine=self._engine.sync_engine,
                 )

@@ -213,6 +213,20 @@ Clients (`grimoire-gui`, `grimoire-tui`, MCP clients) then use
 `GRIMOIRE_API_URL=https://<domain>`, and MCP clients connect to
 `https://<domain>/mcp/sse`.
 
+## Tracing (OpenTelemetry)
+
+Set `GRIMOIRE_OBSERVABILITY__TRACING=true` and point
+`OTEL_EXPORTER_OTLP_ENDPOINT` at an OTLP/gRPC collector (Jaeger, Grafana
+Tempo/Alloy, Honeycomb, an OpenTelemetry Collector, ...), e.g.
+`http://otel-collector:4317`. Each process (api, mcp, watcher) then exports
+spans for incoming HTTP requests, SQL statements and Redis calls, tagged with
+`OTEL_SERVICE_NAME` (default `grimoire`). Other standard `OTEL_EXPORTER_OTLP_*`
+variables (headers, TLS) are honoured.
+
+With tracing on but no endpoint, startup logs a warning and nothing is
+exported. MLflow tracing for MCP tool calls is configured separately
+(`GRIMOIRE_OBSERVABILITY__MLFLOW_*`).
+
 ## ChromaDB access control
 
 ChromaDB has **no authentication** in this stack, and that's deliberate.

@@ -201,6 +201,10 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         if settings.observability.tracing:
             from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
+            from grimoire.utils.tracing import configure_tracing
+
+            configure_tracing()
+
             FastAPIInstrumentor.instrument_app(app)
             logger.info("OpenTelemetry FastAPI instrumentation enabled")
     except Exception as e:

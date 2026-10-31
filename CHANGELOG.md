@@ -150,6 +150,12 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **Tracing exports spans.** `observability.tracing: true` instrumented
+  FastAPI and SQLAlchemy but never installed a tracer provider, so
+  OpenTelemetry's no-op default discarded every span. `grimoire.utils.tracing`
+  now installs one with an OTLP/gRPC exporter configured from
+  `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_SERVICE_NAME`, and instruments Redis
+  (the package was a dependency but unused).
 - **Cached answers are invalidated on every document change.** Only the REST
   delete route and the watcher invalidated, through a `hasattr` guard that hid
   wiring mistakes. REST and MCP ingest, tagging, category deletes and the CLI
