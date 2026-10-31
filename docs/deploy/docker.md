@@ -144,6 +144,33 @@ the Sigma/CVE/MITRE corpus pipeline — see
 > lines. A new overlay file needs its own negation line or it will be
 > silently untracked.
 
+## ChromaDB access control
+
+ChromaDB has **no authentication** in this stack, and that's deliberate.
+Chroma 1.0 rewrote the server in Rust and removed the built-in auth providers
+([migration guide](https://docs.trychroma.com/docs/overview/migration)), so
+`CHROMA_SERVER_AUTHN_*` variables are silently ignored by the pinned
+`chromadb/chroma:1.5.x` image. Anything that can reach port 8000 can read and
+write every collection.
+
+Access control is network isolation instead:
+
+- The app containers reach ChromaDB as `chromadb:8000` on `grimoire-network`.
+- The host port is bound to `127.0.0.1` only (`CHROMADB_PORT`, default 8060),
+  so host-side CLI commands and debugging work, but nothing off the machine
+  can connect.
+
+Check that auth really is off (a `200` confirms there's nothing to send a
+token to):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:${CHROMADB_PORT:-8060}/api/v2/heartbeat
+```
+
+If ChromaDB ever has to be reachable from another machine, use a private
+network (Hetzner private networks, Tailscale) or put a token-checking reverse
+proxy in front of it. Never publish the port on a public interface.
+
 ## Volumes and backup
 
 | Volume | Holds | Back up? |

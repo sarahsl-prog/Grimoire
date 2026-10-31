@@ -107,7 +107,10 @@ services:
       - ANONYMIZED_TELEMETRY=FALSE
       - CHROMA_SERVER_HOST=0.0.0.0
       - CHROMA_SERVER_HTTP_PORT=8000
-      - CHROMA_SERVER_AUTHN_TOKEN=${CHROMA_SERVER_AUTHN_TOKEN}
+      # No CHROMA_SERVER_AUTHN_* here on purpose: Chroma 1.x (Rust server)
+      # removed built-in auth, so a token would be silently ignored. Access
+      # control is network isolation: grimoire-network plus a 127.0.0.1-only
+      # host port. See docs/deploy/docker.md#chromadb-access-control.
     ports:
       - "127.0.0.1:${CHROMADB_PORT:-8060}:8000"
     volumes:
