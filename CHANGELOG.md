@@ -131,6 +131,10 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **`grimoire reindex` can repair missing embeddings again.** It opened the
+  vector store with a placeholder `embedding_dim=1`, so every write failed the
+  store's own dimension check ("dimension 768, expected 1") and nothing was
+  re-embedded. It now opens the store with the embedder's real dimension.
 - **Watcher: renames, atomic saves and delete races.**
   - A renamed file (`a.pdf` → `b.pdf`) now removes the old path's document and
     ingests the new path. MOVED events used to be ignored entirely.

@@ -212,9 +212,9 @@ async def reindex(
 
         vector_store = create_vector_store(settings)
         try:
-            await vector_store.initialize(
-                settings.vector_store.chromadb.collection_name, embedding_dim=1
-            )
+            # connect(), not initialize(): finding the missing ids needs no
+            # embedding dimension. The real one is set below, before writing.
+            await vector_store.connect()
         except Exception as e:
             echo_error(f"Could not reach the vector store: {e}")
             raise SystemExit(1) from e
@@ -275,6 +275,12 @@ async def reindex(
             backend=settings.cache.storage, path=settings.cache.path
         )
         embedder = Embedder(config=embed_config, cache=cache)
+        # Writes are validated against this dimension. The command used to
+        # open the store with embedding_dim=1, so every add_documents call
+        # failed ("dimension 768, expected 1") and reindex repaired nothing.
+        await vector_store.initialize(
+            vector_store.collection_name, embedding_dim=embedder.embedding_dim
+        )
 
         repaired = 0
         async with get_db_context() as db:
