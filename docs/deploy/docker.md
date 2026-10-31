@@ -38,15 +38,25 @@ sequence (embedding model load can take a minute on a cold `model_cache`).
 
 | Service | Port | Purpose |
 |---|---|---|
-| `postgres` | 5434→5432 | Primary metadata database (Postgres 16) |
-| `redis` | 6379 | Cache, rate limiting, Celery broker/result backend |
-| `chromadb` | 8060→8000 | Vector database |
+| `postgres` | 127.0.0.1:5434→5432 | Primary metadata database (Postgres 16) |
+| `redis` | 127.0.0.1:6379 | Cache, rate limiting, Celery broker/result backend |
+| `chromadb` | 127.0.0.1:8060→8000 | Vector database |
 | `db-migrate` | — | One-shot Alembic migration; every app container gates on its success and does not start until it completes |
-| `api` | 8001 | REST API (Swagger UI at `/docs`); also mounts authenticated MCP at `/mcp/sse` |
-| `mcp` | 8100 | Dedicated MCP server, restartable independently of the REST API |
+| `api` | 127.0.0.1:8001 | REST API (Swagger UI at `/docs`); also mounts authenticated MCP at `/mcp/sse` |
+| `mcp` | 127.0.0.1:8100 | Dedicated MCP server, restartable independently of the REST API |
 | `watcher` | — | Filesystem watcher; ingests from the host directory mounted at `/data/watch` |
-| `pgadmin` (profile `tools`) | 5050 | Optional Postgres management UI |
-| `redis-commander` (profile `tools`) | 8081 | Optional Redis management UI |
+| `pgadmin` (profile `tools`) | 127.0.0.1:5050 | Optional Postgres management UI |
+| `redis-commander` (profile `tools`) | 127.0.0.1:8081 | Optional Redis management UI |
+| `caddy` (profile `proxy`) | 80, 443 (all interfaces) | TLS reverse proxy for public deployments; the only service published beyond loopback |
+
+Every published port is bound to `127.0.0.1`, so nothing is reachable from
+another machine by default. That is deliberate for VPS deployments: Docker
+inserts its own iptables rules ahead of UFW's, so `ufw deny` does **not**
+protect a published container port, and the bind address is the only
+firewall that reliably applies. To reach the stack remotely, use an SSH
+tunnel (`ssh -L 8001:127.0.0.1:8001 user@host`) or a TLS reverse proxy.
+`tests/deploy/test_network_exposure.py` fails if a service publishes on all
+interfaces.
 
 > **Server paths.** The REST API and MCP server only ingest from, or watch,
 > directories under `api.allowed_roots` (default `["/tmp"]`). To let API clients
@@ -143,6 +153,92 @@ the Sigma/CVE/MITRE corpus pipeline — see
 > explicitly un-ignores the security, GPU, and dev overlays with `!` negation
 > lines. A new overlay file needs its own negation line or it will be
 > silently untracked.
+
+## Public deployment with Caddy
+
+For a VPS, the `proxy` profile adds a Caddy container that gets a Let's
+Encrypt certificate automatically and forwards HTTPS traffic to the app over
+`grimoire-network`:
+
+| Path | Upstream |
+|---|---|
+| `https://<domain>/mcp/*` | `mcp:8100` (dedicated MCP service, SSE streamed unbuffered) |
+| `https://<domain>/*` | `api:8001` (REST API, Swagger UI at `/docs`) |
+
+Setup:
+
+1. Create a DNS A (and AAAA, if you use IPv6) record for your domain that
+   points at the server. Caddy can't get a certificate until it resolves.
+2. Allow inbound 80/tcp, 443/tcp and 443/udp in the Hetzner Cloud Firewall.
+   Port 80 is needed for the ACME HTTP challenge and the HTTP→HTTPS redirect.
+3. In `.env`, set `GRIMOIRE_DOMAIN` and `ACME_EMAIL`. Caddy exits with an
+   error at start if either is empty.
+4. Validate the config, then start the stack with the profile:
+
+   ```bash
+   docker compose --profile proxy run --rm caddy caddy validate --config /etc/caddy/Caddyfile
+   ```
+
+   ```bash
+   docker compose --profile proxy up -d
+   ```
+
+5. Check it from your laptop:
+
+   ```bash
+   curl -sS https://<domain>/health
+   ```
+
+The config lives in `deploy/caddy/Caddyfile`. Certificates are stored in the
+`caddy_data` volume; keep it, because re-issuing from scratch too often hits
+Let's Encrypt rate limits.
+
+**Client IPs.** Behind Caddy, every request reaches uvicorn from Caddy's
+container IP. `FORWARDED_ALLOW_IPS` (set in `x-grimoire-env`, default
+`172.16.0.0/12`, overridable with `GRIMOIRE_TRUSTED_PROXIES`) tells uvicorn
+to trust Caddy's `X-Forwarded-For` header, so the rate limiter sees real
+client addresses. Without it, all unauthenticated traffic, including failed
+API-key attempts, would share one rate-limit bucket. Only containers on the
+Docker network and the host itself can send from that range.
+
+**CORS.** `GRIMOIRE_AUTH__CORS_ORIGINS` defaults to `[]` (no cross-origin
+access), which is correct for this setup: the GUI, TUI and MCP clients aren't
+browsers, and Swagger UI at `https://<domain>/docs` is same-origin. Only add
+an entry if you build a browser frontend on a *different* origin, as
+`scheme://host[:port]` with no trailing slash, e.g.
+`GRIMOIRE_AUTH__CORS_ORIGINS=["https://app.example.com"]`. Startup fails on
+malformed entries and on `"*"` mixed with other origins.
+
+Clients (`grimoire-gui`, `grimoire-tui`, MCP clients) then use
+`GRIMOIRE_API_URL=https://<domain>`, and MCP clients connect to
+`https://<domain>/mcp/sse`.
+
+## ChromaDB access control
+
+ChromaDB has **no authentication** in this stack, and that's deliberate.
+Chroma 1.0 rewrote the server in Rust and removed the built-in auth providers
+([migration guide](https://docs.trychroma.com/docs/overview/migration)), so
+`CHROMA_SERVER_AUTHN_*` variables are silently ignored by the pinned
+`chromadb/chroma:1.5.x` image. Anything that can reach port 8000 can read and
+write every collection.
+
+Access control is network isolation instead:
+
+- The app containers reach ChromaDB as `chromadb:8000` on `grimoire-network`.
+- The host port is bound to `127.0.0.1` only (`CHROMADB_PORT`, default 8060),
+  so host-side CLI commands and debugging work, but nothing off the machine
+  can connect.
+
+Check that auth really is off (a `200` confirms there's nothing to send a
+token to):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:${CHROMADB_PORT:-8060}/api/v2/heartbeat
+```
+
+If ChromaDB ever has to be reachable from another machine, use a private
+network (Hetzner private networks, Tailscale) or put a token-checking reverse
+proxy in front of it. Never publish the port on a public interface.
 
 ## Volumes and backup
 

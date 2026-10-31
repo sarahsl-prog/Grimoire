@@ -3,7 +3,6 @@
 import os
 
 import streamlit as st
-
 from rag_pipeline import (
     ask_question,
     create_vectorstore,

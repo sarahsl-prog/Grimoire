@@ -14,7 +14,7 @@
 #   PYTHON       interpreter to use (default: python)
 #   PYTEST_ARGS  extra arguments for pytest (default: -n auto -q)
 #
-# Needs `uv` and the dev extra (for pytest-xdist).  Exits non-zero if any
+# Needs `uv` and the dev group (for pytest-xdist).  Exits non-zero if any
 # version fails, after trying all of them.
 set -uo pipefail
 

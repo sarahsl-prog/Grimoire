@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import enum
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -355,44 +356,6 @@ class LoggingConfig(BaseModel):
         except OSError as e:
             logger.warning(f"Could not create log directory {log_path}: {e}")
         return self
-
-
-class CeleryConfig(BaseModel):
-    """Celery distributed task queue configuration.
-
-    Attributes:
-        broker_url: Redis URL for message broker.
-        result_backend: Redis URL for result storage.
-        task_serializer: Serialization format for tasks.
-        accept_content: Accepted content types.
-        result_serializer: Result serialization format.
-        timezone: Timezone for task scheduling.
-        enable_utc: Use UTC for all timestamps.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    broker_url: str = Field(
-        default="redis://localhost:6379/0", description="Redis broker URL"
-    )
-    result_backend: str = Field(
-        default="redis://localhost:6379/1", description="Redis result backend URL"
-    )
-    task_serializer: str = Field(default="json", description="Task serializer")
-    accept_content: list[str] = Field(
-        default_factory=lambda: ["json"], description="Accepted content types"
-    )
-    result_serializer: str = Field(default="json", description="Result serializer")
-    timezone: str = Field(default="UTC", description="Timezone for tasks")
-    enable_utc: bool = Field(default=True, description="Enable UTC timestamps")
-
-    @field_validator("broker_url", "result_backend")
-    @classmethod
-    def validate_redis_url(cls, v: str) -> str:
-        """Validate Redis URL format."""
-        if not v.startswith("redis://"):
-            raise ValueError(f"Celery URL must be a redis:// URL: {v}")
-        return v
 
 
 class RedisConfig(BaseModel):
@@ -804,10 +767,48 @@ class AuthConfig(BaseModel):
         },
         description="Rate limits per tier code (slowapi format)",
     )
+    # Empty by default: none of Grimoire's clients need CORS. The GUI, TUI and
+    # MCP clients are not browsers, and Swagger UI at /docs is same-origin.
+    # CORS only matters for a browser app served from a *different* origin.
     cors_origins: list[str] = Field(
-        default_factory=lambda: ["*"],
-        description="Allowed CORS origins",
+        default_factory=list,
+        description=(
+            "Origins (scheme://host[:port]) of browser apps allowed to call the "
+            'API cross-origin. Empty disables CORS. ["*"] allows any site and '
+            "must be the only entry."
+        ),
     )
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _validate_cors_origins(cls, v: list[str]) -> list[str]:
+        """Reject origin lists that silently do something other than intended.
+
+        Two mistakes are easy to make and fail quietly in Starlette:
+        a trailing slash or path (browsers send ``Origin`` without one, so the
+        entry never matches) and ``*`` mixed with real origins (Starlette then
+        allows every site, ignoring the rest of the list).
+        """
+        if "*" in v:
+            if len(v) > 1:
+                raise ValueError(
+                    'cors_origins: "*" allows every origin and must be the only '
+                    "entry; list specific origins instead"
+                )
+            logger.warning(
+                "CORS allows any origin (cors_origins=['*']); any website can "
+                "call the API from a visitor's browser"
+            )
+            return v
+        origin_re = re.compile(r"^https?://[A-Za-z0-9.\-]+(:\d{1,5})?$")
+        for origin in v:
+            if not origin_re.fullmatch(origin):
+                raise ValueError(
+                    f"cors_origins: {origin!r} is not an origin; use "
+                    "scheme://host[:port] with no path or trailing slash, e.g. "
+                    "https://app.example.com"
+                )
+        return v
 
 
 class WikiConfig(BaseModel):
@@ -1072,7 +1073,6 @@ class GrimoireSettings(BaseSettings):
         database: Database configuration.
         vector_store: Vector store configuration.
         logging: Logging configuration.
-        celery: Celery task queue configuration.
         redis: Redis configuration.
         query: Query/RAG configuration.
         cache: Cache configuration.
@@ -1108,9 +1108,6 @@ class GrimoireSettings(BaseSettings):
     )
     logging: LoggingConfig = Field(
         default_factory=LoggingConfig, description="Logging settings"
-    )
-    celery: CeleryConfig = Field(
-        default_factory=CeleryConfig, description="Celery settings"
     )
     redis: RedisConfig = Field(
         default_factory=RedisConfig, description="Redis settings"

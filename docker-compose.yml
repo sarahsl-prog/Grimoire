@@ -4,13 +4,12 @@
 # while containers talk to service DNS names.
 x-grimoire-env: &grimoire-env
   GRIMOIRE_CONFIG: /app/grimoire.yaml
-  GRIMOIRE_DATABASE__URL: postgresql+asyncpg://${POSTGRES_USER:-grimoire}:${POSTGRES_PASSWORD:-grimoire}@postgres:5432/${POSTGRES_DB:-grimoire}
+  GRIMOIRE_DATABASE__URL: postgresql+asyncpg://${POSTGRES_USER:-grimoire}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-grimoire}
   GRIMOIRE_VECTOR_STORE__HOST: chromadb
   GRIMOIRE_VECTOR_STORE__PORT: "8000"
   GRIMOIRE_REDIS__HOST: redis
   GRIMOIRE_REDIS__PORT: "6379"
-  GRIMOIRE_CELERY__BROKER_URL: redis://redis:6379/0
-  GRIMOIRE_CELERY__RESULT_BACKEND: redis://redis:6379/1
+  GRIMOIRE_REDIS__PASSWORD: ${REDIS_PASSWORD}
   GRIMOIRE_LOGGING__LOG_DIR: /app/logs
   GRIMOIRE_CACHE__PATH: /app/cache
   GRIMOIRE_API__UPLOAD_DIR: /app/uploads
@@ -18,6 +17,14 @@ x-grimoire-env: &grimoire-env
   # a remote or containerized daemon.  No /v1 suffix — the agents append
   # /api/generate themselves.
   GRIMOIRE_LLM__URL: ${GRIMOIRE_OLLAMA_URL:-http://host.docker.internal:11434}
+  # uvicorn only honours X-Forwarded-For from these addresses. Behind the
+  # caddy proxy every request arrives from Caddy's container IP, so without
+  # this the rate limiter (which keys unauthenticated requests by client IP)
+  # would put the whole internet in one bucket. The default covers Docker's
+  # private range, which includes grimoire-network (172.28/16) and the
+  # security overlay's 172.29/16. Only containers on the network and the
+  # host itself can send from these addresses.
+  FORWARDED_ALLOW_IPS: ${GRIMOIRE_TRUSTED_PROXIES:-172.16.0.0/12}
 
 x-grimoire-app: &grimoire-app
   image: grimoire:latest
@@ -47,11 +54,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-grimoire}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grimoire}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-grimoire}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "${POSTGRES_PORT:-5434}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./logs/postgres:/var/log/postgresql
@@ -84,7 +91,7 @@ services:
     container_name: grimoire-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -95,11 +102,11 @@ services:
       start_period: 10s
     networks:
       - grimoire-network
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
 
   # ChromaDB - Vector database
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:1.5.9
     container_name: grimoire-chromadb
     restart: unless-stopped
     environment:
@@ -108,8 +115,12 @@ services:
       - ANONYMIZED_TELEMETRY=FALSE
       - CHROMA_SERVER_HOST=0.0.0.0
       - CHROMA_SERVER_HTTP_PORT=8000
+      # No CHROMA_SERVER_AUTHN_* here on purpose: Chroma 1.x (Rust server)
+      # removed built-in auth, so a token would be silently ignored. Access
+      # control is network isolation: grimoire-network plus a 127.0.0.1-only
+      # host port. See docs/deploy/docker.md#chromadb-access-control.
     ports:
-      - "${CHROMADB_PORT:-8060}:8000"
+      - "127.0.0.1:${CHROMADB_PORT:-8060}:8000"
     volumes:
       - chromadb_data:/chroma/chroma
     # The chromadb/chroma image ships no curl, wget, or python — only a
@@ -157,7 +168,10 @@ services:
     command:
       ["uvicorn", "grimoire.api.main:app", "--host", "0.0.0.0", "--port", "8001"]
     ports:
-      - "${GRIMOIRE_API_PORT:-8001}:8001"
+      # Loopback only: on a public VPS, Docker's published ports bypass UFW,
+      # so the bind address is the firewall. Remote clients go through the
+      # caddy service (profile "proxy") on 443.
+      - "127.0.0.1:${GRIMOIRE_API_PORT:-8001}:8001"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -180,7 +194,8 @@ services:
     command:
       ["uvicorn", "grimoire.mcp.app:app", "--host", "0.0.0.0", "--port", "8100"]
     ports:
-      - "${GRIMOIRE_MCP_PORT:-8100}:8100"
+      # Loopback only; see the api service.
+      - "127.0.0.1:${GRIMOIRE_MCP_PORT:-8100}:8100"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -227,7 +242,10 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
-      - "${PGADMIN_PORT:-5050}:80"
+      # Loopback only. SERVER_MODE False means pgAdmin has no login screen
+      # at all, so anyone who can reach this port is a database admin. Use
+      # an SSH tunnel to reach it from another machine.
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     networks:
@@ -245,7 +263,8 @@ services:
     environment:
       - REDIS_HOSTS=local:redis:${REDIS_PORT:-6379}
     ports:
-      - "${REDIS_COMMANDER_PORT:-8081}:8081"
+      # Loopback only: redis-commander has no HTTP auth configured.
+      - "127.0.0.1:${REDIS_COMMANDER_PORT:-8081}:8081"
     networks:
       - grimoire-network
     depends_on:
@@ -253,7 +272,58 @@ services:
     profiles:
       - tools
 
+  # TLS reverse proxy for public deployments.  The only service allowed to
+  # publish on every interface; everything else is 127.0.0.1-only.  Start it
+  # with `docker compose --profile proxy up -d`.  Needs GRIMOIRE_DOMAIN (with
+  # DNS pointing here) and ACME_EMAIL in .env.
+  caddy:
+    image: caddy:2.11.7-alpine
+    container_name: grimoire-caddy
+    restart: unless-stopped
+    environment:
+      GRIMOIRE_DOMAIN: ${GRIMOIRE_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    # Fail loudly when the domain is unset.  A compose-level ${VAR:?} guard
+    # would break every `docker compose` command, even with this profile off,
+    # because Compose interpolates inactive services too.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        [ -n "$$GRIMOIRE_DOMAIN" ] && [ -n "$$ACME_EMAIL" ] ||
+        { echo "caddy: set GRIMOIRE_DOMAIN and ACME_EMAIL in .env" >&2; exit 1; };
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys.  Keep this volume: losing it
+      # means re-issuing, and Let's Encrypt rate-limits repeat issuance.
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      # The admin API answers on loopback inside the container only.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - grimoire-network
+    depends_on:
+      api:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    profiles:
+      - proxy
+
 volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
   postgres_data:
     driver: local
   redis_data:

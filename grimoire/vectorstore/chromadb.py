@@ -7,6 +7,7 @@ and proper initialization with metadata schema.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -128,8 +129,8 @@ class ChromaDBStore(VectorStore):
         try:
             if self.host is not None:
                 # Use HttpClient for remote ChromaDB server
-                self._client = chromadb.HttpClient(
-                    host=self.host, port=self.port or 8000
+                client = await asyncio.to_thread(
+                    chromadb.HttpClient, host=self.host, port=self.port or 8000
                 )
                 logger.info(
                     f"ChromaDB HTTP client initialized at {self.host}:{self.port}"
@@ -140,23 +141,29 @@ class ChromaDBStore(VectorStore):
                 logger.debug(
                     f"ChromaDB persistence directory: {self.persist_directory}"
                 )
-                self._client = chromadb.PersistentClient(
-                    path=str(self.persist_directory)
+                client = await asyncio.to_thread(
+                    chromadb.PersistentClient, path=str(self.persist_directory)
                 )
                 logger.info(f"ChromaDB client initialized at {self.persist_directory}")
+
+            # A local, not self._client, so the type checker knows it is set
+            # in the calls below (self._client is Optional until here).
+            self._client = client
 
             # Get or create collection with metadata schema
             # metadata is only used when creating a new collection
             metadata = {"hnsw:space": self.distance_metric}
             try:
-                self._collection = self._client.get_or_create_collection(
+                self._collection = await asyncio.to_thread(
+                    client.get_or_create_collection,
                     name=collection_name,
                     metadata=metadata,
                     embedding_function=None,  # We provide embeddings explicitly
                 )
             except Exception:
                 # If collection exists with different settings, just get it
-                self._collection = self._client.get_collection(
+                self._collection = await asyncio.to_thread(
+                    client.get_collection,
                     name=collection_name,
                 )
             logger.info(
@@ -229,7 +236,8 @@ class ChromaDBStore(VectorStore):
 
         try:
             # Use upsert to add new or update existing documents
-            self._collection.upsert(
+            await asyncio.to_thread(
+                self._collection.upsert,
                 ids=ids,
                 embeddings=embeddings,  # type: ignore[arg-type]
                 metadatas=normalized_metadatas,  # type: ignore[arg-type]
@@ -330,7 +338,8 @@ class ChromaDBStore(VectorStore):
             chroma_include.append("distances")
 
         try:
-            results = self._collection.query(
+            results = await asyncio.to_thread(
+                self._collection.query,
                 query_embeddings=[query_embedding],  # type: ignore[arg-type]
                 n_results=top_k,
                 where=where_clause,
@@ -459,8 +468,10 @@ class ChromaDBStore(VectorStore):
                     if "_empty" in metadata:
                         del metadata["_empty"]
                     for mkey, mval in metadata.items():
-                        if isinstance(mval, str) and "," in mval:
-                            # Potential comma-separated list
+                        if isinstance(mval, str) and "," in mval and mkey == "tags":
+                            # Only split the 'tags' key, which is known to
+                            # originate as a list. Other string fields may
+                            # legitimately contain commas and must stay intact.
                             metadata[mkey] = [v.strip() for v in mval.split(",")]
                 result["metadata"] = metadata
 
@@ -490,7 +501,7 @@ class ChromaDBStore(VectorStore):
             raise ValueError("Cannot delete empty list of IDs")
 
         try:
-            self._collection.delete(ids=ids)
+            await asyncio.to_thread(self._collection.delete, ids=ids)
             logger.debug(f"Deleted {len(ids)} documents from collection")
         except NotFoundError as e:
             msg = f"Collection or document not found: {e}"
@@ -523,7 +534,8 @@ class ChromaDBStore(VectorStore):
             raise ValueError("Cannot get empty list of IDs")
 
         try:
-            results = self._collection.get(
+            results = await asyncio.to_thread(
+                self._collection.get,
                 ids=ids,
                 include=["metadatas", "documents", "embeddings"],
             )
@@ -560,7 +572,10 @@ class ChromaDBStore(VectorStore):
                         if "_empty" in metadata:
                             del metadata["_empty"]
                         for mkey, mval in metadata.items():
-                            if isinstance(mval, str) and "," in mval:
+                            if isinstance(mval, str) and "," in mval and mkey == "tags":
+                                # Only split the 'tags' key, which is known to
+                                # originate as a list. Other string fields may
+                                # legitimately contain commas and must stay intact.
                                 metadata[mkey] = [v.strip() for v in mval.split(",")]
                     record["metadata"] = metadata
 
@@ -592,7 +607,7 @@ class ChromaDBStore(VectorStore):
             )
 
         try:
-            return self._collection.count()
+            return await asyncio.to_thread(self._collection.count)
         except ChromaError as e:
             msg = f"Failed to get document count: {e}"
             logger.error(msg)
@@ -622,9 +637,10 @@ class ChromaDBStore(VectorStore):
 
         try:
             # Get all IDs and delete them
-            all_ids = self._collection.get(include=[]).get("ids", [])
+            all_results = await asyncio.to_thread(self._collection.get, include=[])
+            all_ids = all_results.get("ids", [])
             if all_ids:
-                self._collection.delete(ids=all_ids)
+                await asyncio.to_thread(self._collection.delete, ids=all_ids)
             logger.info(
                 f"Reset collection '{self.collection_name}' - removed all documents"
             )

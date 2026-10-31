@@ -70,9 +70,27 @@ class TestComposeOverlay:
     def test_overlay_parses_as_yaml(self) -> None:
         assert isinstance(_load(SECURITY_OVERLAY), dict)
 
-    def test_postgres_isolated_port(self, merged: dict) -> None:
-        ports = merged["services"]["postgres"]["ports"]
-        assert any("5433" in p for p in ports), ports
+    # Port isolation comes from POSTGRES_PORT / CHROMADB_PORT in
+    # .env.security.example (see TestEnvSecurityExample), feeding the base
+    # file's loopback-bound mappings. The overlay must NOT re-declare
+    # ``ports:``: Compose merges port lists rather than replacing them, so an
+    # overlay entry would publish a second host port next to the base one.
+    @pytest.mark.parametrize("name", ["postgres", "chromadb", "redis"])
+    def test_overlay_does_not_redeclare_ports(self, name: str) -> None:
+        overlay = _load(SECURITY_OVERLAY)
+        assert "ports" not in overlay["services"].get(name, {})
+
+    @pytest.mark.parametrize(
+        ("name", "env_var"),
+        [("postgres", "POSTGRES_PORT"), ("chromadb", "CHROMADB_PORT")],
+    )
+    def test_datastore_port_is_env_driven_and_loopback(
+        self, merged: dict, name: str, env_var: str
+    ) -> None:
+        ports = merged["services"][name]["ports"]
+        assert len(ports) == 1, ports
+        assert ports[0].startswith("127.0.0.1:"), ports
+        assert f"${{{env_var}" in ports[0], ports
 
     def test_postgres_security_domain_env(self, merged: dict) -> None:
         env = merged["services"]["postgres"]["environment"]
@@ -88,10 +106,6 @@ class TestComposeOverlay:
         vols = merged["services"]["postgres"]["volumes"]
         joined = " ".join(vols)
         assert "postgres_data_security" in joined, vols
-
-    def test_chromadb_isolated_port(self, merged: dict) -> None:
-        ports = merged["services"]["chromadb"]["ports"]
-        assert any("8002" in p for p in ports), ports
 
     def test_chromadb_mounts_security_corpus(self, merged: dict) -> None:
         vols = merged["services"]["chromadb"]["volumes"]

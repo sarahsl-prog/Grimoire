@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
@@ -37,6 +38,27 @@ class DatabaseSessionManager:
             pool_pre_ping=True,
             echo=False,
         )
+
+        # Optional OpenTelemetry SQLAlchemy instrumentation
+        try:
+            from grimoire.config import get_settings
+
+            settings = get_settings()
+            if settings.observability.tracing:
+                from opentelemetry.instrumentation.sqlalchemy import (
+                    SQLAlchemyInstrumentor,
+                )
+
+                SQLAlchemyInstrumentor().instrument(
+                    engine=self._engine.sync_engine,
+                )
+        except Exception as e:
+            # Optional, so never fatal; but log it so a broken tracing setup
+            # is visible instead of silently producing no spans.
+            logger.warning(
+                "OpenTelemetry SQLAlchemy instrumentation failed: "
+                f"{type(e).__name__}: {e}"
+            )
         self._session_maker = async_sessionmaker(
             self._engine,
             class_=AsyncSession,

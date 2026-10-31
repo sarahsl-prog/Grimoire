@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from loguru import logger
 from sqlalchemy import ScalarSelect, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload
@@ -71,8 +72,8 @@ def _tag_count_column() -> ScalarSelect[int]:
 @router.get("", response_model=DocumentListResponse)
 async def list_documents(
     request: Request,
-    offset: int = 0,
-    limit: int = 50,
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    limit: int = Query(50, ge=1, le=250, description="Pagination limit (max 250)"),
     status: str | None = None,
     file_type: str | None = None,
     source_type: str | None = None,
@@ -337,43 +338,49 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
 
-    # Clean up vector store entries before deleting document
-    # This prevents orphaned vectors in ChromaDB/Qdrant
-    # Gracefully handle case where vector store service doesn't exist yet
-    try:
-        try:
-            from grimoire.config.settings import get_settings
-            from grimoire.services.vector_store import get_vector_store_service
+    # Clean up vector store entries before deleting document.
+    # Failure here is logged as an error and surfaced to the caller; we do not
+    # silently swallow ImportError or broad Exceptions anymore (C-1).
+    from grimoire.config.settings import get_settings
+    from grimoire.vectorstore import ChromaDBStore
 
-            settings = get_settings()
-            vector_store = get_vector_store_service(settings)
-
-            # Delete vectors for all chunks
-            vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
-            if vector_ids:
-                await vector_store.delete_vectors(vector_ids)
-        except ImportError:
-            # Vector store service not implemented yet - just log and continue
-            from loguru import logger
-
-            logger.debug(
-                f"Vector store service not available, skipping vector cleanup for {document_id}"
-            )
-    except Exception as e:
-        from loguru import logger
-
-        logger.warning(f"Failed to delete vectors for document {document_id}: {e}")
-        # Continue with document deletion even if vector cleanup fails
+    settings = get_settings()
+    vector_ids = [chunk.vector_id for chunk in doc.chunks if chunk.vector_id]
+    if vector_ids:
+        vector_store = ChromaDBStore(
+            persist_directory=settings.vector_store.chromadb.path,
+            collection_name=settings.vector_store.chromadb.collection_name,
+            host=settings.vector_store.host,
+            port=settings.vector_store.port,
+        )
+        # embedding_dim is only validated during init; we pass 1 because deletion
+        # does not add documents and the collection is expected to exist already.
+        await vector_store.initialize(
+            collection_name=settings.vector_store.chromadb.collection_name,
+            embedding_dim=1,
+        )
+        await vector_store.delete(vector_ids)
+        logger.info(f"Deleted {len(vector_ids)} vectors for document {document_id}")
 
     await db.delete(doc)
     try:
         await db.commit()
     except Exception as commit_error:
         await db.rollback()
-        from loguru import logger
-
         # Keep the cause in the logs; the client only sees the generic detail.
         logger.error(f"Failed to delete document {document_id}: {commit_error}")
         raise HTTPException(
             status_code=500, detail="Failed to delete document"
         ) from commit_error
+
+    # Invalidate query cache so stale results are not served.
+    try:
+        from grimoire.api.dependencies import get_query_agent
+
+        agent = get_query_agent()
+        if hasattr(agent, "invalidate_cache"):
+            await agent.invalidate_cache()
+            logger.debug(f"Query cache invalidated after deleting {document_id}")
+    except Exception as cache_err:
+        # Cache invalidation is best-effort; do not fail the request.
+        logger.warning(f"Failed to invalidate query cache: {cache_err}")

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -114,13 +115,35 @@ class ContentLengthGuard:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application startup and shutdown."""
     from grimoire.config.settings import get_settings
-    from grimoire.db.session import close_db, initialize_db
+    from grimoire.db.session import close_db, get_db_manager, initialize_db
 
     settings = get_settings()
     await initialize_db(settings.database.url)
+
+    # Initialize watcher agent for REST /watch endpoints
+    watcher_agent = None
+    try:
+        from grimoire.agents.watcher import WatcherAgent
+        from grimoire.api.routes import watch as watch_module
+        from grimoire.cli.helpers import build_ingestion_agent
+        from grimoire.storage.watch_manager import WatchManager
+
+        db_manager = get_db_manager()
+        watcher_agent = WatcherAgent(
+            watch_manager=WatchManager(),
+            ingestion_agent=build_ingestion_agent(),
+            db_session_factory=db_manager.session,
+        )
+        watch_module.set_watcher(watcher_agent)
+        logger.info("WatcherAgent initialized for REST /watch endpoints")
+    except Exception as e:
+        logger.warning(f"Failed to initialize WatcherAgent: {e}")
+
     try:
         yield
     finally:
+        if watcher_agent is not None:
+            await watcher_agent.stop_all()
         await close_db()
 
 
@@ -172,6 +195,21 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
     app.add_middleware(SessionIdMiddleware)
 
+    # OpenTelemetry instrumentation (if enabled in settings)
+    try:
+        settings = get_settings()
+        if settings.observability.tracing:
+            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+            FastAPIInstrumentor.instrument_app(app)
+            logger.info("OpenTelemetry FastAPI instrumentation enabled")
+    except Exception as e:
+        # OTel is optional, so failure must not prevent startup, but it must
+        # not be silent either: tracing that quietly stops is worse than none.
+        logger.warning(
+            f"OpenTelemetry FastAPI instrumentation failed: {type(e).__name__}: {e}"
+        )
+
     # API routes
     app.include_router(ingest.router, prefix="/api/v1")
     app.include_router(query.router, prefix="/api/v1")
@@ -206,6 +244,88 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     # decorator it would make `health_check` untyped.  It only records the route
     # name, so the Redis-backed limiter's default limit skips /health.
     limiter.exempt(health_check)  # type: ignore[no-untyped-call]
+
+    @app.get("/readyz")
+    async def readyz_check(request: Request) -> dict[str, Any]:
+        """Readiness probe: pings Postgres, ChromaDB, and Redis.
+
+        Returns 503 if any dependency is unreachable.
+        """
+        checks: dict[str, str] = {}
+        healthy = True
+
+        # Postgres
+        try:
+            from grimoire.db.session import get_db_manager
+
+            db_manager = get_db_manager()
+            if db_manager._engine is None:
+                checks["postgres"] = "not_initialized"
+                healthy = False
+            else:
+                from sqlalchemy import text
+
+                async with db_manager._engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
+                checks["postgres"] = "ok"
+        except Exception as e:
+            checks["postgres"] = f"error: {e}"
+            healthy = False
+
+        # ChromaDB
+        try:
+            from grimoire.config.settings import get_settings
+            from grimoire.vectorstore.chromadb import ChromaDBStore
+
+            settings = get_settings()
+            store = ChromaDBStore(
+                persist_directory=settings.vector_store.chromadb.path,
+                collection_name=settings.vector_store.chromadb.collection_name,
+                host=settings.vector_store.host,
+                port=settings.vector_store.port,
+            )
+            await store.initialize(
+                collection_name=settings.vector_store.chromadb.collection_name,
+                embedding_dim=1,
+            )
+            await store.count()
+            checks["chromadb"] = "ok"
+        except Exception as e:
+            checks["chromadb"] = f"error: {e}"
+            healthy = False
+
+        # Redis
+        try:
+            from grimoire.config.settings import get_settings
+
+            settings = get_settings()
+            if settings.redis.host:
+                import redis.asyncio as aioredis
+
+                r = aioredis.from_url(
+                    f"redis://{settings.redis.host}:{settings.redis.port}",
+                    password=settings.redis.password or None,
+                )
+                # redis-py types commands as `Awaitable[T] | T` for both clients;
+                # the asyncio client always returns an awaitable.
+                await cast(Awaitable[bool], r.ping())
+                await r.aclose()
+                checks["redis"] = "ok"
+            else:
+                checks["redis"] = "disabled"
+        except Exception as e:
+            checks["redis"] = f"error: {e}"
+            healthy = False
+
+        if not healthy:
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=503,
+                detail={"status": "not_ready", "checks": checks},
+            )
+
+        return {"status": "ready", "checks": checks}
 
     return app
 

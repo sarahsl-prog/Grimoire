@@ -42,8 +42,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      # `dev` is a [dependency-groups] entry, not an optional extra, so it is
+      # selected with --group; `--extra dev` fails with "Extra `dev` is not
+      # defined". The group carries ruff, black, mypy, bandit, pre-commit and
+      # the type stubs the mypy hook needs.
       - name: Install dev environment
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --group dev
 
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -65,8 +69,9 @@ jobs:
       # The GUI tests drive real PySide6 widgets; no display on a runner.
       QT_QPA_PLATFORM: offscreen
     # The API's rate limiter stores counters in Redis at localhost:6379 (the
-    # settings default). Without it, every endpoint except /health errors and
-    # the auth/path-traversal tests in tests/test_security.py fail.
+    # settings default). Tests pass without it (the limiter falls back to
+    # in-memory counters; see tests/test_rate_limit_fallback.py), but running
+    # Redis keeps the normal Redis-backed path exercised too.
     services:
       redis:
         image: redis:7-alpine
@@ -102,10 +107,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      # `all`, not `dev`: dev pulls in pytest-qt, which refuses to start
-      # without the Qt binding that only the `gui` extra installs.
+      # Every optional extra (mlflow, gui, tui) plus the dev group (pytest and
+      # plugins). `all` no longer includes dev, so name the group explicitly
+      # rather than relying on uv installing it by default.
       - name: Install all extras
-        run: uv sync --frozen --extra all
+        run: uv sync --frozen --extra all --group dev
 
       # addopts in pyproject.toml already excludes tests/integration.
       - name: pytest

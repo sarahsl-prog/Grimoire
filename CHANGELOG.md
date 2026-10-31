@@ -6,6 +6,42 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **`grimoire_pg_query` row limit can no longer be bypassed.** The tool wrapped
+  the validated SQL as `SELECT * FROM (<sql>) AS _q LIMIT :n`, so a query
+  ending in `) AS x --` closed the subquery and commented out the `LIMIT`,
+  returning (and loading into memory) the whole table. The SQL now runs
+  unwrapped and the cap is applied with `fetchmany(limit)` on a server-side
+  cursor. Internal `;` is rejected, so only one statement can run. Still
+  open: the `api_keys` regex guard can be bypassed with dynamic SQL such as
+  `query_to_xml`; the fix is a read-only database role (see
+  `docs/audits/ai-review-verification-oct31.md`, C-1/M-2).
+- **CORS is off by default, in code and in the env templates.** Phase 5
+  changed the code default from `["*"]`, but `.env.example` and
+  `.env.security.example` still set `["*"]`, so a fresh `cp .env.example .env`
+  re-enabled it. The default is now `[]` everywhere (no Grimoire client needs
+  CORS), and `auth.cors_origins` is validated: entries must be
+  `scheme://host[:port]` with no path, since a trailing slash silently never
+  matches, and `"*"` must be the only entry, since Starlette otherwise allows
+  every origin. `["*"]` on its own still works but logs a warning.
+  **Breaking** only if you serve a browser app from another origin; list it
+  explicitly.
+- **Nothing is published beyond loopback except the TLS proxy.** On a VPS,
+  Docker's published ports bypass UFW, so `api` (8001), `mcp` (8100),
+  `pgadmin` (5050, which has no login in desktop mode) and `redis-commander`
+  (8081) were reachable from the internet. All four now bind to `127.0.0.1`,
+  like the datastores. **Breaking:** remote clients must go through the new
+  Caddy proxy or an SSH tunnel. `tests/deploy/test_network_exposure.py` fails
+  if any non-proxy service publishes on all interfaces.
+- **Caddy TLS reverse proxy** (compose profile `proxy`, `deploy/caddy/Caddyfile`).
+  Automatic Let's Encrypt certificates for `GRIMOIRE_DOMAIN`, `/mcp/*` routed to
+  the `mcp` service with unbuffered SSE, everything else to `api`, plus HSTS and
+  a 110 MB body cap. `FORWARDED_ALLOW_IPS` (default `172.16.0.0/12`, override
+  with `GRIMOIRE_TRUSTED_PROXIES`) makes uvicorn trust Caddy's
+  `X-Forwarded-For`, so rate limits see real client IPs.
+- **Removed `CHROMA_SERVER_AUTHN_TOKEN`.** Chroma 1.x dropped built-in server
+  auth, so the token was silently ignored and only gave a false sense of
+  security. ChromaDB access control is network isolation; see
+  `docs/deploy/docker.md#chromadb-access-control`.
 - **Server paths are confined everywhere.** Only REST file/directory ingest
   checked the path; REST `watch/start` and the MCP tools `grimoire_watch_start`,
   `grimoire_ingest_file` and `grimoire_ingest_directory` accepted any path, so a
@@ -95,6 +131,16 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **`grimoire cache stats` and `grimoire status --detailed` no longer crash on
+  the disk cache.** `DiskCache.get_stats()` became async when its sqlite I/O
+  moved off the event loop, but both commands still called it synchronously
+  and failed with `'coroutine' object has no attribute 'get'`.
+- **A Redis outage no longer takes the API down.** When Redis was unreachable,
+  slowapi passed the connection error to its 429 handler, which crashed reading
+  `.detail`, so every endpoint except `/health` returned 500. The limiter now
+  falls back to in-memory counters with the same limits (per process) and
+  re-checks Redis with exponential backoff. Limits stay enforced during the
+  outage rather than failing open.
 - **Malformed IDs in REST paths are 404s, not 500s.** `GET`/`DELETE
   /api/v1/documents/{id}`, `DELETE /api/v1/categories/{id}` and the
   `/documents/{id}/tags/{category_id}` routes passed the raw path segment to

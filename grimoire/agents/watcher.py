@@ -20,8 +20,10 @@ from pydantic import BaseModel, Field
 
 from grimoire.agents.ingestion import IngestionAgent
 from grimoire.db.models import StorageBackend
+from grimoire.db.repositories import DocumentRepository
 from grimoire.storage.base import FileChange, FileChangeType
 from grimoire.storage.watch_manager import WatchManager
+from grimoire.vectorstore import ChromaDBStore
 
 # =============================================================================
 # Data Models
@@ -149,6 +151,7 @@ class WatcherAgent:
         self._processing_queue: asyncio.Queue[tuple[str, FileChange]] = asyncio.Queue()
         self._processor_task: asyncio.Task[None] | None = None
         self._running = False
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
         logger.debug("WatcherAgent initialized")
 
@@ -291,12 +294,20 @@ class WatcherAgent:
             # Find the tracker by matching path prefix
             watch_id = self._find_watch_id(watch_path)
             if watch_id:
-                try:
-                    self._processing_queue.put_nowait((watch_id, change))
-                except asyncio.QueueFull:
-                    logger.warning(
-                        f"Processing queue full, dropping event: {change.path}"
+                loop = self._event_loop
+                if loop is not None:
+                    loop.call_soon_threadsafe(
+                        self._processing_queue.put_nowait, (watch_id, change)
                     )
+                else:
+                    # Fallback: event loop not captured yet (should not happen
+                    # after _start_processor runs, but defensively handle).
+                    try:
+                        self._processing_queue.put_nowait((watch_id, change))
+                    except asyncio.QueueFull:
+                        logger.warning(
+                            f"Processing queue full, dropping event: {change.path}"
+                        )
 
         return on_change
 
@@ -309,6 +320,12 @@ class WatcherAgent:
         Returns:
             True if the file should be processed.
         """
+        # DELETED events are always processed (file is already gone, so we
+        # cannot check its extension).
+        if change.change_type == FileChangeType.DELETED:
+            path = Path(change.path)
+            return not any(part.startswith(".") for part in path.parts)
+
         # Only process created and modified events
         if change.change_type not in (
             FileChangeType.CREATED,
@@ -349,6 +366,7 @@ class WatcherAgent:
             return
 
         self._running = True
+        self._event_loop = asyncio.get_running_loop()
         self._processor_task = asyncio.create_task(
             self._process_events(),
             name="watcher_event_processor",
@@ -384,7 +402,7 @@ class WatcherAgent:
         watch_id: str,
         change: FileChange,
     ) -> None:
-        """Handle a single file change event by running ingestion.
+        """Handle a single file change event by running ingestion or deletion.
 
         Args:
             watch_id: ID of the watch that produced the event.
@@ -401,6 +419,57 @@ class WatcherAgent:
         )
         tracker.last_event_at = datetime.now(tz=UTC)
 
+        # -------------------------------------------------------------------
+        # DELETED: remove document + vectors from the system.
+        # -------------------------------------------------------------------
+        if change.change_type == FileChangeType.DELETED:
+            try:
+                async with self._db_session_factory() as db:
+                    repo = DocumentRepository(db)
+                    doc = await repo.get_by_source_path(file_path)
+                    if doc is None:
+                        logger.debug(
+                            f"No tracked document for deleted path {file_path}"
+                        )
+                        return
+
+                    vector_ids = [
+                        chunk.vector_id for chunk in doc.chunks if chunk.vector_id
+                    ]
+                    if vector_ids:
+                        from grimoire.config.settings import get_settings
+
+                        settings = get_settings()
+                        vector_store = ChromaDBStore(
+                            persist_directory=settings.vector_store.chromadb.path,
+                            collection_name=settings.vector_store.chromadb.collection_name,
+                            host=settings.vector_store.host,
+                            port=settings.vector_store.port,
+                        )
+                        await vector_store.initialize(
+                            collection_name=settings.vector_store.chromadb.collection_name,
+                            embedding_dim=1,
+                        )
+                        await vector_store.delete(vector_ids)
+                        logger.info(
+                            f"Deleted {len(vector_ids)} vectors for {file_path}"
+                        )
+
+                    await db.delete(doc)
+                    await db.commit()
+                    tracker.files_processed += 1
+                    logger.info(f"WatcherAgent: deleted document for {file_path}")
+
+                    # Invalidate query cache so stale results are not served.
+                    await self._invalidate_query_cache()
+            except Exception as e:
+                tracker.files_failed += 1
+                logger.error(f"WatcherAgent: error deleting {file_path}: {e}")
+            return
+
+        # -------------------------------------------------------------------
+        # CREATED / MODIFIED: ingest the file.
+        # -------------------------------------------------------------------
         try:
             async with self._db_session_factory() as db:
                 result = await self._ingestion_agent.ingest_file(
@@ -412,6 +481,8 @@ class WatcherAgent:
             if result.status == "completed":
                 tracker.files_processed += 1
                 logger.info(f"WatcherAgent: ingested {file_path}")
+                # Invalidate query cache after re-ingestion.
+                await self._invalidate_query_cache()
             elif result.status == "skipped":
                 logger.debug(f"WatcherAgent: skipped {file_path} (duplicate)")
             else:
@@ -423,6 +494,25 @@ class WatcherAgent:
         except Exception as e:
             tracker.files_failed += 1
             logger.error(f"WatcherAgent: error processing {file_path}: {e}")
+
+    # -------------------------------------------------------------------------
+    # Cache invalidation helper
+    # -------------------------------------------------------------------------
+
+    async def _invalidate_query_cache(self) -> None:
+        """Invalidate the query cache via the shared QueryAgent singleton.
+
+        Best-effort: failures are logged but not raised.
+        """
+        try:
+            from grimoire.api.dependencies import get_query_agent
+
+            agent = get_query_agent()
+            if hasattr(agent, "invalidate_cache"):
+                await agent.invalidate_cache()
+                logger.debug("WatcherAgent: query cache invalidated")
+        except Exception as e:
+            logger.warning(f"WatcherAgent: query cache invalidation failed: {e}")
 
     # -------------------------------------------------------------------------
     # Context Manager

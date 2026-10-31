@@ -33,6 +33,7 @@ def setup_logger(
     rotation: str = "1 week",
     retention: str = "1 month",
     console_format: str = DEFAULT_LOG_FORMAT,
+    use_json: bool = False,
 ) -> None:
     """Configure loguru with console + file sinks.
 
@@ -44,6 +45,7 @@ def setup_logger(
         rotation: Log rotation interval (e.g., "1 week", "500 MB", "00:00").
         retention: Log retention period (e.g., "1 month", "10 days").
         console_format: Format string for the console sink.
+        use_json: Emit JSON to the file sink when True.
     """
     logger.remove()
 
@@ -60,13 +62,14 @@ def setup_logger(
             log_dir = Path(settings.logging.log_dir)
             rotation = settings.logging.rotation
             retention = settings.logging.retention
+            use_json = settings.logging.use_json
         except Exception:
             log_dir = Path("./logs")
 
     log_dir_path = Path(log_dir)
     log_dir_path.mkdir(parents=True, exist_ok=True)
 
-    # Console sink
+    # Console sink — always plain text
     logger.add(
         sys.stderr,
         level=level,
@@ -74,18 +77,23 @@ def setup_logger(
         colorize=sys.stderr.isatty(),
     )
 
-    # File sink — always enabled
+    # File sink — JSON when requested, plain text otherwise
+    file_format = "{message}" if use_json else DEFAULT_LOG_FORMAT
+    file_serialize = use_json
     logger.add(
         str(log_dir_path / "grimoire.log"),
         level=level,
-        format=DEFAULT_LOG_FORMAT,
+        format=file_format,
         rotation=rotation,
         retention=retention,
         compression="zip",
         enqueue=True,
+        serialize=file_serialize,
     )
 
-    logger.debug(f"Logger initialized: level={level}, log_dir={log_dir_path}")
+    logger.debug(
+        f"Logger initialized: level={level}, log_dir={log_dir_path}, json={use_json}"
+    )
 
 
 def get_logger(name: str) -> Any:

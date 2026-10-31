@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from loguru import logger
@@ -371,6 +372,21 @@ class PgQueryInput(BaseModel):
             )
         if re.search(r"\bSELECT\b.*\bINTO\b", stripped, re.DOTALL):
             raise ValueError("SELECT INTO is not permitted.")
+        # Reject data-modifying keywords that could appear inside CTEs or subqueries
+        forbidden = re.compile(
+            r"\b(DELETE|UPDATE|INSERT|MERGE|ALTER|CREATE|GRANT|COPY|DROP)\b",
+            re.IGNORECASE,
+        )
+        if forbidden.search(v):
+            raise ValueError(
+                "Data-modifying keywords (DELETE, UPDATE, INSERT, MERGE, ALTER, "
+                "CREATE, GRANT, COPY, DROP) are not permitted."
+            )
+        # One statement only. A trailing `;` is tolerated (and stripped before
+        # execution); any other `;` means stacked statements. This also
+        # rejects a `;` inside a string literal, an acceptable trade-off.
+        if ";" in v.strip().rstrip(";"):
+            raise ValueError("Only a single statement is permitted; remove ';'.")
         return v
 
 
@@ -1093,23 +1109,31 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
             await db.rollback()
             return _err("Failed to delete document.")
 
-    # Vector cleanup after durable commit — best-effort.
-    # Failure leaves orphaned vectors (search noise) but document is fully deleted.
+    # Vector cleanup after durable commit — no longer silently swallowed.
+    # We call ChromaDBStore directly because grimoire.services.vector_store
+    # does not exist (C-1).
     if vector_ids:
-        try:
-            from grimoire.services.vector_store import get_vector_store_service
+        from grimoire.vectorstore import ChromaDBStore
 
-            settings = get_settings()
-            vector_store = get_vector_store_service(settings)
-            await vector_store.delete_vectors(vector_ids)
-        except ImportError:
-            logger.debug(
-                f"Vector store service not available, skipping cleanup for {params.document_id}"
+        settings = get_settings()
+        vector_store = ChromaDBStore(
+            persist_directory=settings.vector_store.chromadb.path,
+            collection_name=settings.vector_store.chromadb.collection_name,
+            host=settings.vector_store.host,
+            port=settings.vector_store.port,
+        )
+        await vector_store.initialize(
+            collection_name=settings.vector_store.chromadb.collection_name,
+            embedding_dim=1,
+        )
+        try:
+            await vector_store.delete(vector_ids)
+            logger.info(
+                f"Deleted {len(vector_ids)} vectors for document {params.document_id}"
             )
         except Exception as e:
-            logger.warning(
-                f"Vectors not cleaned up for {params.document_id}: {e}. May require manual ChromaDB cleanup."
-            )
+            logger.error(f"Failed to delete vectors for {params.document_id}: {e}")
+            return _err("Document deleted but vector cleanup failed.")
 
     return _ok({"deleted": params.document_id})
 
@@ -1117,9 +1141,9 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
 async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     """Run a read-only SELECT query against the Postgres database.
 
-    The user-supplied SQL is executed as a subquery with a separate, validated
-    row limit applied by SQLAlchemy bound parameters.  The Pydantic validator
-    already rejects non-SELECT/WITH statements and SELECT INTO.
+    The user-supplied SQL is validated by PgQueryInput to reject any
+    non-SELECT statements and data-modifying keywords. Execution is wrapped
+    in READ ONLY mode with a statement timeout.
     """
     require_tier(ApiKeyTier.DEV, ApiKeyTier.AGENT)
     from sqlalchemy import text
@@ -1127,19 +1151,42 @@ async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
     from grimoire.db.session import get_db_manager
 
     inner = params.sql.rstrip(";")
-    # Use a bound parameter for the limit so that user SQL is never
-    # interpolated into the executable statement.
-    sql = text(
-        "SELECT * FROM (:inner_query) AS _grimoire_q LIMIT :row_limit"
-    ).bindparams(inner_query=inner, row_limit=params.limit)
+
+    # Additional defence-in-depth: block reads from sensitive tables.
+    # This is a best-effort regex guard; the read-only transaction is the
+    # primary protection against writes.
+    blocked_tables = {"api_keys", "api_key"}
+    lower_sql = inner.lower()
+    for table in blocked_tables:
+        # Match table name as a whole word in FROM or JOIN clauses
+        if re.search(rf"\b{table}\b", lower_sql):
+            logger.warning(f"Blocked pg_query accessing restricted table: {table}")
+            return _err("Query references a restricted table.")
+
+    # The validated SQL runs as-is, never interpolated into a wrapper. The old
+    # `SELECT * FROM ({inner}) AS _q LIMIT :n` let a query close the paren and
+    # comment out the LIMIT (`... ) AS x --`), returning the whole table. The
+    # row cap is now applied at fetch time on a server-side cursor: no SQL text
+    # can lift it, and at most `limit` rows are ever loaded into memory.
+    # Stacked statements are still impossible: the validator rejects `;`, and
+    # SQLAlchemy's asyncpg driver always uses prepared statements, which
+    # Postgres limits to a single command.
+    sql = text(inner)
 
     manager = get_db_manager()
     async with manager.session() as db:
         try:
-            rows = await db.execute(sql)
+            await db.execute(text("SET TRANSACTION READ ONLY"))
+            await db.execute(text("SET LOCAL statement_timeout = '30s'"))
+            result = await db.stream(sql)
+            try:
+                rows = await result.fetchmany(params.limit)
+            finally:
+                await result.close()
             data = [dict(r._mapping) for r in rows]
         except Exception as e:
-            return _err(f"Query failed: {e}")
+            logger.error(f"pg_query execution failed: {e}")
+            return _err("Query execution failed.")
 
     return _ok({"row_count": len(data), "rows": data})
 

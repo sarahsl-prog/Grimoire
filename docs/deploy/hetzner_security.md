@@ -41,8 +41,9 @@ cp .env.security.example .env
 mkdir -p /srv/grimoire/security-corpus
 CORPUS_DIR=/srv/grimoire/security-corpus ./scripts/security/seed_corpus.sh
 
-# 5. Start the security overlay.
-docker compose -f docker-compose.yml -f docker-compose.security.yml up -d
+# 5. Start the security overlay. --profile proxy adds the Caddy TLS proxy
+#    (needs GRIMOIRE_DOMAIN and ACME_EMAIL in .env; see Firewall below).
+docker compose -f docker-compose.yml -f docker-compose.security.yml --profile proxy up -d
 
 # 6. Initialise the DB schema (one-time).
 docker compose exec postgres pg_isready  # wait for healthy
@@ -63,31 +64,44 @@ uv run grimoire search --source-type sigma_rule "lateral movement"
 
 ## Firewall
 
-Hetzner Cloud Firewalls (or any equivalent — `ufw`, `nftables`) — open the
-minimum surface:
+> **UFW does not protect Docker ports.** Docker writes its own iptables NAT
+> rules ahead of UFW's chains, so a container port published as
+> `"8001:8001"` is reachable from the internet even after `ufw deny 8001`.
+> The compose files therefore bind every port to `127.0.0.1`
+> (`tests/deploy/test_network_exposure.py` enforces this), and the Hetzner
+> Cloud Firewall, which sits outside the VM, is the backstop.
 
-| Port | Direction | Purpose |
+Hetzner Cloud Firewall, inbound rules (default deny everything else):
+
+| Port | Source | Purpose |
 |---|---|---|
-| 22/tcp | inbound (tight source range) | SSH |
-| 8001/tcp | inbound | Grimoire API (`GRIMOIRE_API__PORT`) |
-| 5433/tcp | inbound | **Block.** Postgres should only be reachable from localhost / the docker network. |
-| 8002/tcp | inbound | **Block.** ChromaDB — same. |
-| 6379/tcp | inbound | **Block.** Redis — same. |
+| 22/tcp | your IP only | SSH |
+| 80/tcp | any | Caddy: ACME HTTP challenge and redirect to HTTPS |
+| 443/tcp, 443/udp | any | Caddy: HTTPS (HTTP/1.1, HTTP/2, HTTP/3) |
 
-Example `ufw` set-up:
+Postgres (5433), ChromaDB (8002), Redis (6379), the API (8001) and MCP
+(8100) are all loopback-only on the host, so they need no firewall rule and
+can't be reached remotely even if the cloud firewall is misconfigured.
+
+To use the API or pgAdmin from your laptop, tunnel over SSH:
 
 ```bash
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow from <your-ip>/32 to any port 22 proto tcp
-sudo ufw allow 8001/tcp                           # Grimoire API
-sudo ufw enable
+ssh -N -L 8001:127.0.0.1:8001 -L 5050:127.0.0.1:5050 user@<vps-ip>
 ```
 
-The compose overlay still publishes Postgres / Redis / Chroma ports on
-the host (for ``alembic`` and debugging convenience). If you want them
-fully internal, edit `docker-compose.security.yml` and drop the `ports:`
-blocks.
+Check from a machine *outside* the VPS that only SSH answers:
+
+```bash
+nmap -Pn -p 1-10000 <vps-ip>
+```
+
+Remote access to the API and MCP goes through the Caddy TLS proxy (compose
+profile `proxy`): set `GRIMOIRE_DOMAIN` and `ACME_EMAIL` in `.env` and add
+`--profile proxy` to the `up` command. See
+[Public deployment with Caddy](docker.md#public-deployment-with-caddy).
+
+Never start the `tools` profile (pgAdmin, redis-commander) on a VPS unless
+you need it: pgAdmin runs in desktop mode with no login screen.
 
 ## Backups
 

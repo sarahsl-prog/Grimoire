@@ -117,8 +117,16 @@ def watch_list(ctx: click.Context) -> None:
 async def watch_unwatch(ctx: click.Context, watch_id: str) -> None:
     """Stop watching by WATCH_ID.
 
-    Stops the specified watch and removes it from the active watchers.
-    Use 'grimoire watch start' output to find the watch ID.
+    \b
+    IMPORTANT: This command only works when issued from the SAME process
+    that started the watch. Because `grimoire watch start` runs as a
+    standalone long-lived process, a separate `unwatch` invocation cannot
+    see or stop watches from another process.
+
+    To stop a watch started with `grimoire watch start`, press Ctrl+C
+    in that process or use the REST API:
+
+        DELETE /api/v1/watch/{watch_id}
 
     Examples:
 
@@ -144,6 +152,11 @@ async def watch_unwatch(ctx: click.Context, watch_id: str) -> None:
         if stopped:
             echo_success(f"Stopped watch {watch_id}")
         else:
-            echo_error(f"Watch {watch_id} not found or already stopped")
+            echo_error(
+                f"Watch {watch_id} not found. "
+                f"If the watch was started in another process, "
+                f"use the REST API DELETE /api/v1/watch/{watch_id} "
+                f"or stop the `grimoire watch start` process with Ctrl+C."
+            )
     finally:
         await teardown_db()

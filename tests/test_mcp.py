@@ -539,7 +539,9 @@ async def test_pg_query_returns_error_on_failure(mcp_server: Any) -> None:
             ctx=MagicMock(),
         )
     assert '"status": "error"' in result
-    assert "DB down" in result
+    assert "Query execution failed." in result
+    # Full exception detail is no longer leaked to the client (F-4/F-7).
+    assert "DB down" not in result
 
 
 @pytest.mark.parametrize(
@@ -597,9 +599,33 @@ def test_pg_query_rejects_select_into(sql: str) -> None:
         PgQueryInput(sql=sql)
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM documents; DELETE FROM documents",
+        "WITH t AS (UPDATE documents SET title='x') SELECT * FROM t",
+        "SELECT * FROM documents; INSERT INTO documents VALUES (1)",
+        "SELECT * FROM documents; ALTER TABLE documents ADD COLUMN foo",
+        "SELECT * FROM documents; CREATE TABLE foo (id INT)",
+        "SELECT * FROM documents; GRANT SELECT ON documents TO public",
+        "SELECT * FROM documents; COPY documents TO '/tmp/out.csv'",
+        "SELECT * FROM documents; DROP TABLE documents",
+        "SELECT * FROM documents; MERGE INTO documents USING t ON d.id=t.id",
+    ],
+)
+def test_pg_query_rejects_data_modifying_keywords(sql: str) -> None:
+    """Data-modifying keywords inside or alongside SELECT are rejected (F-4/F-7)."""
+    from pydantic import ValidationError
+
+    from grimoire.mcp.tools import PgQueryInput
+
+    with pytest.raises(ValidationError):
+        PgQueryInput(sql=sql)
+
+
 @pytest.mark.asyncio
-async def test_pg_query_wraps_query_with_limit() -> None:
-    """grimoire_pg_query wraps the user SQL in a bounded subquery."""
+async def test_pg_query_blocks_api_keys_table() -> None:
+    """Queries referencing api_keys are blocked at execution time (F-4/F-7)."""
     from grimoire.mcp.tools import PgQueryInput, grimoire_pg_query
 
     mock_db = AsyncMock()
@@ -616,11 +642,127 @@ async def test_pg_query_wraps_query_with_limit() -> None:
 
     with patch("grimoire.db.session.get_db_manager", return_value=mock_manager):
         result = await grimoire_pg_query(
-            PgQueryInput(sql="SELECT id FROM documents", limit=10),
+            PgQueryInput(sql="SELECT * FROM api_keys", limit=10),
             ctx=MagicMock(),
         )
 
+    assert '"status": "error"' in result
+    assert "restricted table" in result
+
+
+def _streaming_db(rows: list[dict[str, Any]]) -> tuple[AsyncMock, AsyncMock]:
+    """A mock session whose ``stream()`` yields ``rows`` via ``fetchmany``.
+
+    ``fetchmany(n)`` honours ``n`` like the real AsyncResult, so a test can
+    hand it more rows than the limit and check the cap holds.
+    """
+    stream_result = AsyncMock()
+
+    async def _fetchmany(n: int) -> list[Any]:
+        return [MagicMock(_mapping=r) for r in rows[:n]]
+
+    stream_result.fetchmany = AsyncMock(side_effect=_fetchmany)
+    mock_db = AsyncMock()
+    mock_db.stream = AsyncMock(return_value=stream_result)
+    return mock_db, stream_result
+
+
+async def _run_pg_query(mock_db: AsyncMock, sql: str, limit: int) -> str:
+    from grimoire.mcp.tools import PgQueryInput, grimoire_pg_query
+
+    @asynccontextmanager
+    async def _ctx() -> Any:
+        yield mock_db
+
+    mock_manager = MagicMock()
+    mock_manager.session = _ctx
+    set_current_api_key(_make_api_key(ApiKeyTier.DEV))
+    with patch("grimoire.db.session.get_db_manager", return_value=mock_manager):
+        return await grimoire_pg_query(
+            PgQueryInput(sql=sql, limit=limit), ctx=MagicMock()
+        )
+
+
+@pytest.mark.asyncio
+async def test_pg_query_caps_rows_at_fetch_time() -> None:
+    """The row cap is applied by fetchmany on a server-side cursor."""
+    rows = [{"id": i} for i in range(25)]
+    mock_db, stream_result = _streaming_db(rows)
+
+    result = await _run_pg_query(mock_db, "SELECT id FROM documents", limit=10)
+
     assert '"status": "ok"' in result
+    assert '"row_count": 10' in result
+    stream_result.fetchmany.assert_awaited_once_with(10)
+    stream_result.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_pg_query_runs_sql_unwrapped() -> None:
+    """User SQL is never interpolated into a LIMIT wrapper it could escape."""
+    mock_db, _ = _streaming_db([])
+
+    await _run_pg_query(mock_db, "SELECT id FROM documents;", limit=5)
+
+    executed = str(mock_db.stream.await_args.args[0])
+    assert executed == "SELECT id FROM documents"
+    assert "LIMIT" not in executed.upper()
+
+
+@pytest.mark.asyncio
+async def test_pg_query_wrapper_escape_cannot_lift_the_cap() -> None:
+    """Regression: `) AS x --` used to comment out the appended LIMIT."""
+    rows = [{"id": i} for i in range(1000)]
+    mock_db, stream_result = _streaming_db(rows)
+
+    result = await _run_pg_query(mock_db, "SELECT * FROM documents) AS x --", limit=3)
+
+    assert '"row_count": 3' in result
+    stream_result.fetchmany.assert_awaited_once_with(3)
+
+
+@pytest.mark.asyncio
+async def test_pg_query_sets_read_only_and_timeout_before_querying() -> None:
+    mock_db, _ = _streaming_db([])
+    calls: list[str] = []
+
+    async def _execute(stmt: Any, *a: Any, **k: Any) -> None:
+        calls.append(str(stmt))
+
+    async def _stream(stmt: Any, *a: Any, **k: Any) -> Any:
+        calls.append(f"STREAM {stmt}")
+        return _streaming_db([])[1]
+
+    mock_db.execute = AsyncMock(side_effect=_execute)
+    mock_db.stream = AsyncMock(side_effect=_stream)
+
+    await _run_pg_query(mock_db, "SELECT 1", limit=1)
+
+    assert calls[0] == "SET TRANSACTION READ ONLY"
+    assert calls[1].startswith("SET LOCAL statement_timeout")
+    assert calls[2] == "STREAM SELECT 1"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    ["SELECT 1; SELECT 2", "SELECT 1;SELECT 2;", "WITH a AS (SELECT 1); SELECT 2"],
+)
+def test_pg_query_rejects_stacked_statements(sql: str) -> None:
+    from pydantic import ValidationError
+
+    from grimoire.mcp.tools import PgQueryInput
+
+    with pytest.raises(ValidationError, match="single statement"):
+        PgQueryInput(sql=sql)
+
+
+@pytest.mark.parametrize("sql", ["SELECT 1;", "SELECT 1 ;  ", "SELECT 1;;"])
+def test_pg_query_accepts_trailing_semicolon(sql: str) -> None:
+    from grimoire.mcp.tools import PgQueryInput
+
+    # The model strips surrounding whitespace; the trailing `;` is removed
+    # just before execution.
+    assert PgQueryInput(sql=sql).sql == sql.strip()
 
 
 # ---------------------------------------------------------------------------

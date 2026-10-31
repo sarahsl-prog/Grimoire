@@ -119,8 +119,8 @@ If you use the optional extras, re-sync them too:
 
 ```bash
 uv sync --extra mlflow        # observability
-uv sync --extra dev           # tests, lint, mypy
-uv sync --extra all           # all of the above plus the GUI and TUI
+uv sync --group dev           # tests, lint, mypy (a dependency group, not an extra)
+uv sync --extra all           # mlflow, GUI and TUI (add --group dev for the tools)
 ```
 
 ---

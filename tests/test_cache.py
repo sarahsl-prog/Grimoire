@@ -918,9 +918,9 @@ class TestCacheKeyPrefix:
 class TestDiskCacheClose:
     """DiskCache.close() releases the sqlite handle diskcache keeps open."""
 
-    def test_close_releases_the_underlying_cache(self, tmp_path: Path) -> None:
+    async def test_close_releases_the_underlying_cache(self, tmp_path: Path) -> None:
         cache = DiskCache(path=tmp_path / "c")
-        cache.get_stats()  # forces lazy init, which opens the sqlite connection
+        await cache.get_stats()  # forces lazy init, which opens the sqlite connection
         underlying = cache._cache
         assert underlying is not None
 
@@ -933,10 +933,14 @@ class TestDiskCacheClose:
     def test_close_without_use_is_a_noop(self, tmp_path: Path) -> None:
         DiskCache(path=tmp_path / "c").close()
 
-    def test_close_is_idempotent_and_cache_reopens_lazily(self, tmp_path: Path) -> None:
+    async def test_close_is_idempotent_and_cache_reopens_lazily(
+        self, tmp_path: Path
+    ) -> None:
+        # get_stats() is async since DiskCache moved its sqlite I/O off the
+        # event loop; a bare call returns an un-awaited coroutine.
         cache = DiskCache(path=tmp_path / "c")
-        cache.get_stats()
+        await cache.get_stats()
         cache.close()
         cache.close()
-        assert "size" in cache.get_stats()  # reopened on demand
+        assert "size" in await cache.get_stats()  # reopened on demand
         cache.close()

@@ -64,6 +64,8 @@ def setup_rate_limiting(app: FastAPI) -> Limiter:
     Returns:
         The configured Limiter instance.
     """
+    from loguru import logger
+
     storage_uri = None
 
     try:
@@ -77,17 +79,27 @@ def setup_rate_limiting(app: FastAPI) -> Limiter:
         if settings.redis.password:
             redis_url = f"redis://:{settings.redis.password}@{settings.redis.host}:{settings.redis.port}/{settings.redis.db_rate_limit}"
         storage_uri = redis_url
-    except Exception:
-        from loguru import logger
-
-        logger.debug(
-            "Rate limiting falling back to in-memory storage (Redis unavailable)"
+    except Exception as e:
+        # Only reached when settings fail to load; Redis reachability is
+        # handled per request by the in-memory fallback below.
+        # Log the type only: a settings ValidationError can echo input values,
+        # which may include the Redis password.
+        logger.warning(
+            "Rate limiting using in-memory storage "
+            f"(settings unavailable: {type(e).__name__})"
         )
 
+    # in_memory_fallback_enabled: without it, a Redis outage makes slowapi's
+    # middleware pass the redis ConnectionError to its 429 handler, which
+    # expects RateLimitExceeded and crashes reading `.detail`, so every
+    # request except /health returns 500. With it, slowapi logs a warning,
+    # enforces the same limits from per-process memory, and re-checks Redis
+    # with exponential backoff until it recovers.
     limiter = Limiter(
         key_func=_get_rate_limit_key,
         default_limits=[DEFAULT_LIMIT],
         storage_uri=storage_uri,
+        in_memory_fallback_enabled=True,
     )
 
     # SlowAPIMiddleware reads the limiter from app.state.limiter

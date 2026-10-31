@@ -153,7 +153,7 @@ async def status(ctx: click.Context, detailed: bool) -> None:
                     backend=settings.cache.storage, path=settings.cache.path
                 )
                 if isinstance(cache, DiskCache):
-                    stats = cache.get_stats()
+                    stats = await cache.get_stats()
                     cache.close()
                     click.echo("\n  Cache:")
                     click.echo(f"    Size:     {stats.get('size', 0)} items")
@@ -384,7 +384,7 @@ async def cache_stats(ctx: click.Context) -> None:
     click.echo(f"  Backend: {settings.cache.storage}")
 
     if isinstance(cache, DiskCache):
-        stats = cache.get_stats()
+        stats = await cache.get_stats()
         cache.close()
         click.echo(f"  Size:    {stats.get('size', 0)} items")
         click.echo(f"  Volume:  {stats.get('volume', 0)} bytes")

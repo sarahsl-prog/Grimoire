@@ -10,7 +10,11 @@
 #     don't read app settings),
 #   * isolates the data plane: Postgres on 5433, Chroma on 8002, and a
 #     security-only volume set so an existing general-domain instance can
-#     keep running alongside,
+#     keep running alongside. The ports come from POSTGRES_PORT /
+#     CHROMADB_PORT in .env.security.example feeding the base file's
+#     127.0.0.1-bound mappings; this overlay deliberately declares no
+#     ``ports:`` because Compose merges port lists (it would publish both),
+
 #   * mounts the security corpus host directory (defaults to
 #     ./security-corpus) into the containers that need to read it,
 #   * disables the dev-tools profile by default (no pgadmin / redis-commander
@@ -24,11 +28,9 @@ services:
     container_name: grimoire-postgres-security
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-grimoire}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grimoire}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-grimoire_security}
       GRIMOIRE_SECURITY__DOMAIN: security
-    ports:
-      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data_security:/var/lib/postgresql/data
       - ./logs/postgres-security:/var/log/postgresql
@@ -46,8 +48,10 @@ services:
       - ANONYMIZED_TELEMETRY=FALSE
       - CHROMA_SERVER_HOST=0.0.0.0
       - CHROMA_SERVER_HTTP_PORT=8000
-    ports:
-      - "${CHROMADB_PORT:-8002}:8000"
+      # No CHROMA_SERVER_AUTHN_* here on purpose: Chroma 1.x (Rust server)
+      # removed built-in auth, so a token would be silently ignored. Access
+      # control is network isolation: grimoire-network plus a 127.0.0.1-only
+      # host port. See docs/deploy/docker.md#chromadb-access-control.
     volumes:
       - chromadb_data_security:/chroma/chroma
       - ${SECURITY_CORPUS_DIR:-./security-corpus}:/security-corpus:ro
