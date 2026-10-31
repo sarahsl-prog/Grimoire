@@ -150,6 +150,14 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **Query-cache invalidation no longer wipes embeddings and generated
+  content.** The query agent shared its cache with the embedder (and, on disk,
+  the same directory as content generation), and `invalidate_cache()` runs
+  after every watcher ingest and every delete. Each one cleared every cached
+  embedding and every generated summary, flashcard and outline (30-day TTL).
+  `DiskCache` now takes a `namespace`: keys are prefixed and entries tagged
+  with it, and `clear()` evicts only that namespace. Entries cached before
+  this change are untagged and simply age out.
 - **The Redis cache backend works.** With `cache.storage: redis`, every agent
   builder crashed: they called `CacheFactory.create(backend="redis", path=...)`
   and `RedisCache` takes no `path`. The Redis host, port, password and

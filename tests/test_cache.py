@@ -1001,3 +1001,61 @@ class TestCacheFromSettings:
         )
         assert isinstance(cache, DiskCache)
         assert cache.path == tmp_path
+
+
+class TestDiskCacheNamespaces:
+    """Namespaces sharing one directory can be cleared independently."""
+
+    async def test_clear_only_removes_its_namespace(self, tmp_path: Path) -> None:
+        query = DiskCache(path=tmp_path, namespace=CacheKeyPrefix.QUERY)
+        embed = DiskCache(path=tmp_path, namespace=CacheKeyPrefix.EMBEDDING)
+        gen = DiskCache(path=tmp_path, namespace=CacheKeyPrefix.GENERATION)
+        await query.set("k", "answer")
+        await embed.set("k", [0.1, 0.2])
+        await gen.set("k", "summary")
+
+        await query.clear()
+
+        assert await query.get("k") is None
+        assert await embed.get("k") == [0.1, 0.2]
+        assert await gen.get("k") == "summary"
+
+    async def test_same_key_in_two_namespaces_does_not_collide(
+        self, tmp_path: Path
+    ) -> None:
+        a = DiskCache(path=tmp_path, namespace=CacheKeyPrefix.QUERY)
+        b = DiskCache(path=tmp_path, namespace=CacheKeyPrefix.EMBEDDING)
+        await a.set("same", "a")
+        await b.set("same", "b")
+        assert (await a.get("same"), await b.get("same")) == ("a", "b")
+
+    async def test_unnamespaced_clear_removes_everything(self, tmp_path: Path) -> None:
+        embed = DiskCache(path=tmp_path, namespace=CacheKeyPrefix.EMBEDDING)
+        await embed.set("k", "v")
+        await DiskCache(path=tmp_path).clear()  # `grimoire cache clear`
+        assert await embed.get("k") is None
+
+    async def test_query_invalidation_keeps_embeddings(self, tmp_path: Path) -> None:
+        """Regression: invalidate_cache() used to wipe the embedder's cache.
+
+        The query agent and the embedder shared one cache object, so every
+        ingest or delete cleared every cached embedding and generated summary.
+        """
+        from unittest.mock import MagicMock
+
+        from grimoire.agents.query import QueryAgent
+
+        embed = DiskCache(path=tmp_path, namespace=CacheKeyPrefix.EMBEDDING)
+        await embed.set("chunk", [0.5])
+        agent = QueryAgent(
+            hybrid_search=MagicMock(),
+            llm_url="http://localhost:11434",
+            llm_model="m",
+            cache=DiskCache(path=tmp_path, namespace=CacheKeyPrefix.QUERY),
+        )
+        await agent._cache.set("q", {"answer": "x"})
+
+        await agent.invalidate_cache()
+
+        assert await agent._cache.get("q") is None
+        assert await embed.get("chunk") == [0.5]
