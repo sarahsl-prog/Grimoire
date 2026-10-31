@@ -85,6 +85,11 @@ class _WatchTracker:
     last_event_at: datetime | None = None
 
 
+# Backends whose watch paths are on this machine's filesystem, so a path can be
+# checked with Path.exists(). Cloud backends report remote names.
+_LOCAL_BACKENDS = frozenset({StorageBackend.LOCAL.value, StorageBackend.USB.value})
+
+
 # =============================================================================
 # Watcher Agent
 # =============================================================================
@@ -451,6 +456,15 @@ class WatcherAgent:
         # DELETED: remove document + vectors from the system.
         # -------------------------------------------------------------------
         if change.change_type == FileChangeType.DELETED:
+            # Some editors save by deleting and recreating the file. If it is
+            # back by the time this runs, keep the document: the CREATED or
+            # MODIFIED event queued behind this one re-ingests it. Only local
+            # paths can be checked; cloud paths are remote names.
+            if tracker.backend in _LOCAL_BACKENDS and Path(file_path).exists():
+                logger.info(
+                    f"WatcherAgent: {file_path} reappeared; keeping its document"
+                )
+                return
             try:
                 async with self._db_session_factory() as db:
                     repo = DocumentRepository(db)

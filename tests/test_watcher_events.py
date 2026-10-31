@@ -14,7 +14,8 @@ Covers audit findings C-6 and C-10:
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -106,6 +107,43 @@ class TestCallbackQueueing:
         watcher._create_callback("/w")(
             FileChange(change_type=FileChangeType.CREATED, path="/w/a.pdf")
         )
+
+
+class TestDeleteRace:
+    async def _delete(
+        self, watcher: WatcherAgent, path: Path, backend: str
+    ) -> MagicMock:
+        watcher._trackers["w"] = _WatchTracker("w", str(path.parent), backend)
+        repo = MagicMock()
+        repo.get_by_source_path = AsyncMock(return_value=None)
+        with patch("grimoire.agents.watcher.DocumentRepository", return_value=repo):
+            await watcher._handle_file_event(
+                "w", FileChange(change_type=FileChangeType.DELETED, path=str(path))
+            )
+        return repo
+
+    async def test_reappeared_local_file_keeps_document(
+        self, watcher: WatcherAgent, tmp_path: Path
+    ) -> None:
+        f = tmp_path / "doc.pdf"
+        f.write_bytes(b"%PDF")  # deleted and recreated before we got to it
+        repo = await self._delete(watcher, f, "local")
+        repo.get_by_source_path.assert_not_awaited()
+
+    async def test_gone_local_file_is_deleted(
+        self, watcher: WatcherAgent, tmp_path: Path
+    ) -> None:
+        repo = await self._delete(watcher, tmp_path / "gone.pdf", "local")
+        repo.get_by_source_path.assert_awaited_once_with(str(tmp_path / "gone.pdf"))
+
+    async def test_cloud_paths_are_not_stat_checked(
+        self, watcher: WatcherAgent, tmp_path: Path
+    ) -> None:
+        """A cloud path that happens to exist locally must still be deleted."""
+        f = tmp_path / "doc.pdf"
+        f.write_bytes(b"%PDF")
+        repo = await self._delete(watcher, f, "gdrive")
+        repo.get_by_source_path.assert_awaited_once()
 
 
 class TestProcessorLifecycle:
