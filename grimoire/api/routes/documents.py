@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from loguru import logger
 from sqlalchemy import ScalarSelect, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload
@@ -24,7 +25,6 @@ from grimoire.db.models import (
     DocumentTag,
     TaggedBy,
 )
-from loguru import logger
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 

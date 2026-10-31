@@ -130,8 +130,7 @@ class ChromaDBStore(VectorStore):
             if self.host is not None:
                 # Use HttpClient for remote ChromaDB server
                 self._client = await asyncio.to_thread(
-                    chromadb.HttpClient,
-                    host=self.host, port=self.port or 8000
+                    chromadb.HttpClient, host=self.host, port=self.port or 8000
                 )
                 logger.info(
                     f"ChromaDB HTTP client initialized at {self.host}:{self.port}"
@@ -143,8 +142,7 @@ class ChromaDBStore(VectorStore):
                     f"ChromaDB persistence directory: {self.persist_directory}"
                 )
                 self._client = await asyncio.to_thread(
-                    chromadb.PersistentClient,
-                    path=str(self.persist_directory)
+                    chromadb.PersistentClient, path=str(self.persist_directory)
                 )
                 logger.info(f"ChromaDB client initialized at {self.persist_directory}")
 
@@ -635,9 +633,7 @@ class ChromaDBStore(VectorStore):
 
         try:
             # Get all IDs and delete them
-            all_results = await asyncio.to_thread(
-                self._collection.get, include=[]
-            )
+            all_results = await asyncio.to_thread(self._collection.get, include=[])
             all_ids = all_results.get("ids", [])
             if all_ids:
                 await asyncio.to_thread(self._collection.delete, ids=all_ids)

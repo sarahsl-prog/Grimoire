@@ -1127,9 +1127,7 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
                 f"Deleted {len(vector_ids)} vectors for document {params.document_id}"
             )
         except Exception as e:
-            logger.error(
-                f"Failed to delete vectors for {params.document_id}: {e}"
-            )
+            logger.error(f"Failed to delete vectors for {params.document_id}: {e}")
             return _err("Document deleted but vector cleanup failed.")
 
     return _ok({"deleted": params.document_id})

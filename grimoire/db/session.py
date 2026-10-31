@@ -44,7 +44,9 @@ class DatabaseSessionManager:
 
             settings = get_settings()
             if settings.observability.tracing:
-                from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+                from opentelemetry.instrumentation.sqlalchemy import (
+                    SQLAlchemyInstrumentor,
+                )
 
                 SQLAlchemyInstrumentor().instrument(
                     engine=self._engine.sync_engine,

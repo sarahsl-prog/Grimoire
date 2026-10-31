@@ -57,7 +57,6 @@ def app_with_real_chroma(chroma_store: ChromaDBStore, temp_chroma_path: Path):
         test_app.state.limiter.enabled = False
 
     from grimoire.api.auth import get_api_key
-    from grimoire.api.dependencies import get_db_session
     from grimoire.config.settings import GrimoireSettings
 
     test_key = _make_test_api_key()

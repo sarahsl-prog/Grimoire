@@ -91,7 +91,9 @@ def setup_logger(
         serialize=file_serialize,
     )
 
-    logger.debug(f"Logger initialized: level={level}, log_dir={log_dir_path}, json={use_json}")
+    logger.debug(
+        f"Logger initialized: level={level}, log_dir={log_dir_path}, json={use_json}"
+    )
 
 
 def get_logger(name: str) -> Any:
