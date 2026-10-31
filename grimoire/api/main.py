@@ -135,9 +135,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             db_session_factory=db_manager.session,
         )
         watch_module.set_watcher(watcher_agent)
+        app.state.watcher_status = "ok"
         logger.info("WatcherAgent initialized for REST /watch endpoints")
     except Exception as e:
-        logger.warning(f"Failed to initialize WatcherAgent: {e}")
+        # The rest of the API still works, so this doesn't stop startup; but
+        # /watch returns 503 until a restart, so make it visible: an ERROR log
+        # and a "watcher" entry in /readyz.
+        app.state.watcher_status = "error"
+        logger.error(
+            f"Failed to initialize WatcherAgent; /watch endpoints will return "
+            f"503: {type(e).__name__}: {e}"
+        )
 
     try:
         yield
@@ -253,7 +261,9 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     async def readyz_check(request: Request) -> dict[str, Any]:
         """Readiness probe: pings Postgres, ChromaDB, and Redis.
 
-        Returns 503 if any dependency is unreachable.
+        Returns 503 if any dependency is unreachable. Also reports whether the
+        filesystem watcher behind ``/watch`` started (``watcher``: ok, error or
+        disabled); that doesn't affect readiness.
         """
         checks: dict[str, str] = {}
         healthy = True
@@ -311,6 +321,10 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         except Exception as e:
             checks["redis"] = f"error: {e}"
             healthy = False
+
+        # Reported, but not part of readiness: without the watcher only the
+        # /watch endpoints are unavailable (they return 503).
+        checks["watcher"] = getattr(request.app.state, "watcher_status", "disabled")
 
         if not healthy:
             from fastapi import HTTPException

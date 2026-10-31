@@ -150,6 +150,11 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **A watcher that fails to start is visible.** If `WatcherAgent` failed to
+  initialise, the API logged a warning and served `/watch` routes that always
+  returned 503. It now logs an error and `/readyz` reports
+  `"watcher": "error"` (or `ok` / `disabled`). Readiness itself is unaffected,
+  since the rest of the API works.
 - **Tracing exports spans.** `observability.tracing: true` instrumented
   FastAPI and SQLAlchemy but never installed a tracer provider, so
   OpenTelemetry's no-op default discarded every span. `grimoire.utils.tracing`
