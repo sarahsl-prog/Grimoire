@@ -154,6 +154,10 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **API key checks no longer block the event loop.** `bcrypt.checkpw`
+  (deliberately slow) ran synchronously in the async auth path, stalling every
+  other request, including MCP SSE streams, on each authenticated call. It now
+  runs in a worker thread.
 - **A watcher that fails to start is visible.** If `WatcherAgent` failed to
   initialise, the API logged a warning and served `/watch` routes that always
   returned 503. It now logs an error and `/readyz` reports

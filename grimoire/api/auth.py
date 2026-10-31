@@ -17,6 +17,7 @@ a measurable bottleneck.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import secrets
 from collections.abc import Awaitable, Callable
@@ -86,9 +87,14 @@ async def authenticate_api_key(raw_key: str, db: AsyncSession) -> ApiKey | None:
     if api_key is None:
         return None
 
-    # Verify bcrypt hash
+    # Verify bcrypt hash. bcrypt is deliberately slow (tens to hundreds of
+    # ms), so it runs in a worker thread: on the event loop it stalled every
+    # other request, SSE streams included, once per authenticated call.
     try:
-        if not bcrypt.checkpw(raw_key.encode(), api_key.key_hash.encode()):
+        matches = await asyncio.to_thread(
+            bcrypt.checkpw, raw_key.encode(), api_key.key_hash.encode()
+        )
+        if not matches:
             return None
     except (ValueError, TypeError):
         return None
