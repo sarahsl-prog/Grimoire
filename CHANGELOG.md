@@ -122,6 +122,10 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **`grimoire cache stats` and `grimoire status --detailed` no longer crash on
+  the disk cache.** `DiskCache.get_stats()` became async when its sqlite I/O
+  moved off the event loop, but both commands still called it synchronously
+  and failed with `'coroutine' object has no attribute 'get'`.
 - **A Redis outage no longer takes the API down.** When Redis was unreachable,
   slowapi passed the connection error to its 429 handler, which crashed reading
   `.detail`, so every endpoint except `/health` returned 500. The limiter now

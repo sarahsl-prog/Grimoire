@@ -54,7 +54,7 @@ marked *new* were found after the original review.
 1. [ ] **M-1: fix the 4 unit tests the audit commits broke**
        (`test_query_agent.py` `_cache_key` calls missing `top_k`;
        `test_watcher_agent.py::test_should_not_process_deleted`).
-2. [ ] *New:* **CLI cache stats crash.** Phase 5 made
+2. [x] *New:* **CLI cache stats crash.** Fixed: both callers now await it. Phase 5 made
        `DiskCache.get_stats()` async; `grimoire/cli/status.py` still calls it
        synchronously (`'coroutine' object has no attribute 'get'`). 4 failing
        tests: `test_cache.py::TestDiskCacheClose` (2) and
