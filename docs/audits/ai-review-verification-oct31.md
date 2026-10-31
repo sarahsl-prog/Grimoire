@@ -67,7 +67,7 @@ marked *new* were found after the original review.
        (documented 600/min) get throttled early. Check whether the key's tier
        is known when `SlowAPIMiddleware` evaluates limits (it runs before
        route dependencies). Keep `in_memory_fallback_enabled=True`.
-4. [ ] **C-3, C-4, C-5: shared vector-store factory** used by
+4. [x] **C-3, C-4, C-5: shared vector-store factory** Done, plus: search hides orphaned vectors, `grimoire reindex` dimension bug fixed. used by
        `documents.py`, `mcp/tools.py`, `watcher.py`, `api/main.py`,
        `cli/status.py`, with one delete contract (commit DB first, then
        delete vectors; log orphaned IDs on failure).

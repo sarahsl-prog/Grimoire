@@ -6,6 +6,18 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **Deleted documents can no longer surface in search through orphaned
+  vectors.** Search results come from the vector store, which holds chunk
+  text; if vector cleanup failed after a delete, the deleted document's text
+  was still returned by search and fed to RAG answers. Hybrid search now drops
+  vector hits whose document no longer exists (one batched query), failing
+  closed if that check errors.
+- **One delete contract for REST, MCP and the watcher.** All three now delete
+  and commit the document's rows first, then remove its vectors via
+  `grimoire.vectorstore.cleanup.purge_document_vectors`, which never raises and
+  logs any orphaned vector ids. Previously the REST route deleted vectors first
+  and returned a raw 500 when ChromaDB was down; the MCP tool reported an error
+  for a delete that had succeeded (it now returns `vectors_removed: false`).
 - **`grimoire_pg_query` row limit can no longer be bypassed.** The tool wrapped
   the validated SQL as `SELECT * FROM (<sql>) AS _q LIMIT :n`, so a query
   ending in `) AS x --` closed the subquery and commented out the `LIMIT`,
@@ -57,6 +69,13 @@ All notable changes to Grimoire are documented in this file.
 
 ### Added
 
+- **`grimoire.vectorstore.factory`**: `create_vector_store()` and
+  `get_maintenance_store()` replace seven hand-copied `ChromaDBStore(...)`
+  blocks. Maintenance callers (delete, `status`, `/readyz`) open the store with
+  the new `ChromaDBStore.connect()` instead of a fake `embedding_dim=1`, and
+  reuse one client instead of creating one per request. Setting
+  `vector_store.type: qdrant` now fails with a clear error instead of silently
+  using ChromaDB.
 - **CI on every pull request.** Three gating workflows run on each PR: lint and
   type check (the `pre-commit` gate), unit tests on Python 3.12 and 3.13, and
   integration tests that run `tests/integration/test_live_api.py` against a
