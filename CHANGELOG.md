@@ -122,6 +122,12 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **A Redis outage no longer takes the API down.** When Redis was unreachable,
+  slowapi passed the connection error to its 429 handler, which crashed reading
+  `.detail`, so every endpoint except `/health` returned 500. The limiter now
+  falls back to in-memory counters with the same limits (per process) and
+  re-checks Redis with exponential backoff. Limits stay enforced during the
+  outage rather than failing open.
 - **Malformed IDs in REST paths are 404s, not 500s.** `GET`/`DELETE
   /api/v1/documents/{id}`, `DELETE /api/v1/categories/{id}` and the
   `/documents/{id}/tags/{category_id}` routes passed the raw path segment to
