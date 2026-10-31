@@ -801,6 +801,17 @@ class TestQueryAPI:
 
 
 class TestDocumentsAPI:
+    @pytest.mark.parametrize(
+        "query",
+        ["limit=0", "limit=251", "limit=-5", "offset=-1", "limit=abc"],
+    )
+    def test_list_documents_rejects_out_of_range_pagination(
+        self, client, query: str
+    ) -> None:
+        """Bounds added in audit phase 4a: limit 1-250, offset >= 0."""
+        resp = client.get(f"/api/v1/documents?{query}")
+        assert resp.status_code == 422, resp.text
+
     def test_list_documents(self, app):
         """Test listing documents with mocked DB."""
         mock_session = AsyncMock()
