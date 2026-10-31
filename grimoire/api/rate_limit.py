@@ -1,20 +1,76 @@
-"""Rate limiting for Grimoire using slowapi.
+"""Rate limiting for Grimoire.
 
-Integrates slowapi with FastAPI to provide per-tier rate limiting
-backed by Redis. Tier-specific limits are applied based on the
-authenticated API key; unauthenticated requests get a default limit.
+Three stages, because slowapi's middleware runs before authentication and so
+can never see which API key (or tier) a request belongs to. Previously every
+request, keyed or not, shared one per-IP bucket of 30/minute; agent keys,
+documented at 600/minute, were throttled at 30.
+
+1. **Pre-auth, per client IP** (slowapi middleware). Requests without an
+   ``X-API-Key`` header get ``DEFAULT_LIMIT``. Requests with one get a ceiling
+   equal to the highest tier limit, so no tier is throttled here, while a
+   single IP still can't make the API do unbounded key lookups.
+2. **Per API key** (:func:`enforce_tier_limit`, called by the auth dependency
+   once the key is verified): the key's tier limit from
+   ``auth.rate_limits``.
+3. **Failed authentication, per client IP** (:func:`check_failed_auth` /
+   :func:`record_failed_auth`): ``auth.failed_auth_limit`` bad keys per
+   window. Past it the key isn't even looked up, so guessing keys can't burn
+   bcrypt time.
+
+All three share one storage: Redis when configured, with slowapi's in-memory
+fallback when Redis is unreachable.
 """
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
+import time
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any
+
+from fastapi import FastAPI, HTTPException, Request
+from limits import RateLimitItem, parse
+from loguru import logger
 from slowapi import Limiter
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from grimoire.api.auth import DEFAULT_TIER_RATE_LIMITS
+if TYPE_CHECKING:
+    from grimoire.config.settings import AuthConfig
+    from grimoire.db.models import ApiKey
 
 DEFAULT_LIMIT = "30/minute"
+
+# Whether the current request carries an X-API-Key header. Set by
+# _ApiKeyPresenceMiddleware before slowapi runs. slowapi evaluates default
+# limits without passing the request to the limit provider, so the provider
+# reads this instead.
+_has_api_key: ContextVar[bool] = ContextVar("grimoire_has_api_key", default=False)
+
+
+class _ApiKeyPresenceMiddleware:
+    """Record whether the request sent an API key, for the pre-auth limit.
+
+    Pure ASGI (like the app's other outer middleware), so SSE streams on
+    ``/mcp`` pass straight through.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        has_key = any(
+            name == b"x-api-key" and value.strip()
+            for name, value in scope.get("headers", [])
+        )
+        token = _has_api_key.set(has_key)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _has_api_key.reset(token)
 
 
 def _get_client_ip(request: Request) -> str:
@@ -37,36 +93,45 @@ def create_health_limiter() -> Limiter:
     return Limiter(key_func=_get_client_ip, storage_uri="memory://")
 
 
-def _get_rate_limit_key(request: Request) -> str:
-    """Derive the rate limit key from the authenticated API key or IP.
+def _preauth_key(request: Request) -> str:
+    """Per-IP bucket, split by whether an API key was sent.
 
-    Uses tier+prefix for authenticated requests so each key gets its
-    own bucket. Falls back to client IP for unauthenticated requests.
+    Separate buckets so a client's unauthenticated probes and its keyed calls
+    don't share one budget.
     """
-    api_key = getattr(request.state, "api_key", None)
-    if api_key:
-        return f"{api_key.tier.value}:{api_key.key_prefix}"
-    return get_remote_address(request) or "anonymous"
+    kind = "keyed" if _has_api_key.get() else "anon"
+    return f"preauth:{kind}:{_get_client_ip(request)}"
 
 
-def get_tier_rate_limit(tier_code: str) -> str:
-    """Return the slowapi limit string for a tier code."""
-    return DEFAULT_TIER_RATE_LIMITS.get(tier_code, DEFAULT_LIMIT)
+def _highest_limit(limits: dict[str, str]) -> str:
+    """The most permissive limit (highest requests per second) of ``limits``."""
+
+    def per_second(text: str) -> float:
+        item = parse(text)
+        return item.amount / item.get_expiry()
+
+    return max(limits.values(), key=per_second, default=DEFAULT_LIMIT)
+
+
+def _auth_config() -> AuthConfig:
+    from grimoire.config.settings import get_settings
+
+    return get_settings().auth
 
 
 def setup_rate_limiting(app: FastAPI) -> Limiter:
-    """Configure slowapi rate limiting on the FastAPI app.
+    """Configure rate limiting on the FastAPI app.
 
-    Creates a Limiter backed by Redis (if configured) or in-memory
-    storage, adds SlowAPIMiddleware, and stores the limiter on
-    app.state.limiter for use in route decorators.
+    Creates a Limiter backed by Redis (if configured) with an in-memory
+    fallback, adds SlowAPIMiddleware (stage 1) and the API-key presence
+    middleware it relies on, and stores the limiter on ``app.state.limiter``,
+    where the auth dependency finds it for stages 2 and 3.
 
     Returns:
         The configured Limiter instance.
     """
-    from loguru import logger
-
     storage_uri = None
+    keyed_ceiling = DEFAULT_LIMIT
 
     try:
         from grimoire.config.settings import get_settings
@@ -79,6 +144,7 @@ def setup_rate_limiting(app: FastAPI) -> Limiter:
         if settings.redis.password:
             redis_url = f"redis://:{settings.redis.password}@{settings.redis.host}:{settings.redis.port}/{settings.redis.db_rate_limit}"
         storage_uri = redis_url
+        keyed_ceiling = _highest_limit(settings.auth.rate_limits)
     except Exception as e:
         # Only reached when settings fail to load; Redis reachability is
         # handled per request by the in-memory fallback below.
@@ -89,6 +155,9 @@ def setup_rate_limiting(app: FastAPI) -> Limiter:
             f"(settings unavailable: {type(e).__name__})"
         )
 
+    def _preauth_limit() -> str:
+        return keyed_ceiling if _has_api_key.get() else DEFAULT_LIMIT
+
     # in_memory_fallback_enabled: without it, a Redis outage makes slowapi's
     # middleware pass the redis ConnectionError to its 429 handler, which
     # expects RateLimitExceeded and crashes reading `.detail`, so every
@@ -96,13 +165,98 @@ def setup_rate_limiting(app: FastAPI) -> Limiter:
     # enforces the same limits from per-process memory, and re-checks Redis
     # with exponential backoff until it recovers.
     limiter = Limiter(
-        key_func=_get_rate_limit_key,
-        default_limits=[DEFAULT_LIMIT],
+        key_func=_preauth_key,
+        default_limits=[_preauth_limit],
         storage_uri=storage_uri,
         in_memory_fallback_enabled=True,
     )
 
-    # SlowAPIMiddleware reads the limiter from app.state.limiter
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
+    # Added after, so it wraps SlowAPIMiddleware and sets the flag first.
+    app.add_middleware(_ApiKeyPresenceMiddleware)
     return limiter
+
+
+# ---------------------------------------------------------------------------
+# Stages 2 and 3, called from grimoire.api.auth
+# ---------------------------------------------------------------------------
+
+
+def _active_limiter(request: Request) -> Any | None:
+    """The app's limiter, or None when rate limiting is off (e.g. in tests)."""
+    limiter = getattr(request.app.state, "limiter", None)
+    if limiter is None or not getattr(limiter, "enabled", True):
+        return None
+    return limiter
+
+
+def _too_many(item: RateLimitItem, what: str, limiter: Any, *keys: str) -> None:
+    """Raise a 429 for ``item`` with a Retry-After from the window stats."""
+    headers: dict[str, str] = {}
+    try:
+        reset_at, _ = limiter.limiter.get_window_stats(item, *keys)
+        headers["Retry-After"] = str(max(1, int(reset_at - time.time())))
+    except Exception as e:
+        # Retry-After is a courtesy; the 429 stands without it.
+        logger.debug(f"No Retry-After for rate limit: {type(e).__name__}")
+    raise HTTPException(
+        status_code=429, detail=f"Rate limit exceeded: {what} ({item})", headers=headers
+    )
+
+
+def enforce_tier_limit(request: Request, api_key: ApiKey) -> None:
+    """Count this request against the key's tier limit; 429 when exceeded.
+
+    Fails open if the limiter's storage errors: stage 1 still caps the
+    client's IP, and refusing every authenticated request over a Redis blip
+    would be worse.
+    """
+    limiter = _active_limiter(request)
+    if limiter is None:
+        return
+    tier = api_key.tier.value
+    item = parse(_auth_config().rate_limits.get(tier, DEFAULT_LIMIT))
+    keys = ("tier", api_key.key_prefix)
+    try:
+        allowed = limiter.limiter.hit(item, *keys)
+    except Exception as e:
+        logger.warning(f"Tier rate limit check failed ({type(e).__name__}); allowing")
+        return
+    if not allowed:
+        _too_many(item, f"{tier} tier limit for this API key", limiter, *keys)
+
+
+def _failed_auth_item() -> RateLimitItem:
+    return parse(_auth_config().failed_auth_limit)
+
+
+def check_failed_auth(request: Request) -> None:
+    """Refuse up front if this IP has used up its failed-auth allowance.
+
+    Runs before the key lookup, so a client guessing keys stops costing a
+    database query and a bcrypt check once over the limit.
+    """
+    limiter = _active_limiter(request)
+    if limiter is None:
+        return
+    item = _failed_auth_item()
+    keys = ("authfail", _get_client_ip(request))
+    try:
+        within = limiter.limiter.test(item, *keys)
+    except Exception as e:
+        logger.warning(f"Failed-auth limit check failed ({type(e).__name__})")
+        return
+    if not within:
+        _too_many(item, "too many invalid API keys from this address", limiter, *keys)
+
+
+def record_failed_auth(request: Request) -> None:
+    """Count one invalid API key against this IP's failed-auth allowance."""
+    limiter = _active_limiter(request)
+    if limiter is None:
+        return
+    try:
+        limiter.limiter.hit(_failed_auth_item(), "authfail", _get_client_ip(request))
+    except Exception as e:
+        logger.warning(f"Failed-auth limit update failed ({type(e).__name__})")

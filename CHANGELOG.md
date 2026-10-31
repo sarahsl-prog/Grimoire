@@ -6,6 +6,16 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **Per-key tier rate limits, and a cap on invalid API keys.** slowapi's
+  middleware runs before authentication, so it never knew the key: every
+  request, keyed or not, shared one per-client-IP bucket of 30/minute, and
+  agent keys (documented at 600/minute) were throttled at 30. Rate limiting
+  now has three stages: a per-IP ceiling before auth (30/minute without a key,
+  the highest tier limit with one); each key's own `auth.rate_limits` tier
+  limit after auth; and a per-IP `auth.failed_auth_limit` (default
+  10/minute) on invalid keys, past which keys aren't looked up at all, so
+  guessing can't burn database or bcrypt time. 429 responses carry
+  `Retry-After`.
 - **Redis refuses to start without a password, and keeps it off the command
   line.** An unset `REDIS_PASSWORD` used to crash Redis with "FATAL CONFIG
   FILE ERROR ... 'requirepass' wrong number of arguments". It now exits with
