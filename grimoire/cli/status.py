@@ -100,19 +100,10 @@ async def status(ctx: click.Context, detailed: bool) -> None:
             # vector-store split footgun) -- a count mismatch is the fastest
             # signal something is out of sync.
             if settings.vector_store.type == VectorStoreType.CHROMADB:
-                from grimoire.vectorstore.chromadb import ChromaDBStore
+                from grimoire.vectorstore.factory import get_maintenance_store
 
-                vector_store = ChromaDBStore(
-                    persist_directory=settings.vector_store.chromadb.path,
-                    collection_name=settings.vector_store.chromadb.collection_name,
-                    host=settings.vector_store.host,
-                    port=settings.vector_store.port,
-                )
                 try:
-                    await vector_store.initialize(
-                        settings.vector_store.chromadb.collection_name,
-                        embedding_dim=1,
-                    )
+                    vector_store = await get_maintenance_store(settings)
                     vector_count = await vector_store.count()
                     click.echo(f"\n  Vector store: {vector_count} embeddings")
                     if vector_count != chunk_count:
@@ -217,14 +208,9 @@ async def reindex(
         from grimoire.core.cache import CacheFactory
         from grimoire.core.embedder import Embedder, EmbeddingConfig
         from grimoire.db.models import Chunk as ChunkModel
-        from grimoire.vectorstore.chromadb import ChromaDBStore
+        from grimoire.vectorstore.factory import create_vector_store
 
-        vector_store = ChromaDBStore(
-            persist_directory=settings.vector_store.chromadb.path,
-            collection_name=settings.vector_store.chromadb.collection_name,
-            host=settings.vector_store.host,
-            port=settings.vector_store.port,
-        )
+        vector_store = create_vector_store(settings)
         try:
             await vector_store.initialize(
                 settings.vector_store.chromadb.collection_name, embedding_dim=1

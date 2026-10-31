@@ -79,7 +79,7 @@ def build_ingestion_agent() -> Any:
     from grimoire.core.embedder import Embedder, EmbeddingConfig
     from grimoire.core.parser import DocumentParser
     from grimoire.core.tagger import Tagger
-    from grimoire.vectorstore.chromadb import ChromaDBStore
+    from grimoire.vectorstore.factory import create_vector_store
 
     settings = get_settings()
 
@@ -96,12 +96,7 @@ def build_ingestion_agent() -> Any:
     )
     embedder = Embedder(config=embed_config, cache=cache)
 
-    vector_store = ChromaDBStore(
-        persist_directory=settings.vector_store.chromadb.path,
-        collection_name=settings.vector_store.chromadb.collection_name,
-        host=settings.vector_store.host,
-        port=settings.vector_store.port,
-    )
+    vector_store = create_vector_store(settings)
 
     tagger = Tagger(settings)
 
@@ -120,7 +115,7 @@ def build_query_agent() -> Any:
     from grimoire.core.cache import CacheFactory
     from grimoire.core.embedder import Embedder, EmbeddingConfig
     from grimoire.search.hybrid import HybridSearch
-    from grimoire.vectorstore.chromadb import ChromaDBStore
+    from grimoire.vectorstore.factory import create_vector_store
 
     settings = get_settings()
 
@@ -135,12 +130,7 @@ def build_query_agent() -> Any:
     )
     embedder = Embedder(config=embed_config, cache=cache)
 
-    vector_store = ChromaDBStore(
-        persist_directory=settings.vector_store.chromadb.path,
-        collection_name=settings.vector_store.chromadb.collection_name,
-        host=settings.vector_store.host,
-        port=settings.vector_store.port,
-    )
+    vector_store = create_vector_store(settings)
 
     hybrid = HybridSearch(
         vector_store=vector_store,

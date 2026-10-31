@@ -274,20 +274,11 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
 
         # ChromaDB
         try:
-            from grimoire.config.settings import get_settings
-            from grimoire.vectorstore.chromadb import ChromaDBStore
+            from grimoire.vectorstore.factory import get_maintenance_store
 
-            settings = get_settings()
-            store = ChromaDBStore(
-                persist_directory=settings.vector_store.chromadb.path,
-                collection_name=settings.vector_store.chromadb.collection_name,
-                host=settings.vector_store.host,
-                port=settings.vector_store.port,
-            )
-            await store.initialize(
-                collection_name=settings.vector_store.chromadb.collection_name,
-                embedding_dim=1,
-            )
+            # count() makes a real round trip, so a cached store still proves
+            # the server is reachable right now.
+            store = await get_maintenance_store()
             await store.count()
             checks["chromadb"] = "ok"
         except Exception as e:

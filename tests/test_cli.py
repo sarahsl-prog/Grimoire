@@ -1019,7 +1019,8 @@ class TestStatusCommand:
         mock_ctx.return_value = ctx
 
         mock_store = AsyncMock()
-        mock_store.initialize = AsyncMock(side_effect=ConnectionError("refused"))
+        # status opens the store for maintenance (connect, not initialize).
+        mock_store.connect = AsyncMock(side_effect=ConnectionError("refused"))
         mock_store_cls.return_value = mock_store
 
         result = runner.invoke(cli, ["status", "--detailed"])

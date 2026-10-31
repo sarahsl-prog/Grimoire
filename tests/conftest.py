@@ -138,3 +138,18 @@ def _qt_offscreen() -> None:
     import os
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_maintenance_vector_stores() -> Generator[None, None, None]:
+    """Stop the factory's cached maintenance stores leaking between tests.
+
+    grimoire.vectorstore.factory caches opened stores per configuration; a
+    test that patches ChromaDBStore would otherwise leave its mock behind
+    for the next test with the same settings.
+    """
+    from grimoire.vectorstore.factory import clear_maintenance_stores
+
+    clear_maintenance_stores()
+    yield
+    clear_maintenance_stores()
