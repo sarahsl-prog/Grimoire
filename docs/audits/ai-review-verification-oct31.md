@@ -101,7 +101,7 @@ marked *new* were found after the original review.
         unset, including in CI and the deploy tests. Decide whether that's
         wanted, or validate at container start instead (as the caddy
         service does).
-11. [ ] **C-11:** delete or clearly quarantine `examples/rag_pipeline.py`
+11. [x] **C-11:** Done: `examples/` deleted. delete or clearly quarantine `examples/rag_pipeline.py`
         (pickle deserialization via `allow_dangerous_deserialization=True`).
 12. [x] *New, low:* **stale Celery config.** Removed from `.env.example`, `grimoire.yaml.example` and the deploy docs. Celery was removed in phase 3,
         but `.env.example` still has a `GRIMOIRE_CELERY__*` block and

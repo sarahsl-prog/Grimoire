@@ -6,6 +6,10 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **Removed the `examples/` prototypes.** `examples/rag_pipeline.py` loaded
+  FAISS indexes with `allow_dangerous_deserialization=True` (pickle), so
+  loading an untrusted index file meant arbitrary code execution, and
+  `examples/app.py` depended on it. Neither was used by Grimoire or its tests.
 - **`/readyz` no longer returns raw dependency errors.** It is
   unauthenticated, and public once behind the Caddy proxy, yet it echoed
   exception text such as connection errors naming internal hosts and ports.
