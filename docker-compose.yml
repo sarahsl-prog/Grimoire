@@ -17,6 +17,14 @@ x-grimoire-env: &grimoire-env
   # a remote or containerized daemon.  No /v1 suffix — the agents append
   # /api/generate themselves.
   GRIMOIRE_LLM__URL: ${GRIMOIRE_OLLAMA_URL:-http://host.docker.internal:11434}
+  # uvicorn only honours X-Forwarded-For from these addresses. Behind the
+  # caddy proxy every request arrives from Caddy's container IP, so without
+  # this the rate limiter (which keys unauthenticated requests by client IP)
+  # would put the whole internet in one bucket. The default covers Docker's
+  # private range, which includes grimoire-network (172.28/16) and the
+  # security overlay's 172.29/16. Only containers on the network and the
+  # host itself can send from these addresses.
+  FORWARDED_ALLOW_IPS: ${GRIMOIRE_TRUSTED_PROXIES:-172.16.0.0/12}
 
 x-grimoire-app: &grimoire-app
   image: grimoire:latest
@@ -264,7 +272,58 @@ services:
     profiles:
       - tools
 
+  # TLS reverse proxy for public deployments.  The only service allowed to
+  # publish on every interface; everything else is 127.0.0.1-only.  Start it
+  # with `docker compose --profile proxy up -d`.  Needs GRIMOIRE_DOMAIN (with
+  # DNS pointing here) and ACME_EMAIL in .env.
+  caddy:
+    image: caddy:2.11.7-alpine
+    container_name: grimoire-caddy
+    restart: unless-stopped
+    environment:
+      GRIMOIRE_DOMAIN: ${GRIMOIRE_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    # Fail loudly when the domain is unset.  A compose-level ${VAR:?} guard
+    # would break every `docker compose` command, even with this profile off,
+    # because Compose interpolates inactive services too.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        [ -n "$$GRIMOIRE_DOMAIN" ] && [ -n "$$ACME_EMAIL" ] ||
+        { echo "caddy: set GRIMOIRE_DOMAIN and ACME_EMAIL in .env" >&2; exit 1; };
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys.  Keep this volume: losing it
+      # means re-issuing, and Let's Encrypt rate-limits repeat issuance.
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      # The admin API answers on loopback inside the container only.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - grimoire-network
+    depends_on:
+      api:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    profiles:
+      - proxy
+
 volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
   postgres_data:
     driver: local
   redis_data:

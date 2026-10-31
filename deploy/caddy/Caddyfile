@@ -1,0 +1,57 @@
+# Caddy reverse proxy for a public Grimoire deployment (compose profile "proxy").
+#
+# Terminates TLS with an automatic Let's Encrypt certificate and forwards to
+# the app containers over grimoire-network. The app ports themselves are bound
+# to 127.0.0.1 on the host, so this is the only way in from the internet.
+#
+# Required environment (set in .env, passed through by docker-compose.yml):
+#   GRIMOIRE_DOMAIN  public DNS name with an A/AAAA record pointing at the VPS
+#   ACME_EMAIL       contact address for Let's Encrypt expiry notices
+#
+# Validate after editing:
+#   docker compose --profile proxy run --rm caddy caddy validate --config /etc/caddy/Caddyfile
+
+{
+	email {$ACME_EMAIL}
+	# Admin API stays inside the container (it is never published).
+	admin localhost:2019
+}
+
+{$GRIMOIRE_DOMAIN} {
+	# MCP traffic goes to the dedicated mcp service, so it can be restarted
+	# without dropping REST clients. Both apps mount MCP at /mcp, so the path
+	# is forwarded unchanged (no prefix stripping, which would break the
+	# message endpoint the SSE stream advertises).
+	handle /mcp/* {
+		reverse_proxy mcp:8100 {
+			# Stream SSE events immediately instead of buffering.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy api:8001
+	}
+
+	# Uploads are capped by the app (GRIMOIRE_API__MAX_UPLOAD_BYTES, 100 MB by
+	# default). This is a slightly larger outer bound so Caddy never buffers an
+	# unbounded body on the app's behalf.
+	request_body {
+		max_size 110MB
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

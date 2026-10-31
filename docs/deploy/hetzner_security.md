@@ -41,8 +41,9 @@ cp .env.security.example .env
 mkdir -p /srv/grimoire/security-corpus
 CORPUS_DIR=/srv/grimoire/security-corpus ./scripts/security/seed_corpus.sh
 
-# 5. Start the security overlay.
-docker compose -f docker-compose.yml -f docker-compose.security.yml up -d
+# 5. Start the security overlay. --profile proxy adds the Caddy TLS proxy
+#    (needs GRIMOIRE_DOMAIN and ACME_EMAIL in .env; see Firewall below).
+docker compose -f docker-compose.yml -f docker-compose.security.yml --profile proxy up -d
 
 # 6. Initialise the DB schema (one-time).
 docker compose exec postgres pg_isready  # wait for healthy
@@ -75,6 +76,8 @@ Hetzner Cloud Firewall, inbound rules (default deny everything else):
 | Port | Source | Purpose |
 |---|---|---|
 | 22/tcp | your IP only | SSH |
+| 80/tcp | any | Caddy: ACME HTTP challenge and redirect to HTTPS |
+| 443/tcp, 443/udp | any | Caddy: HTTPS (HTTP/1.1, HTTP/2, HTTP/3) |
 
 Postgres (5433), ChromaDB (8002), Redis (6379), the API (8001) and MCP
 (8100) are all loopback-only on the host, so they need no firewall rule and
@@ -91,6 +94,11 @@ Check from a machine *outside* the VPS that only SSH answers:
 ```bash
 nmap -Pn -p 1-10000 <vps-ip>
 ```
+
+Remote access to the API and MCP goes through the Caddy TLS proxy (compose
+profile `proxy`): set `GRIMOIRE_DOMAIN` and `ACME_EMAIL` in `.env` and add
+`--profile proxy` to the `up` command. See
+[Public deployment with Caddy](docker.md#public-deployment-with-caddy).
 
 Never start the `tools` profile (pgAdmin, redis-commander) on a VPS unless
 you need it: pgAdmin runs in desktop mode with no login screen.

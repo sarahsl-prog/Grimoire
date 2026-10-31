@@ -47,6 +47,7 @@ sequence (embedding model load can take a minute on a cold `model_cache`).
 | `watcher` | — | Filesystem watcher; ingests from the host directory mounted at `/data/watch` |
 | `pgadmin` (profile `tools`) | 127.0.0.1:5050 | Optional Postgres management UI |
 | `redis-commander` (profile `tools`) | 127.0.0.1:8081 | Optional Redis management UI |
+| `caddy` (profile `proxy`) | 80, 443 (all interfaces) | TLS reverse proxy for public deployments; the only service published beyond loopback |
 
 Every published port is bound to `127.0.0.1`, so nothing is reachable from
 another machine by default. That is deliberate for VPS deployments: Docker
@@ -152,6 +153,57 @@ the Sigma/CVE/MITRE corpus pipeline — see
 > explicitly un-ignores the security, GPU, and dev overlays with `!` negation
 > lines. A new overlay file needs its own negation line or it will be
 > silently untracked.
+
+## Public deployment with Caddy
+
+For a VPS, the `proxy` profile adds a Caddy container that gets a Let's
+Encrypt certificate automatically and forwards HTTPS traffic to the app over
+`grimoire-network`:
+
+| Path | Upstream |
+|---|---|
+| `https://<domain>/mcp/*` | `mcp:8100` (dedicated MCP service, SSE streamed unbuffered) |
+| `https://<domain>/*` | `api:8001` (REST API, Swagger UI at `/docs`) |
+
+Setup:
+
+1. Create a DNS A (and AAAA, if you use IPv6) record for your domain that
+   points at the server. Caddy can't get a certificate until it resolves.
+2. Allow inbound 80/tcp, 443/tcp and 443/udp in the Hetzner Cloud Firewall.
+   Port 80 is needed for the ACME HTTP challenge and the HTTP→HTTPS redirect.
+3. In `.env`, set `GRIMOIRE_DOMAIN` and `ACME_EMAIL`. Caddy exits with an
+   error at start if either is empty.
+4. Validate the config, then start the stack with the profile:
+
+   ```bash
+   docker compose --profile proxy run --rm caddy caddy validate --config /etc/caddy/Caddyfile
+   ```
+
+   ```bash
+   docker compose --profile proxy up -d
+   ```
+
+5. Check it from your laptop:
+
+   ```bash
+   curl -sS https://<domain>/health
+   ```
+
+The config lives in `deploy/caddy/Caddyfile`. Certificates are stored in the
+`caddy_data` volume; keep it, because re-issuing from scratch too often hits
+Let's Encrypt rate limits.
+
+**Client IPs.** Behind Caddy, every request reaches uvicorn from Caddy's
+container IP. `FORWARDED_ALLOW_IPS` (set in `x-grimoire-env`, default
+`172.16.0.0/12`, overridable with `GRIMOIRE_TRUSTED_PROXIES`) tells uvicorn
+to trust Caddy's `X-Forwarded-For` header, so the rate limiter sees real
+client addresses. Without it, all unauthenticated traffic, including failed
+API-key attempts, would share one rate-limit bucket. Only containers on the
+Docker network and the host itself can send from that range.
+
+Clients (`grimoire-gui`, `grimoire-tui`, MCP clients) then use
+`GRIMOIRE_API_URL=https://<domain>`, and MCP clients connect to
+`https://<domain>/mcp/sse`.
 
 ## ChromaDB access control
 
