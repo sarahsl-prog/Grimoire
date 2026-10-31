@@ -6,6 +6,15 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **`grimoire_pg_query` row limit can no longer be bypassed.** The tool wrapped
+  the validated SQL as `SELECT * FROM (<sql>) AS _q LIMIT :n`, so a query
+  ending in `) AS x --` closed the subquery and commented out the `LIMIT`,
+  returning (and loading into memory) the whole table. The SQL now runs
+  unwrapped and the cap is applied with `fetchmany(limit)` on a server-side
+  cursor. Internal `;` is rejected, so only one statement can run. Still
+  open: the `api_keys` regex guard can be bypassed with dynamic SQL such as
+  `query_to_xml`; the fix is a read-only database role (see
+  `docs/audits/ai-review-verification-oct31.md`, C-1/M-2).
 - **CORS is off by default, in code and in the env templates.** Phase 5
   changed the code default from `["*"]`, but `.env.example` and
   `.env.security.example` still set `["*"]`, so a fresh `cp .env.example .env`

@@ -72,7 +72,9 @@ marked *new* were found after the original review.
        `cli/status.py`, with one delete contract (commit DB first, then
        delete vectors; log orphaned IDs on failure).
 5. [ ] **C-1, M-2: read-only Postgres role for `pg_query`** (see effort
-       notes) plus `fetchmany(limit)`. Closes the `query_to_xml` bypass.
+       notes). Closes the `query_to_xml` bypass. *Partly done:* the LIMIT
+       wrapper is gone; the cap is now `fetchmany(limit)` on a server-side
+       cursor and `;` is rejected. The role is still needed.
 6. [ ] **C-6, C-10: watcher.** Extension filter on DELETED events; check
        the file is still gone before deleting (save-via-rename race); clear
        `_event_loop` on stop.

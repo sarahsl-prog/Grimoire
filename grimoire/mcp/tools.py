@@ -382,6 +382,11 @@ class PgQueryInput(BaseModel):
                 "Data-modifying keywords (DELETE, UPDATE, INSERT, MERGE, ALTER, "
                 "CREATE, GRANT, COPY, DROP) are not permitted."
             )
+        # One statement only. A trailing `;` is tolerated (and stripped before
+        # execution); any other `;` means stacked statements. This also
+        # rejects a `;` inside a string literal, an acceptable trade-off.
+        if ";" in v.strip().rstrip(";"):
+            raise ValueError("Only a single statement is permitted; remove ';'.")
         return v
 
 
@@ -1158,18 +1163,26 @@ async def grimoire_pg_query(params: PgQueryInput, ctx: Context) -> str:
             logger.warning(f"Blocked pg_query accessing restricted table: {table}")
             return _err("Query references a restricted table.")
 
-    # Build the outer query.  The inner SELECT is interpolated after
-    # validation; only the row_limit is a true bound parameter.
-    sql = text(f"SELECT * FROM ({inner}) AS _grimoire_q LIMIT :row_limit").bindparams(
-        row_limit=params.limit
-    )
+    # The validated SQL runs as-is, never interpolated into a wrapper. The old
+    # `SELECT * FROM ({inner}) AS _q LIMIT :n` let a query close the paren and
+    # comment out the LIMIT (`... ) AS x --`), returning the whole table. The
+    # row cap is now applied at fetch time on a server-side cursor: no SQL text
+    # can lift it, and at most `limit` rows are ever loaded into memory.
+    # Stacked statements are still impossible: the validator rejects `;`, and
+    # SQLAlchemy's asyncpg driver always uses prepared statements, which
+    # Postgres limits to a single command.
+    sql = text(inner)
 
     manager = get_db_manager()
     async with manager.session() as db:
         try:
             await db.execute(text("SET TRANSACTION READ ONLY"))
             await db.execute(text("SET LOCAL statement_timeout = '30s'"))
-            rows = await db.execute(sql)
+            result = await db.stream(sql)
+            try:
+                rows = await result.fetchmany(params.limit)
+            finally:
+                await result.close()
             data = [dict(r._mapping) for r in rows]
         except Exception as e:
             logger.error(f"pg_query execution failed: {e}")
