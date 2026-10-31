@@ -1071,3 +1071,20 @@ class TestAPIConfigUploads:
         with pytest.raises(ValidationError) as exc_info:
             APIConfig(max_upload_bytes=0)
         assert "greater than or equal to 1" in str(exc_info.value)
+
+
+class TestSecretsStayOutOfErrors:
+    """Startup validation errors are logged, so they must not carry secrets."""
+
+    @pytest.mark.parametrize(
+        "database",
+        [
+            {"url": "mysql://app:hunter2secret@db/grimoire"},
+            {"url": "postgresql://hunter2secret"},  # no '@': credentials check
+            {"readonly_url": "mysql://ro:hunter2secret@db/x"},
+        ],
+    )
+    def test_database_urls_are_not_echoed(self, database: dict[str, str]) -> None:
+        with pytest.raises(ValidationError) as exc:
+            GrimoireSettings(database=database)
+        assert "hunter2secret" not in str(exc.value)

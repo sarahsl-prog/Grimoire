@@ -255,9 +255,8 @@ class DatabaseConfig(BaseModel):
     def validate_db_url(cls, v: str) -> str:
         """Validate database URL format."""
         if not v.startswith(("postgresql://", "postgresql+asyncpg://", "sqlite://")):
-            raise ValueError(
-                f"Database URL must start with postgresql:// or sqlite://: {v}"
-            )
+            # The URL itself is never echoed: it usually carries a password.
+            raise ValueError("Database URL must start with postgresql:// or sqlite://")
         return v
 
     @field_validator("url")
@@ -267,7 +266,7 @@ class DatabaseConfig(BaseModel):
         # Basic validation - should have user:pass@host:port/dbname
         if v.startswith(("postgresql://", "postgresql+asyncpg://")) and "@" not in v:
             raise ValueError(
-                f"PostgreSQL URL should contain credentials (user:pass@host): {v}"
+                "PostgreSQL URL should contain credentials (user:pass@host)"
             )
         return v
 
@@ -1164,6 +1163,10 @@ class GrimoireSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",  # Ignore extra fields for forward compatibility
         validate_default=True,
+        # Keep rejected values out of error messages: many settings are
+        # secrets (database URLs with passwords, API keys, tokens), and a
+        # startup validation error is printed to the logs.
+        hide_input_in_errors=True,
     )
 
     # Nested configuration sections

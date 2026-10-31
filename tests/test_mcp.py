@@ -1526,8 +1526,15 @@ class TestReadonlyUrlSetting:
 
         with pytest.raises(ValidationError) as exc:
             DatabaseConfig(readonly_url="mysql://ro:s3cretpw@db/x")
+        # DatabaseConfig alone still shows pydantic's input_value; what the
+        # app actually prints comes through GrimoireSettings, tested below.
         assert "postgresql+asyncpg://" in str(exc.value)
-        assert "s3cretpw" not in str(exc.value).split("input_value")[0]
+        with pytest.raises(ValidationError) as exc:
+            from grimoire.config.settings import GrimoireSettings
+
+            GrimoireSettings(database={"readonly_url": "mysql://ro:s3cretpw@db/x"})
+        assert "postgresql+asyncpg://" in str(exc.value)
+        assert "s3cretpw" not in str(exc.value)
 
 
 @pytest.mark.asyncio

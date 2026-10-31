@@ -6,6 +6,11 @@ All notable changes to Grimoire are documented in this file.
 
 ### Security
 
+- **Settings errors no longer print secrets.** A rejected setting was echoed
+  in the startup error (both by pydantic's `input_value` and by the database
+  URL validators' own messages), so a mistyped `GRIMOIRE_DATABASE__URL` put
+  its password in the logs. `GrimoireSettings` now hides input values, and
+  the validators no longer include the URL.
 - **`grimoire_pg_query` runs as a read-only database role.** Its regex guards
   could be bypassed: `query_to_xml('select * from api_' || 'keys', ...)`
   builds the query at run time and read the `api_keys` table. Migration 0008
