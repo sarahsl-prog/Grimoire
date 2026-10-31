@@ -123,7 +123,30 @@ class ChromaDBStore(VectorStore):
                 f"embedding_dim must be a positive integer, got {embedding_dim}"
             )
 
+        await self._open(collection_name)
         self._embedding_dim = embedding_dim
+
+    async def connect(self, collection_name: str | None = None) -> None:
+        """Open the client and collection for maintenance, without a dimension.
+
+        For callers that only delete, count, get or health-check (document
+        deletion, ``grimoire status``, ``/readyz``). They have no embedder, so
+        they used to pass a made-up ``embedding_dim=1``. A store opened this
+        way reports ``is_initialized`` as False, and ``add_documents`` /
+        ``search`` refuse to run until ``initialize()`` supplies the real
+        dimension.
+
+        Args:
+            collection_name: Collection to open; defaults to the one given at
+                construction.
+
+        Raises:
+            ConnectionError: If unable to connect to ChromaDB.
+        """
+        await self._open(collection_name or self.collection_name)
+
+    async def _open(self, collection_name: str) -> None:
+        """Create the client and get-or-create ``collection_name``."""
         self.collection_name = collection_name
 
         try:
@@ -217,6 +240,8 @@ class ChromaDBStore(VectorStore):
             logger.debug("add_documents called with empty lists, nothing to add")
             return
 
+        self._require_dimension()
+
         # Validate embedding dimensions
         for i, emb in enumerate(embeddings):
             if len(emb) != self._embedding_dim:
@@ -308,6 +333,8 @@ class ChromaDBStore(VectorStore):
             raise RuntimeError(
                 "ChromaDBStore not initialized. Call initialize() first."
             )
+
+        self._require_dimension()
 
         # Validate query embedding
         if len(query_embedding) != self._embedding_dim:
@@ -615,12 +642,27 @@ class ChromaDBStore(VectorStore):
 
     @property
     def is_initialized(self) -> bool:
-        """Check if the store has been initialized.
+        """Check if the store is ready for ``add_documents`` and ``search``.
 
         Returns:
-            True if initialize() has been called successfully.
+            True if initialize() has been called successfully. False after
+            connect() alone, which does not know the embedding dimension.
         """
+        return self._collection is not None and self._embedding_dim > 0
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if the collection is open (via initialize() or connect())."""
         return self._collection is not None
+
+    def _require_dimension(self) -> None:
+        """Refuse to add or search when the embedding dimension is unknown."""
+        if self._embedding_dim <= 0:
+            raise RuntimeError(
+                "ChromaDBStore was opened with connect(), which is for "
+                "delete/count/get only; call initialize() with the embedding "
+                "dimension before adding or searching."
+            )
 
     async def reset(self) -> None:
         """Reset the collection by deleting all documents.
