@@ -29,6 +29,7 @@ from grimoire.api.dependencies import (
     get_query_agent,
 )
 from grimoire.cli.helpers import build_watcher
+from grimoire.core.cache import invalidate_query_results
 from grimoire.db.models import ApiKeyTier, ProcessingStatus
 from grimoire.db.session import get_db_context
 from grimoire.utils.path_guard import (
@@ -761,6 +762,9 @@ async def grimoire_ingest_file(params: IngestFileInput, ctx: Context) -> str:
     agent = get_ingestion_agent()
     async with get_db_context() as db:
         result = await agent.ingest_file(db, str(path), auto_tag=params.auto_tag)
+    # After the context manager has committed.
+    if result.status == "completed":
+        await invalidate_query_results()
     return _ok(result.model_dump())
 
 
@@ -776,6 +780,8 @@ async def grimoire_ingest_directory(params: IngestDirectoryInput, ctx: Context) 
         result = await agent.ingest_directory(
             db, str(directory), recursive=params.recursive, auto_tag=params.auto_tag
         )
+    if result.succeeded:
+        await invalidate_query_results()
     return _ok(result.model_dump())
 
 
@@ -1115,6 +1121,7 @@ async def grimoire_delete_document(params: DeleteDocumentInput, ctx: Context) ->
     from grimoire.vectorstore.cleanup import purge_document_vectors
 
     vectors_removed = await purge_document_vectors(params.document_id, vector_ids)
+    await invalidate_query_results()
     return _ok({"deleted": params.document_id, "vectors_removed": vectors_removed})
 
 

@@ -238,7 +238,7 @@ class TestWatcherDelete:
         with (
             patch("grimoire.agents.watcher.DocumentRepository", return_value=repo),
             patch("grimoire.agents.watcher.purge_document_vectors", _purge),
-            patch.object(watcher, "_invalidate_query_cache", AsyncMock()),
+            patch("grimoire.agents.watcher.invalidate_query_results", AsyncMock()),
         ):
             await watcher._handle_file_event(
                 "w",

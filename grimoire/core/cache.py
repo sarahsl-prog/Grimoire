@@ -8,6 +8,7 @@ This module provides:
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 from abc import ABC, abstractmethod
@@ -845,4 +846,49 @@ class CacheFactory:
 # Prefix shared by every CacheKeyPrefix value.
 _ALL_NAMESPACES = "grimoire:"
 
-__all__ = ["Cache", "RedisCache", "DiskCache", "CacheFactory", "CacheKeyPrefix"]
+
+async def invalidate_query_results(
+    settings: "GrimoireSettings | None" = None,
+) -> None:
+    """Drop cached query results after documents change. Never raises.
+
+    Call it **after** the change is committed. Invalidating first leaves a
+    window in which a concurrent query re-caches the pre-commit results for a
+    full TTL.
+
+    Works from any process (API, MCP server, watcher, CLI): both backends are
+    shared stores, a Redis server or a cache directory on a shared volume, so
+    clearing the QUERY namespace here clears it for every process using the
+    same settings. Only query results are dropped; embeddings and generated
+    content live in other namespaces.
+
+    Args:
+        settings: Settings to use; defaults to ``get_settings()``.
+    """
+    cache: Cache | None = None
+    try:
+        cache = CacheFactory.from_settings(settings, CacheKeyPrefix.QUERY)
+        await cache.clear()
+    except Exception as e:
+        # Stale answers for up to one TTL are better than failing the write
+        # that triggered this.
+        logger.warning(
+            f"Query cache invalidation failed ({type(e).__name__}: {e}); "
+            "cached answers may be stale until they expire"
+        )
+    finally:
+        if isinstance(cache, DiskCache):
+            cache.close()
+        elif isinstance(cache, RedisCache):
+            with contextlib.suppress(Exception):
+                await cache.disconnect()
+
+
+__all__ = [
+    "Cache",
+    "RedisCache",
+    "DiskCache",
+    "CacheFactory",
+    "CacheKeyPrefix",
+    "invalidate_query_results",
+]

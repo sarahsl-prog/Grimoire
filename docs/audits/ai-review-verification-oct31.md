@@ -78,7 +78,14 @@ marked *new* were found after the original review.
 6. [x] **C-6, C-10: watcher.** Done, plus MOVED events (renames and atomic saves) and processor restart. Extension filter on DELETED events; check
        the file is still gone before deleting (save-via-rename race); clear
        `_event_loop` on stop.
-7. [ ] **C-7: cache invalidation.** Drop the `hasattr` guards, invalidate on
+7. [x] **C-7: cache invalidation.** Done. Correction to the original
+       finding: invalidation *does* reach the API from the CLI watcher,
+       because both backends are shared stores. Also fixed: the Redis cache
+       backend crashed on construction, and every invalidation wiped cached
+       embeddings and generated content. Not covered: `CoordinatorAgent`
+       ingests through a caller-owned session, so its caller must invalidate
+       after committing.
+       Original text: Drop the `hasattr` guards, invalidate on
        REST ingest, document that the CLI watcher can't clear the API's
        cache.
 8. [ ] **C-8, C-9: observability and startup.** Replace `except: pass` in the

@@ -15,6 +15,7 @@ from grimoire.cli.helpers import (
     setup_db,
     teardown_db,
 )
+from grimoire.core.cache import invalidate_query_results
 
 
 @click.command()
@@ -77,6 +78,7 @@ async def ingest(
     await setup_db()
     try:
         agent = build_ingestion_agent()
+        changed = False
 
         async with get_db_context() as db:
             if path.is_file():
@@ -85,6 +87,7 @@ async def ingest(
                     db, path, auto_tag=auto_tag, source_type=source_type
                 )
                 if result.status == "completed":
+                    changed = True
                     echo_success(
                         f"Ingested {path.name}: {result.chunks_created} chunks, "
                         f"{result.tags_applied} tags ({result.duration_ms}ms)"
@@ -102,6 +105,7 @@ async def ingest(
                     auto_tag=auto_tag,
                     source_type=source_type,
                 )
+                changed = result.succeeded > 0
                 echo_success(
                     f"Done: {result.succeeded}/{result.total} succeeded, "
                     f"{result.skipped} skipped, {result.failed} failed "
@@ -110,5 +114,9 @@ async def ingest(
                 for r in result.results:
                     if r.status == "failed":
                         echo_error(f"  {r.file_path}: {r.error_message}")
+        # After the session committed. Clears the shared query cache, so a
+        # running API stops serving answers that predate this ingest.
+        if changed:
+            await invalidate_query_results()
     finally:
         await teardown_db()

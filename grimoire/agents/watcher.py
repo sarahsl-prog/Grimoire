@@ -19,6 +19,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from grimoire.agents.ingestion import IngestionAgent
+from grimoire.core.cache import invalidate_query_results
 from grimoire.db.models import StorageBackend
 from grimoire.db.repositories import DocumentRepository
 from grimoire.storage.base import FileChange, FileChangeType
@@ -489,7 +490,7 @@ class WatcherAgent:
                     await purge_document_vectors(document_id, vector_ids)
 
                     # Invalidate query cache so stale results are not served.
-                    await self._invalidate_query_cache()
+                    await invalidate_query_results()
             except Exception as e:
                 tracker.files_failed += 1
                 logger.error(f"WatcherAgent: error deleting {file_path}: {e}")
@@ -510,7 +511,7 @@ class WatcherAgent:
                 tracker.files_processed += 1
                 logger.info(f"WatcherAgent: ingested {file_path}")
                 # Invalidate query cache after re-ingestion.
-                await self._invalidate_query_cache()
+                await invalidate_query_results()
             elif result.status == "skipped":
                 logger.debug(f"WatcherAgent: skipped {file_path} (duplicate)")
             else:
@@ -522,25 +523,6 @@ class WatcherAgent:
         except Exception as e:
             tracker.files_failed += 1
             logger.error(f"WatcherAgent: error processing {file_path}: {e}")
-
-    # -------------------------------------------------------------------------
-    # Cache invalidation helper
-    # -------------------------------------------------------------------------
-
-    async def _invalidate_query_cache(self) -> None:
-        """Invalidate the query cache via the shared QueryAgent singleton.
-
-        Best-effort: failures are logged but not raised.
-        """
-        try:
-            from grimoire.api.dependencies import get_query_agent
-
-            agent = get_query_agent()
-            if hasattr(agent, "invalidate_cache"):
-                await agent.invalidate_cache()
-                logger.debug("WatcherAgent: query cache invalidated")
-        except Exception as e:
-            logger.warning(f"WatcherAgent: query cache invalidation failed: {e}")
 
     # -------------------------------------------------------------------------
     # Context Manager

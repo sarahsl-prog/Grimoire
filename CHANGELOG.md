@@ -150,6 +150,14 @@ All notable changes to Grimoire are documented in this file.
 
 ### Fixed
 
+- **Cached answers are invalidated on every document change.** Only the REST
+  delete route and the watcher invalidated, through a `hasattr` guard that hid
+  wiring mistakes. REST and MCP ingest, tagging, category deletes and the CLI
+  never did, so `ask`/`search` could serve pre-change answers for up to the
+  result TTL (1 day by default). All of them now call
+  `grimoire.core.cache.invalidate_query_results()` after their commit. It
+  clears only the query namespace and works across processes, since the cache
+  is a shared Redis server or a shared cache directory.
 - **Query-cache invalidation no longer wipes embeddings and generated
   content.** The query agent shared its cache with the embedder (and, on disk,
   the same directory as content generation), and `invalidate_cache()` runs

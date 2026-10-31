@@ -15,6 +15,7 @@ from grimoire.cli.helpers import (
     setup_db,
     teardown_db,
 )
+from grimoire.core.cache import invalidate_query_results
 
 if TYPE_CHECKING:
     # Type-only: the CLI defers model imports to keep startup fast.
@@ -176,6 +177,7 @@ async def category_remove(ctx: click.Context, slug: str, force: bool) -> None:
             await db.delete(cat)
             await db.commit()
             echo_success(f"Category '{cat.name}' removed.")
+            await invalidate_query_results()
     finally:
         await teardown_db()
 
@@ -223,6 +225,7 @@ async def tag(ctx: click.Context, doc_id: str, tags: tuple[str, ...]) -> None:
 
             await db.commit()
             echo_success(f"Tagged document {doc_id[:8]} with: {', '.join(tags)}")
+            await invalidate_query_results()
     finally:
         await teardown_db()
 
@@ -265,6 +268,7 @@ async def untag(ctx: click.Context, doc_id: str, tags: tuple[str, ...]) -> None:
 
             await db.commit()
             echo_success(f"Removed tags from document {doc_id[:8]}: {', '.join(tags)}")
+            await invalidate_query_results()
     finally:
         await teardown_db()
 
