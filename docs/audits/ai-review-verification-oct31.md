@@ -59,7 +59,7 @@ marked *new* were found after the original review.
        synchronously (`'coroutine' object has no attribute 'get'`). 4 failing
        tests: `test_cache.py::TestDiskCacheClose` (2) and
        `test_cli.py` cache-stats tests (2).
-3. [ ] *New:* **Per-tier rate limits are never applied.**
+3. [ ] *New:* **Per-tier rate limits are never applied.** *Worse than first described:* `SlowAPIMiddleware` checks limits before routing, so `request.state.api_key` is never set and **every request is limited by client IP at 30/minute**, whatever its key. Needs a design decision (pre-auth vs post-auth limiting); see PR notes.
        `DEFAULT_TIER_RATE_LIMITS` (`grimoire/api/auth.py`),
        `AuthConfig.rate_limits` / `GRIMOIRE_AUTH__RATE_LIMITS`, and
        `get_tier_rate_limit()` (`grimoire/api/rate_limit.py`) exist but
@@ -92,7 +92,7 @@ marked *new* were found after the original review.
        OTel blocks with warnings; configure a `TracerProvider` + OTLP
        exporter or drop the OTel deps; surface a failed `WatcherAgent` start
        in `/readyz`.
-9. [ ] **C-12: test gaps** not covered by the items above (pagination
+9. [x] **C-12: test gaps** Done: pagination bounds, ChromaDB error mapping across `to_thread`, `/readyz` (had no tests). not covered by the items above (pagination
        bounds, `to_thread` exception mapping, a non-mocked delete
        integration test).
 10. [ ] **Compose `${VAR:?}` guards for `POSTGRES_PASSWORD` /
@@ -103,10 +103,22 @@ marked *new* were found after the original review.
         service does).
 11. [ ] **C-11:** delete or clearly quarantine `examples/rag_pipeline.py`
         (pickle deserialization via `allow_dangerous_deserialization=True`).
-12. [ ] *New, low:* **stale Celery config.** Celery was removed in phase 3,
+12. [x] *New, low:* **stale Celery config.** Removed from `.env.example`, `grimoire.yaml.example` and the deploy docs. Celery was removed in phase 3,
         but `.env.example` still has a `GRIMOIRE_CELERY__*` block and
         `docs/deploy/docker.md` still lists Redis as the Celery broker. The
         variables are ignored at load time, so this is cleanup, not a bug.
+
+### Also fixed on `audit-followups` (found while working the backlog)
+
+- `grimoire reindex` could never write (opened the store with `embedding_dim=1`).
+- The Redis cache backend crashed every agent builder (`RedisCache` got `path=`).
+- Query-cache invalidation wiped all cached embeddings and generated content.
+- Search could return chunks of deleted documents via orphaned vectors.
+- Watcher ignored MOVED events (renames, atomic saves) and never restarted a
+  dead processor.
+- `/readyz` echoed raw dependency errors publicly.
+- `bcrypt.checkpw` blocked the event loop on every authenticated request.
+- Delete-vectors integration test used a non-UUID id (always 404).
 
 ## Missed by the AI review
 
