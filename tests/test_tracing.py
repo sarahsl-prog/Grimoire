@@ -143,7 +143,10 @@ def test_unsupported_protocol_warns_and_installs_nothing(
 ) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", protocol)
-    assert tracing.configure_tracing() is False
+    with patch(_EXPORTER) as grpc_exporter, patch(_HTTP_EXPORTER) as http_exporter:
+        assert tracing.configure_tracing() is False
+    grpc_exporter.assert_not_called()
+    http_exporter.assert_not_called()
     assert len(_isolated) == 1  # only the Redis mock; no provider installed
     assert any("Unsupported OTLP protocol" in m for m in warnings)
 
