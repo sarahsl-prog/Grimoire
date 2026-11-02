@@ -355,16 +355,24 @@ text already in Postgres, instead of re-ingesting the whole corpus. Use
 directory` (older builds: `could not be read: Is a directory`).** `grimoire.yaml`
 did not exist on the host when you first ran `docker compose up`, so Docker
 created an empty directory in its place to satisfy the bind mount. Replace the
-directory with the file and start again:
+directory with the file and recreate the containers:
 
 ```bash
-rm -r grimoire.yaml
+rmdir grimoire.yaml
 cp grimoire.yaml.example grimoire.yaml
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
-`create_host_path: false` on the mount does not prevent this under Docker
-Desktop, so the file has to exist before the first `up`.
+`rmdir` only removes an empty directory, which confirms the diagnosis. If it
+fails, you have probably already run `cp grimoire.yaml.example grimoire.yaml`,
+which silently copied the example *into* the directory. Check that
+`grimoire.yaml/` contains nothing but that copy, then `rm -r grimoire.yaml`.
+`--force-recreate` matters because the mount spec is unchanged, so plain
+`up -d` would leave any still-running container on the stale directory mount.
+
+`create_host_path: false` on the mount did not prevent this in testing on
+Docker Desktop for Windows, so the file has to exist before the first `up`.
+`grimoire.yaml` is gitignored, like `.env`.
 
 **`grimoire status` (or any CLI command) fails with `ConnectionRefusedError` on
 `127.0.0.1:<POSTGRES_PORT>`, and `docker compose ps` only shows `api`, `mcp`,
