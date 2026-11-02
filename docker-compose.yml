@@ -131,20 +131,21 @@ services:
     image: chromadb/chroma:1.5.9
     container_name: grimoire-chromadb
     restart: unless-stopped
-    environment:
-      - IS_PERSISTENT=TRUE
-      - PERSIST_DIRECTORY=/chroma/chroma
-      - ANONYMIZED_TELEMETRY=FALSE
-      - CHROMA_SERVER_HOST=0.0.0.0
-      - CHROMA_SERVER_HTTP_PORT=8000
-      # No CHROMA_SERVER_AUTHN_* here on purpose: Chroma 1.x (Rust server)
-      # removed built-in auth, so a token would be silently ignored. Access
-      # control is network isolation: grimoire-network plus a 127.0.0.1-only
-      # host port. See docs/deploy/docker.md#chromadb-access-control.
+    # Chroma 1.x reads /config.yaml (persist_path: /data) and CHROMA_<KEY>
+    # overrides such as CHROMA_PERSIST_PATH or CHROMA_PORT. The 0.x variables
+    # IS_PERSISTENT, PERSIST_DIRECTORY and CHROMA_SERVER_HOST/HTTP_PORT are
+    # ignored (verified against 1.5.9), so they are gone and the volume below
+    # mounts at /data; otherwise every recreate loses all vectors.
+    # ANONYMIZED_TELEMETRY is gone too: the 1.x binary has no PostHog client
+    # and never reads it, so there is no usage telemetry to opt out of.
+    # No CHROMA_SERVER_AUTHN_* here on purpose: Chroma 1.x (Rust server)
+    # removed built-in auth, so a token would be silently ignored. Access
+    # control is network isolation: grimoire-network plus a 127.0.0.1-only
+    # host port. See docs/deploy/docker.md#chromadb-access-control.
     ports:
       - "127.0.0.1:${CHROMADB_PORT:-8060}:8000"
     volumes:
-      - chromadb_data:/chroma/chroma
+      - chromadb_data:/data
     # The chromadb/chroma image ships no curl, wget, or python — only a
     # shell and coreutils — so the healthcheck can't shell out to an HTTP
     # client. bash's /dev/tcp pseudo-device gives a real HTTP readiness
@@ -165,8 +166,6 @@ services:
       start_period: 30s
     networks:
       - grimoire-network
-    # Note: ChromaDB defaults to in-memory if not configured for persistence
-    # The IS_PERSISTENT flag enables disk-based storage
 
   # One-shot Alembic migration.  Gates every application container so the
   # schema is current before anything connects, and so no two containers
