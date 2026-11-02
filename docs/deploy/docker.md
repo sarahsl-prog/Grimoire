@@ -259,8 +259,24 @@ spans for incoming HTTP requests, SQL statements and Redis calls, tagged with
 `OTEL_SERVICE_NAME` (default `grimoire`). Other standard `OTEL_EXPORTER_OTLP_*`
 variables (headers, TLS) are honoured.
 
+For a backend that only speaks OTLP over HTTP, set
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` (the default is `grpc`);
+`/v1/traces` is appended to the endpoint for you. MLflow (3.x) is one: its
+server logs `"PRI %2A HTTP/2.0" 403` and `Invalid HTTP request received` when
+it receives gRPC. It also needs the target experiment, so for MLflow use:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://<mlflow-host>:5000
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_TRACES_HEADERS=x-mlflow-experiment-id=<experiment id>
+```
+
+This was tested against MLflow 3.16.1. If your receiver serves traces on a
+different path, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full URL
+instead; that one is used as-is, with nothing appended.
+
 With tracing on but no endpoint, startup logs a warning and nothing is
-exported. MLflow tracing for MCP tool calls is configured separately
+exported. An unsupported protocol value does the same. MLflow tracing for MCP tool calls is configured separately
 (`GRIMOIRE_OBSERVABILITY__MLFLOW_*`).
 
 ## ChromaDB access control
