@@ -271,6 +271,10 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_EXPORTER_OTLP_TRACES_HEADERS=x-mlflow-experiment-id=<experiment id>
 ```
 
+This was tested against MLflow 3.16.1. If your receiver serves traces on a
+different path, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the full URL
+instead; that one is used as-is, with nothing appended.
+
 With tracing on but no endpoint, startup logs a warning and nothing is
 exported. An unsupported protocol value does the same. MLflow tracing for MCP tool calls is configured separately
 (`GRIMOIRE_OBSERVABILITY__MLFLOW_*`).

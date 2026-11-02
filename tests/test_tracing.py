@@ -134,6 +134,31 @@ def test_traces_protocol_overrides_generic(
     http_exporter.assert_called_once()
 
 
+def test_invalid_traces_protocol_does_not_fall_back_to_generic(
+    _isolated: list[Any], monkeypatch: pytest.MonkeyPatch, warnings: list[str]
+) -> None:
+    """The traces-specific variable is authoritative: a bad value disables export
+    rather than silently using the generic one, so the misconfiguration is seen."""
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/json")
+    with patch(_EXPORTER) as grpc_exporter:
+        assert tracing.configure_tracing() is False
+    grpc_exporter.assert_not_called()
+    assert any("Unsupported OTLP protocol 'http/json'" in m for m in warnings)
+
+
+def test_empty_traces_protocol_falls_through_to_generic(
+    _isolated: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://mlflow:5000")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+    with patch(_HTTP_EXPORTER, return_value=InMemorySpanExporter()) as http_exporter:
+        assert tracing.configure_tracing() is True
+    http_exporter.assert_called_once()
+
+
 @pytest.mark.parametrize("protocol", ["http/json", "websocket", "http"])
 def test_unsupported_protocol_warns_and_installs_nothing(
     _isolated: list[Any],
