@@ -43,19 +43,23 @@ def _chromadb_service(filename: str) -> dict:
     return service
 
 
-def _volume_targets(service: dict) -> dict[str, str]:
-    """Map each volume source to its container path (short syntax only)."""
-    targets: dict[str, str] = {}
-    for entry in service.get("volumes", []):
+def _volume_mounts(service: dict) -> list[tuple[str, str]]:
+    """Every (source, container path) pair, short syntax only.
+
+    A list rather than a dict: one source may legitimately mount twice.
+    """
+    mounts: list[tuple[str, str]] = []
+    # `or []` because `volumes:` with no value parses as None.
+    for entry in service.get("volumes") or []:
         assert isinstance(entry, str), f"chromadb volume uses long syntax: {entry!r}"
         assert ":" in entry, f"chromadb volume has no container path: {entry!r}"
         source, target = entry.split(":")[:2]
-        targets[source] = target
-    return targets
+        mounts.append((source, target))
+    return mounts
 
 
 def _env_names(service: dict) -> set[str]:
-    env = service.get("environment", [])
+    env = service.get("environment") or []
     if isinstance(env, dict):
         return set(env)
     return {item.split("=", 1)[0] for item in env}
@@ -65,14 +69,14 @@ def _env_names(service: dict) -> set[str]:
 def test_data_volume_mounts_where_chroma_1x_persists(
     filename: str, volume: str
 ) -> None:
-    targets = _volume_targets(_chromadb_service(filename))
-    assert targets.get(volume) == CHROMA_DATA_DIR
+    mounts = _volume_mounts(_chromadb_service(filename))
+    assert (volume, CHROMA_DATA_DIR) in mounts
 
 
 @pytest.mark.parametrize("filename", FILENAMES)
 def test_nothing_mounts_at_the_legacy_0x_path(filename: str) -> None:
-    targets = _volume_targets(_chromadb_service(filename))
-    assert LEGACY_DATA_DIR not in targets.values()
+    mounts = _volume_mounts(_chromadb_service(filename))
+    assert LEGACY_DATA_DIR not in {target for _, target in mounts}
 
 
 @pytest.mark.parametrize("filename", FILENAMES)
