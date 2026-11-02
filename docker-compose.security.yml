@@ -43,8 +43,10 @@ services:
   chromadb:
     container_name: grimoire-chromadb-security
     environment:
-      - IS_PERSISTENT=TRUE
-      - PERSIST_DIRECTORY=/chroma/chroma
+      # No IS_PERSISTENT / PERSIST_DIRECTORY: those were Chroma 0.x settings.
+      # The 1.x server ignores them and always persists to /data
+      # (persist_path in the image's /config.yaml), so the volume
+      # below must mount there or every recreate loses all vectors.
       - ANONYMIZED_TELEMETRY=FALSE
       - CHROMA_SERVER_HOST=0.0.0.0
       - CHROMA_SERVER_HTTP_PORT=8000
@@ -53,7 +55,7 @@ services:
       # control is network isolation: grimoire-network plus a 127.0.0.1-only
       # host port. See docs/deploy/docker.md#chromadb-access-control.
     volumes:
-      - chromadb_data_security:/chroma/chroma
+      - chromadb_data_security:/data
       - ${SECURITY_CORPUS_DIR:-./security-corpus}:/security-corpus:ro
 
   # The dev tooling (pgadmin / redis-commander) is only activated with

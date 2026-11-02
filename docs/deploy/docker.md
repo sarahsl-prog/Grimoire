@@ -367,6 +367,20 @@ text already in Postgres, instead of re-ingesting the whole corpus. Use
 
 ## Troubleshooting
 
+**Searches return nothing, or `grimoire status` lists documents that search
+never finds, after the `chromadb` container was recreated.** Before the fix
+that mounts `chromadb_data` at `/data`, the volume was mounted at
+`/chroma/chroma`, a Chroma 0.x path the 1.x server ignores. Vectors were
+written inside the container and lost on every recreate, while Postgres kept
+the documents and chunks. After pulling the fix, recreate ChromaDB and re-embed
+every chunk Postgres has that the vector store is missing:
+
+```bash
+docker compose up -d chromadb
+docker compose exec api grimoire reindex --dry-run   # lists missing chunks
+docker compose exec api grimoire reindex
+```
+
 **`db-migrate` exits with `Configuration path '/app/grimoire.yaml' is a
 directory` (older builds: `could not be read: Is a directory`).** `grimoire.yaml`
 did not exist on the host when you first ran `docker compose up`, so Docker
