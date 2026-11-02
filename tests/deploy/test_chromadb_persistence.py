@@ -34,12 +34,25 @@ LEGACY_DATA_DIR = "/chroma/chroma"
 # variable the service used to set (ANONYMIZED_TELEMETRY included) is ignored
 # by 1.5.9, so nothing is allowed today; anything new deserves a deliberate look.
 ALLOWED_ENV: set[str] = set()
-# Keys that can change where the server persists without touching `volumes`
-# or `environment`: the 1.x binary takes `run <config>` and path flags, and
-# configs/secrets can replace the /config.yaml that sets persist_path.
-STARTUP_OVERRIDES = ("command", "entrypoint", "env_file", "configs", "secrets")
+# Keys that can change where the server persists, or what it mounts, without
+# showing up in this service's own `volumes` or `environment`: the 1.x binary
+# takes `run <config>` and path flags; configs/secrets can replace the
+# /config.yaml that sets persist_path; tmpfs can shadow it or the data dir;
+# extends inherits all of the above from another service unseen.
+STARTUP_OVERRIDES = (
+    "command",
+    "entrypoint",
+    "env_file",
+    "configs",
+    "secrets",
+    "tmpfs",
+    "extends",
+)
+# The image's default command is `chroma run /config.yaml`.
 CHROMA_CONFIG_FILE = "/config.yaml"
 # Every name Compose loads by default or that this repo uses for overlays.
+# A file outside the repo root, or one passed only via `-f <name>` or the
+# COMPOSE_FILE variable, can't be discovered here; add it to COMPOSE_FILES.
 COMPOSE_GLOBS = (
     "docker-compose*.yml",
     "docker-compose*.yaml",
@@ -127,27 +140,39 @@ def test_data_volume_mounts_where_chroma_1x_persists(
     assert (volume, CHROMA_DATA_DIR) in mounts
 
 
-@pytest.mark.parametrize("filename", FILENAMES)
-def test_nothing_mounts_at_the_legacy_0x_path(filename: str) -> None:
-    mounts = _volume_mounts(_chromadb_service(filename))
-    assert LEGACY_DATA_DIR not in {target for _, target in mounts}
+def _guard_violations(service: dict) -> list[str]:
+    """Everything about a chromadb service that could move or hide its data."""
+    problems: list[str] = []
+    targets = {target for _, target in _volume_mounts(service)}
+    if LEGACY_DATA_DIR in targets:
+        problems.append(f"mounts the 0.x path {LEGACY_DATA_DIR}")
+    if CHROMA_CONFIG_FILE in targets:
+        problems.append(f"mounts over {CHROMA_CONFIG_FILE}, which sets persist_path")
+    extra_env = _env_names(service) - ALLOWED_ENV
+    if extra_env:
+        problems.append(f"sets environment {sorted(extra_env)}")
+    problems += [f"sets {key!r}" for key in STARTUP_OVERRIDES if key in service]
+    return problems
 
 
 @pytest.mark.parametrize("filename", FILENAMES)
-def test_image_config_is_not_replaced(filename: str) -> None:
-    """/config.yaml sets persist_path; a mount over it could move the data."""
-    mounts = _volume_mounts(_chromadb_service(filename))
-    assert CHROMA_CONFIG_FILE not in {target for _, target in mounts}
+def test_no_way_to_move_or_hide_the_data(filename: str) -> None:
+    assert _guard_violations(_chromadb_service(filename)) == []
 
 
-@pytest.mark.parametrize("filename", FILENAMES)
-def test_only_allowed_environment(filename: str) -> None:
-    """No ignored 0.x settings, and no 1.x override that relocates data."""
-    service = _chromadb_service(filename)
-    assert _env_names(service) <= ALLOWED_ENV
-    # Each of these can relocate data or add variables unseen by this test.
-    for key in STARTUP_OVERRIDES:
-        assert key not in service, f"chromadb sets {key!r} in {filename}"
+@pytest.mark.parametrize(
+    "service",
+    [
+        {"volumes": ["chromadb_data:/chroma/chroma"]},
+        {"volumes": ["./evil.yml:/config.yaml:ro"]},
+        {"environment": ["CHROMA_PERSIST_PATH=/elsewhere"]},
+        {"environment": {"IS_PERSISTENT": "TRUE"}},
+        *({key: "x"} for key in STARTUP_OVERRIDES),
+    ],
+)
+def test_guards_catch_each_bypass(service: dict) -> None:
+    """Without this, a parsing regression would make the test above pass vacuously."""
+    assert _guard_violations(service)
 
 
 def test_every_compose_file_with_chromadb_is_covered() -> None:
