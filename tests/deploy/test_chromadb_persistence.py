@@ -28,12 +28,11 @@ FILENAMES = [name for name, _ in COMPOSE_FILES]
 
 CHROMA_DATA_DIR = "/data"
 LEGACY_DATA_DIR = "/chroma/chroma"
-IGNORED_0X_SETTINGS = {
-    "IS_PERSISTENT",
-    "PERSIST_DIRECTORY",
-    "CHROMA_SERVER_HOST",
-    "CHROMA_SERVER_HTTP_PORT",
-}
+# An allowlist, not a denylist of the removed 0.x names: 1.x honours
+# CHROMA_<KEY> overrides, so CHROMA_PERSIST_PATH would move data off the volume
+# and CHROMA_PORT would break the healthcheck and every client. Anything new
+# here deserves a deliberate look.
+ALLOWED_ENV = {"ANONYMIZED_TELEMETRY"}
 
 
 def _chromadb_service(filename: str) -> dict:
@@ -80,11 +79,11 @@ def test_nothing_mounts_at_the_legacy_0x_path(filename: str) -> None:
 
 
 @pytest.mark.parametrize("filename", FILENAMES)
-def test_no_ignored_0x_settings(filename: str) -> None:
-    """These look like they configure Chroma but do nothing on 1.x."""
+def test_only_allowed_environment(filename: str) -> None:
+    """No ignored 0.x settings, and no 1.x override that relocates data."""
     service = _chromadb_service(filename)
-    assert not _env_names(service) & IGNORED_0X_SETTINGS
-    # An env_file would let the same variables back in unseen by this test.
+    assert _env_names(service) <= ALLOWED_ENV
+    # An env_file would let variables in unseen by this test.
     assert "env_file" not in service
 
 
@@ -92,10 +91,15 @@ def test_no_ignored_0x_settings(filename: str) -> None:
 def test_image_is_chroma_1x(filename: str) -> None:
     """The /data path is a 1.x fact; revisit these tests if the image changes.
 
-    An overlay that sets no image inherits the base file's.
+    docker-compose.security.yml is only ever applied as an overlay on the base
+    file (see docs/deploy/hetzner_security.md), so with no image of its own it
+    inherits the base file's.
     """
     image = (
         _chromadb_service(filename).get("image")
-        or _chromadb_service(BASE_COMPOSE)["image"]
+        or _chromadb_service(BASE_COMPOSE).get("image")
+        or ""
     )
-    assert image.startswith("chromadb/chroma:1.")
+    assert image.startswith(
+        "chromadb/chroma:1."
+    ), f"chromadb image is {image!r}; /data is only correct for chromadb/chroma 1.x"
