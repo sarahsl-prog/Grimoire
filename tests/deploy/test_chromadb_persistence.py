@@ -35,8 +35,17 @@ LEGACY_DATA_DIR = "/chroma/chroma"
 # by 1.5.9, so nothing is allowed today; anything new deserves a deliberate look.
 ALLOWED_ENV: set[str] = set()
 # Keys that can change where the server persists without touching `volumes`
-# or `environment` (the 1.x binary takes `run <config>` and path flags).
-STARTUP_OVERRIDES = ("command", "entrypoint", "env_file")
+# or `environment`: the 1.x binary takes `run <config>` and path flags, and
+# configs/secrets can replace the /config.yaml that sets persist_path.
+STARTUP_OVERRIDES = ("command", "entrypoint", "env_file", "configs", "secrets")
+CHROMA_CONFIG_FILE = "/config.yaml"
+# Every name Compose loads by default or that this repo uses for overlays.
+COMPOSE_GLOBS = (
+    "docker-compose*.yml",
+    "docker-compose*.yaml",
+    "compose*.yml",
+    "compose*.yaml",
+)
 
 
 def _chromadb_service(filename: str) -> dict:
@@ -125,6 +134,13 @@ def test_nothing_mounts_at_the_legacy_0x_path(filename: str) -> None:
 
 
 @pytest.mark.parametrize("filename", FILENAMES)
+def test_image_config_is_not_replaced(filename: str) -> None:
+    """/config.yaml sets persist_path; a mount over it could move the data."""
+    mounts = _volume_mounts(_chromadb_service(filename))
+    assert CHROMA_CONFIG_FILE not in {target for _, target in mounts}
+
+
+@pytest.mark.parametrize("filename", FILENAMES)
 def test_only_allowed_environment(filename: str) -> None:
     """No ignored 0.x settings, and no 1.x override that relocates data."""
     service = _chromadb_service(filename)
@@ -137,7 +153,8 @@ def test_only_allowed_environment(filename: str) -> None:
 def test_every_compose_file_with_chromadb_is_covered() -> None:
     """A new overlay that defines chromadb must be added to COMPOSE_FILES."""
     defining = set()
-    for path in REPO_ROOT.glob("docker-compose*.yml"):
+    paths = {p for pattern in COMPOSE_GLOBS for p in REPO_ROOT.glob(pattern)}
+    for path in sorted(paths):
         with path.open(encoding="utf-8") as f:
             services = (yaml.safe_load(f) or {}).get("services") or {}
         if "chromadb" in services:
