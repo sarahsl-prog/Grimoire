@@ -84,9 +84,14 @@ watcher) running:
 
 ```bash
 cp .env.example .env
+cp grimoire.yaml.example grimoire.yaml   # must exist before `up` (see below)
 docker compose up -d --build
 curl http://localhost:8001/health
 ```
+
+Create `grimoire.yaml` before the first `up`: compose bind-mounts it, and if
+the file is missing Docker creates an empty *directory* with that name, which
+makes `db-migrate` fail with `Is a directory`.
 
 See [docs/deploy/docker.md](docs/deploy/docker.md) for the services table,
 configuration precedence, GPU/dev overlays, volumes and backup, and
