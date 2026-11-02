@@ -42,6 +42,9 @@ dependencies = [
     # OTLP/gRPC span exporter used by grimoire.utils.tracing. Also a chromadb
     # dependency, but declared so tracing never relies on that.
     "opentelemetry-exporter-otlp-proto-grpc>=1.24",
+    # OTLP/HTTP exporter, selected with OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    # for backends such as MLflow that do not accept gRPC.
+    "opentelemetry-exporter-otlp-proto-http>=1.24",
     "opentelemetry-sdk>=1.24",
     "opentelemetry-instrumentation-fastapi>=0.45",
     "opentelemetry-instrumentation-sqlalchemy>=0.45",

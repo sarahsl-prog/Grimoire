@@ -14,6 +14,9 @@ Configuration uses the standard OpenTelemetry environment variables, which
   spending every request on spans sent to a default address that isn't
   listening.
 * ``OTEL_SERVICE_NAME`` — service name on every span (default ``grimoire``).
+* ``OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`` / ``OTEL_EXPORTER_OTLP_PROTOCOL`` —
+  ``grpc`` (default) or ``http/protobuf``. Some backends, MLflow among them,
+  only accept OTLP over HTTP and reject the gRPC connection preface.
 
 MLflow tracing for the MCP server is separate; see ``grimoire.mcp.mlflow_logging``.
 """
@@ -27,6 +30,31 @@ from loguru import logger
 
 _lock = threading.Lock()
 _configured = False
+
+# The values the OpenTelemetry spec defines for OTEL_EXPORTER_OTLP_PROTOCOL
+# that the Python SDK can export with. ``http/json`` is in the spec but has no
+# Python exporter.
+_SUPPORTED_PROTOCOLS = ("grpc", "http/protobuf")
+
+
+def _otlp_protocol() -> str | None:
+    """Return the configured OTLP protocol, or None if it is unsupported.
+
+    The traces-specific variable wins over the generic one, as the spec says.
+    """
+    raw = (
+        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
+        or os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL")
+        or "grpc"
+    )
+    protocol = raw.strip().lower()
+    if protocol not in _SUPPORTED_PROTOCOLS:
+        logger.warning(
+            f"Unsupported OTLP protocol {raw!r}; expected one of "
+            f"{', '.join(_SUPPORTED_PROTOCOLS)}. Spans will not be exported"
+        )
+        return None
+    return protocol
 
 
 def configure_tracing(default_service_name: str = "grimoire") -> bool:
@@ -55,11 +83,24 @@ def configure_tracing(default_service_name: str = "grimoire") -> bool:
             )
             return False
 
+        protocol = _otlp_protocol()
+        if protocol is None:
+            return False
+
         try:
             from opentelemetry import trace
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                OTLPSpanExporter,
-            )
+
+            # Both exporters are named OTLPSpanExporter and read the same
+            # OTEL_EXPORTER_OTLP_* variables; the HTTP one appends /v1/traces
+            # to a generic endpoint itself.
+            if protocol == "http/protobuf":
+                from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                    OTLPSpanExporter,
+                )
+            else:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[assignment]
+                    OTLPSpanExporter,
+                )
             from opentelemetry.sdk.resources import SERVICE_NAME, Resource
             from opentelemetry.sdk.trace import TracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -81,7 +122,9 @@ def configure_tracing(default_service_name: str = "grimoire") -> bool:
             return False
 
         _configured = True
-        logger.info(f"OpenTelemetry tracing to {endpoint} as service {service!r}")
+        logger.info(
+            f"OpenTelemetry tracing to {endpoint} ({protocol}) as service {service!r}"
+        )
         return True
 
 

@@ -21,6 +21,9 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 from grimoire.utils import tracing
 
 _EXPORTER = "opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter"
+_HTTP_EXPORTER = (
+    "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +32,8 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Any]]:
     tracing._reset_for_tests()
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
     monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_PROTOCOL", raising=False)
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", raising=False)
     installed: list[Any] = []
     with (
         patch("opentelemetry.trace.set_tracer_provider", installed.append),
@@ -85,6 +90,62 @@ def test_is_idempotent(_isolated: list[Any], monkeypatch: pytest.MonkeyPatch) ->
         assert tracing.configure_tracing() is True
     providers = [p for p in _isolated if isinstance(p, TracerProvider)]
     assert len(providers) == 1
+
+
+def test_default_protocol_uses_grpc_exporter(
+    _isolated: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317")
+    with (
+        patch(_EXPORTER, return_value=InMemorySpanExporter()) as grpc_exporter,
+        patch(_HTTP_EXPORTER) as http_exporter,
+    ):
+        assert tracing.configure_tracing() is True
+    grpc_exporter.assert_called_once()
+    http_exporter.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "variable", ["OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"]
+)
+def test_http_protobuf_uses_http_exporter(
+    _isolated: list[Any], monkeypatch: pytest.MonkeyPatch, variable: str
+) -> None:
+    """MLflow only accepts OTLP over HTTP, so the protocol must be selectable."""
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://mlflow:5000")
+    monkeypatch.setenv(variable, " HTTP/Protobuf ")
+    with (
+        patch(_EXPORTER) as grpc_exporter,
+        patch(_HTTP_EXPORTER, return_value=InMemorySpanExporter()) as http_exporter,
+    ):
+        assert tracing.configure_tracing() is True
+    http_exporter.assert_called_once()
+    grpc_exporter.assert_not_called()
+
+
+def test_traces_protocol_overrides_generic(
+    _isolated: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://mlflow:5000")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/protobuf")
+    with patch(_HTTP_EXPORTER, return_value=InMemorySpanExporter()) as http_exporter:
+        assert tracing.configure_tracing() is True
+    http_exporter.assert_called_once()
+
+
+@pytest.mark.parametrize("protocol", ["http/json", "websocket", "http"])
+def test_unsupported_protocol_warns_and_installs_nothing(
+    _isolated: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+    warnings: list[str],
+    protocol: str,
+) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", protocol)
+    assert tracing.configure_tracing() is False
+    assert len(_isolated) == 1  # only the Redis mock; no provider installed
+    assert any("Unsupported OTLP protocol" in m for m in warnings)
 
 
 def test_setup_failure_is_logged_not_raised(
