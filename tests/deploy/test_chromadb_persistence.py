@@ -48,8 +48,12 @@ def _volume_mounts(service: dict) -> list[tuple[str, str]]:
     A list rather than a dict: one source may legitimately mount twice.
     """
     mounts: list[tuple[str, str]] = []
-    # `or []` because `volumes:` with no value parses as None.
-    for entry in service.get("volumes") or []:
+    # `volumes:` with no value parses as None; anything else must be a list.
+    volumes = service.get("volumes")
+    if volumes is None:
+        return mounts
+    assert isinstance(volumes, list), f"chromadb volumes is not a list: {volumes!r}"
+    for entry in volumes:
         assert isinstance(entry, str), f"chromadb volume uses long syntax: {entry!r}"
         assert ":" in entry, f"chromadb volume has no container path: {entry!r}"
         source, target = entry.split(":")[:2]
@@ -58,10 +62,48 @@ def _volume_mounts(service: dict) -> list[tuple[str, str]]:
 
 
 def _env_names(service: dict) -> set[str]:
-    env = service.get("environment") or []
+    # `environment:` with no value parses as None; otherwise a list or mapping.
+    env = service.get("environment")
+    if env is None:
+        return set()
     if isinstance(env, dict):
         return set(env)
+    assert isinstance(env, list), f"chromadb environment is malformed: {env!r}"
     return {item.split("=", 1)[0] for item in env}
+
+
+class TestHelpers:
+    """The parsers above, on shapes the real compose files don't contain today."""
+
+    def test_empty_keys_parse_as_nothing(self) -> None:
+        service = {"volumes": None, "environment": None}
+        assert _volume_mounts(service) == []
+        assert _env_names(service) == set()
+
+    def test_one_source_mounted_twice_keeps_both(self) -> None:
+        service = {"volumes": ["chromadb_data:/data", "chromadb_data:/backups:ro"]}
+        assert _volume_mounts(service) == [
+            ("chromadb_data", "/data"),
+            ("chromadb_data", "/backups"),
+        ]
+
+    def test_mapping_environment(self) -> None:
+        assert _env_names({"environment": {"ANONYMIZED_TELEMETRY": "FALSE"}}) == {
+            "ANONYMIZED_TELEMETRY"
+        }
+
+    @pytest.mark.parametrize(
+        "volumes",
+        ["", ["chromadb_data"], [{"type": "volume", "target": "/data"}]],
+    )
+    def test_malformed_volumes_fail_loudly(self, volumes: object) -> None:
+        with pytest.raises(AssertionError):
+            _volume_mounts({"volumes": volumes})
+
+    @pytest.mark.parametrize("environment", ["", 0])
+    def test_malformed_environment_fails_loudly(self, environment: object) -> None:
+        with pytest.raises(AssertionError):
+            _env_names({"environment": environment})
 
 
 @pytest.mark.parametrize(("filename", "volume"), COMPOSE_FILES)
