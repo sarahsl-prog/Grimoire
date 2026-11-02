@@ -950,6 +950,21 @@ class TestYamlSourceStartupValidation:
 
         assert "could not be read" in str(exc_info.value)
 
+    def test_directory_in_place_of_file_names_docker_cause(
+        self, temp_directory: Path
+    ) -> None:
+        """A directory at the config path gets a Docker-specific hint, not 'permissions'."""
+        config_dir = temp_directory / "grimoire.yaml"
+        config_dir.mkdir()
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            _load_yaml_source(config_dir)
+
+        message = str(exc_info.value)
+        assert "is a directory" in message
+        assert "cp grimoire.yaml.example grimoire.yaml" in message
+        assert "permissions" not in message
+
 
 class TestGetSettingsErrorTranslation:
     """``get_settings`` exposes exactly one exception type to its callers."""

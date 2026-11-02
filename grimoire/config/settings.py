@@ -982,6 +982,19 @@ class YamlConfigSource(PydanticBaseSettingsSource):
             logger.debug(f"Config file not found: {config_path}")
             return {}
 
+        # Docker creates an empty directory when a bind-mount source is missing,
+        # so a directory here almost always means `grimoire.yaml` was never
+        # created on the host. The generic OSError message below would point
+        # at permissions, which sends people the wrong way.
+        if config_path.is_dir():
+            logger.error(f"Config path {config_path} is a directory, not a file")
+            raise ConfigurationError(
+                f"Configuration path '{config_path}' is a directory, not a file.\n"
+                "If you are running under Docker, the host's grimoire.yaml was "
+                "missing and Docker created a directory in its place. Remove that "
+                "directory and run `cp grimoire.yaml.example grimoire.yaml`."
+            )
+
         try:
             with open(config_path, encoding="utf-8") as f:
                 config = yaml.safe_load(f)
