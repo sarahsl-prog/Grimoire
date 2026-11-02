@@ -47,6 +47,8 @@ STARTUP_OVERRIDES = (
     "secrets",
     "tmpfs",
     "extends",
+    # build replaces the whole image, and with it the default /config.yaml.
+    "build",
 )
 # The image's default command is `chroma run /config.yaml`.
 CHROMA_CONFIG_FILE = "/config.yaml"
@@ -160,19 +162,46 @@ def test_no_way_to_move_or_hide_the_data(filename: str) -> None:
     assert _guard_violations(_chromadb_service(filename)) == []
 
 
-@pytest.mark.parametrize(
-    "service",
-    [
-        {"volumes": ["chromadb_data:/chroma/chroma"]},
-        {"volumes": ["./evil.yml:/config.yaml:ro"]},
+# Written out literally, not generated from STARTUP_OVERRIDES: deleting a key
+# from that tuple must make its probe here fail, not vanish with it. Each probe
+# names the one violation it must produce, so it can't pass for another reason.
+BYPASS_PROBES = {
+    "legacy-path": ({"volumes": ["chromadb_data:/chroma/chroma"]}, "0.x path"),
+    "config-mount": ({"volumes": ["./evil.yml:/config.yaml:ro"]}, "/config.yaml"),
+    "persist-path-env": (
         {"environment": ["CHROMA_PERSIST_PATH=/elsewhere"]},
-        {"environment": {"IS_PERSISTENT": "TRUE"}},
-        *({key: "x"} for key in STARTUP_OVERRIDES),
-    ],
+        "CHROMA_PERSIST_PATH",
+    ),
+    "0x-env-mapping": ({"environment": {"IS_PERSISTENT": "TRUE"}}, "IS_PERSISTENT"),
+    "command": ({"command": ["run", "/other.yaml"]}, "'command'"),
+    "entrypoint": ({"entrypoint": ["chroma"]}, "'entrypoint'"),
+    "env_file": ({"env_file": [".env.chroma"]}, "'env_file'"),
+    "configs": ({"configs": ["chroma_config"]}, "'configs'"),
+    "secrets": ({"secrets": ["chroma_config"]}, "'secrets'"),
+    "tmpfs": ({"tmpfs": ["/data"]}, "'tmpfs'"),
+    "extends": ({"extends": {"service": "base"}}, "'extends'"),
+    "build": ({"build": "."}, "'build'"),
+}
+
+
+@pytest.mark.parametrize(
+    ("service", "expected"), BYPASS_PROBES.values(), ids=BYPASS_PROBES.keys()
 )
-def test_guards_catch_each_bypass(service: dict) -> None:
+def test_guards_catch_each_bypass(service: dict, expected: str) -> None:
     """Without this, a parsing regression would make the test above pass vacuously."""
-    assert _guard_violations(service)
+    problems = _guard_violations(service)
+    assert len(problems) == 1, problems
+    assert expected in problems[0]
+
+
+def test_every_startup_override_has_a_probe() -> None:
+    probed = {key for svc, _ in BYPASS_PROBES.values() for key in svc}
+    assert set(STARTUP_OVERRIDES) <= probed
+
+
+def _load_compose(path: Path) -> dict:
+    with path.open(encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
 
 def test_every_compose_file_with_chromadb_is_covered() -> None:
@@ -180,9 +209,10 @@ def test_every_compose_file_with_chromadb_is_covered() -> None:
     defining = set()
     paths = {p for pattern in COMPOSE_GLOBS for p in REPO_ROOT.glob(pattern)}
     for path in sorted(paths):
-        with path.open(encoding="utf-8") as f:
-            services = (yaml.safe_load(f) or {}).get("services") or {}
-        if "chromadb" in services:
+        compose = _load_compose(path)
+        # include: pulls in other files whose services this scan never sees.
+        assert "include" not in compose, f"{path.name} uses include:"
+        if "chromadb" in (compose.get("services") or {}):
             defining.add(path.name)
     assert defining == set(FILENAMES)
 
